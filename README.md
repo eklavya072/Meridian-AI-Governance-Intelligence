@@ -20,7 +20,7 @@ invented: where the evidence doesn't support a claim, Meridian says so.
 | Capability | What you get |
 |---|---|
 | **Workspace** | Create per-country workspaces, upload policy PDFs, and run the full analysis pipeline in the background |
-| **Analysis** | Per-dimension evaluations across four modules — coverage verdicts, recommendations, implementation roadmaps, and relevant real-world incidents |
+| **Analysis** | Per-dimension evaluations across four sections — coverage verdicts, recommendations, implementation roadmaps, and relevant real-world incidents |
 | **Executive Brief** | A synthesized, decision-maker-ready brief (one LLM synthesis call), cached server-side, exportable as PDF or DOCX |
 | **AI Auditor** | A chat assistant that answers questions about the analysis, the framework library, or an uploaded document — with verified citations |
 | **Framework Library** | Browse all indexed frameworks with indexing status, official sources, and chunk counts |
@@ -35,17 +35,17 @@ Policy PDF
   → Structure-aware chunking (headers/clauses first, then recursive split)
   → Embeddings (BAAI/bge-small-en-v1.5) → ChromaDB (persistent vector store)
   → Per-dimension retrieval (document chunks + routed frameworks)
-  → Combined Module 1 + Module 2 LLM call (per dimension, bounded-parallel)
+  → Combined evaluation + recommendations LLM call (per dimension, bounded-parallel)
   → Deterministic coverage ladder + maturity + priority (code, not LLM)
   → Citation verification (chunk exists · page matches · text supports claim)
-  → Conditional Module 3 + Module 4 calls (Partial/Missing dimensions)
+  → Conditional roadmap + case-intelligence calls (Partial/Missing dimensions)
   → Decision analytics → Executive brief (cached) → PDF/DOCX export
 ```
 
 ### The 8 governance dimensions
 
 Defined once in `backend/src/gap_analyzer.py` (`GOVERNANCE_DIMENSIONS`) and used
-by every module — evaluation, recommendations, maturity, consistency, and chat:
+by every pipeline stage — evaluation, recommendations, maturity, consistency, and chat:
 
 | Dimension | Focus |
 |---|---|
@@ -58,27 +58,26 @@ by every module — evaluation, recommendations, maturity, consistency, and chat
 | Fairness | Bias testing and mitigation, demographic parity, inclusive design |
 | Environmental Sustainability | Energy efficiency, carbon reporting, e-waste management |
 
-### The 4 modules (per dimension)
+### The four analysis sections (per dimension)
 
-| Module | Content | When it runs |
+| Section | Content | When it runs |
 |---|---|---|
-| **1 — Governance Dimension Evaluation** | Coverage verdict (`Covered` / `Partial` / `Missing`), reasoning, governance maturity (0–5), document + framework evidence | Always |
-| **2 — Recommendations & Alignment** | Recommendations, deterministic priority, international standard reference, structured framework synthesis (consensus / differences / overall); for Fully Covered dimensions: best practices + international examples instead | Always |
-| **3 — Implementation Roadmap** | Phased roadmap with deterministic timeline estimates, responsible agency (code-grounded, never fabricated), documentation requirements, monitoring checklist | Only for `Partial` / `Missing` dimensions |
-| **4 — Case Intelligence** | Matched real incidents (AI Incident Database, Robodebt Royal Commission, Allegheny AFST, and other curated records) with lessons learned | Only when a genuinely relevant incident match exists |
+| **Evaluation** (governance dimension evaluation) | Coverage verdict (`Covered` / `Partial` / `Missing`), reasoning, governance maturity (0–5), document + framework evidence | Always |
+| **Recommendations & Alignment** | Recommendations, deterministic priority, international standard reference, structured framework synthesis (consensus / differences / overall); for Fully Covered dimensions: best practices + international examples instead | Always |
+| **Implementation Roadmap** | Phased roadmap with deterministic timeline estimates, responsible agency (code-grounded, never fabricated), documentation requirements, monitoring checklist | Only for `Partial` / `Missing` dimensions |
+| **Case Intelligence** | Matched real incidents (AI Incident Database, Robodebt Royal Commission, Allegheny AFST, and other curated records) with lessons learned | Only when a genuinely relevant incident match exists |
 
-A full analysis makes **8 combined Module 1+2 calls** (one per dimension, run
-concurrently with bounded parallelism) **plus up to 8 conditional Module 3+4
-calls** — so between 8 and 16 LLM calls total. Fully Covered dimensions cost
+A full analysis makes **8 evaluation calls** (one per dimension, each combining
+evaluation + recommendations, run concurrently with bounded parallelism) **plus
+up to 8 conditional roadmap + case-intelligence calls** for `Partial` / `Missing`
+dimensions — so between 8 and 16 LLM calls total. Fully Covered dimensions cost
 exactly one call.
 
 ### Deterministic framework selection
 
 Which frameworks are searched is decided **in code, never by the LLM**
-(`backend/src/framework_router.py`):
-
-- **Core normative sources** (Module 1) and **practical tools** (Module 2) are
-  always part of the retrieval budget.
+(`backend/src/framework_router.py`):- **Core normative sources** (evaluation) and **practical tools**
+(recommendations) are always part of the retrieval budget.
 - **Dimension-tagged sources** are *guaranteed* a retrieval slot for their
   dimension (e.g. the World Bank's Digital Progress report is reserved for
   Inclusivity; the CDEI bias review for Fairness).
@@ -133,17 +132,18 @@ baseline (read at startup).
 - When a dimension needs a citation and none was found, a deterministic
   fallback attaches the top **dimension-grounded** chunk — explicitly marked
   *auto-attached, not LLM-grounded*, so it's never shown as verified.
-- Module 3 citations are **dimension-grounded**: a top-ranked but off-topic
+- Roadmap citations are **dimension-grounded**: a top-ranked but off-topic
   chunk (generic risk-assessment boilerplate) is dropped, even if the LLM cited
   it, because a verified-but-irrelevant citation is worse than honest absence.
-- Module 2 recommendations that name institutions are **document-grounded**: a
+- Recommendations that name institutions are **document-grounded**: a
   body (e.g. "MeitY", "Bureau of Indian Standards") is only surfaced when it
   appears verbatim in the uploaded document — the model can't name an agency
   from its own knowledge.
-- Module 3's responsible agency is classified in code as
+- The roadmap's responsible agency is classified in code as
   `document_named` / `document_implied` / `none_identified` — never fabricated,
-  and never inherited from Module 2 unless the cross-reference verifies it.
-- Module 3 timelines are **computed, not guessed**: phase ranges derive from
+  and never inherited from the recommendations unless the cross-reference
+  verifies it.
+- Roadmap timelines are **computed, not guessed**: phase ranges derive from
   coverage tier, existing operational mechanisms, maturity, agency grounding,
   and scope — with the reasoning string exposed in the UI.
 - A deterministic **scope disclaimer** states plainly that the analysis
@@ -260,7 +260,7 @@ All endpoints under `/api/v1`. Interactive docs at `/docs`.
 | `POST` | `/workspace` | Create a workspace (country, policy title) |
 | `GET` | `/workspace` · `/workspace/{id}` | List / fetch workspaces |
 | `POST` | `/upload/{workspace_id}` | Upload policy PDF → starts background analysis |
-| `GET` | `/analyze/{workspace_id}` | Full analysis results (8 dimensions × 4 modules) |
+| `GET` | `/analyze/{workspace_id}` | Full analysis results (8 dimensions × 4 sections) |
 | `POST` | `/auditor/upload` | AI Auditor: ingest a PDF for chat only (no analysis) |
 | `POST` | `/brief/{workspace_id}/generate` | Generate the executive brief (one synthesis call) |
 | `GET` | `/brief/{workspace_id}` | Fetch the cached brief |
@@ -299,7 +299,7 @@ anywhere (Vercel, Netlify, or behind the same Caddy instance as the API).
 |---|---|
 | `/` | Landing — three-section glide: hero (typed tagline), the pipeline (Ingestion → Retrieval → Analysis → Brief → AI Auditor), and the 8-dimensions statement |
 | `/workspace` | Create workspaces, upload policy PDFs, watch analysis status |
-| `/analysis` | Per-dimension cards: Module 1 evaluation, Module 2 recommendations, Module 3 roadmap, Module 4 case intelligence, with collapsible evidence toggles |
+| `/analysis` | Per-dimension cards: evaluation, recommendations, roadmap, and case intelligence, with collapsible evidence toggles |
 | `/brief` | Executive brief preview, coverage dashboard, PDF/DOCX export |
 | `/auditor` | AI Auditor chat — ask about the analysis, the framework library, or an uploaded document |
 | `/frameworks` | Framework library — every indexed source with status and links |
@@ -321,7 +321,7 @@ RUN_EVALUATION_TESTS=1 python -m pytest tests/evaluation/ -v
 
 Coverage: PDF validation failure modes, structure-aware chunking, citation
 verification (including deliberately broken cases), the deterministic coverage
-ladder, guardrails, framework routing and module roles, brief generation,
+ladder, guardrails, framework routing and role filtering, brief generation,
 stability, and the full pipeline.
 
 ---
@@ -365,14 +365,14 @@ See **[LAUNCH.md](LAUNCH.md)** for the full runbook. In short:
 ```
 aura-sdg/
 ├── config/
-│   └── frameworks.yaml           # All indexed frameworks: module roles, dimension tags, regions, URLs
+│   └── frameworks.yaml           # All indexed frameworks: roles, dimension tags, regions, URLs
 ├── backend/
 │   ├── data/
 │   │   ├── raw_policies/         # Ingested framework PDFs (gitignored)
 │   │   ├── chroma/               # ChromaDB persistence (gitignored)
 │   │   └── uploads/              # Uploaded policy PDFs (gitignored)
 │   ├── src/
-│   │   ├── gap_analyzer.py       # 8-dimension × 4-module analysis orchestration
+│   │   ├── gap_analyzer.py       # 8-dimension × 4-section analysis orchestration
 │   │   ├── retrieval.py          # Per-dimension retrieval + dimension-tagged budget reserves
 │   │   ├── framework_router.py   # Deterministic framework selection (roles, tags, regions)
 │   │   ├── deterministic.py      # Coverage ladder (R1/R2), maturity, low-information filter
@@ -424,6 +424,6 @@ aura-sdg/
 - **Deterministic where it matters** — coverage, maturity, priority, risk,
   timelines, and responsible agencies are decided in code, reproducible across
   runs, and auditable.
-- **Testable modules** — every file in `src/` is independently unit-testable.
+- **Testable building blocks** — every file in `src/` is independently unit-testable.
 - **Clean separation** — the backend has zero knowledge of the frontend; all
   communication is HTTP/JSON.
