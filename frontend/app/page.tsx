@@ -266,13 +266,13 @@ function AnalysisVisual() {
       footer: null as string | null,
     },
     {
-      chip: "Module 2",
+      chip: "Recommendations",
       title: "Recommendations & Alignment",
       lines: ["w-11/12", "w-10/12", "w-4/5", "w-9/12", "w-3/4"],
       footer: "Recommendations →",
     },
     {
-      chip: "Module 3",
+      chip: "Roadmap",
       title: "Implementation Roadmap",
       lines: ["w-11/12", "w-10/12", "w-4/5", "w-9/12", "w-3/4"],
       footer: "6–12 months",
