@@ -1,0 +1,93 @@
+# Production deployment — Meridian (AI Policy Intelligence Workbench)
+#
+# Usage:
+#   1. Create .env.prod (see LAUNCH.md) with DATABASE_URL, all GEMINI_API_KEY_*,
+#      CORS_ORIGINS, etc. Secrets must NOT be committed.
+#   2. Ship the indexed corpus + uploads to this server (see LAUNCH.md — rsync
+#      backend/data from your dev machine; the framework library cannot be
+#      re-synced from public URLs alone).
+#   3. docker compose -f docker-compose.prod.yml up -d --build
+#
+# Frontend URL is injected at build time via NEXT_PUBLIC_API_URL (defaults to
+# the API service on the compose network, which works only behind a reverse
+# proxy that also serves the frontend — see the caddy service below).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: aura
+      POSTGRES_DB: aura_sdg
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura -d aura_sdg"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env.prod
+    environment:
+      # Inside the compose network the DB is reached via the service name.
+      DATABASE_URL: postgresql+asyncpg://aura:aura@postgres:5432/aura_sdg
+      CHROMA_PERSIST_DIR: /app/data/chroma
+      LOG_LEVEL: INFO
+      DEV_MODE: "false"
+    volumes:
+      - chroma_data:/app/data/chroma
+      - uploads_data:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Public URL of the API as seen by browsers (set in .env.prod).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional TLS termination — set SITE_ADDRESS in .env.prod (e.g.
+  # meridian.example.com) and Caddy auto-issues Let's Encrypt certificates.
+  # Omit this service if you use your own reverse proxy.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  pgdata:
+  chroma_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:

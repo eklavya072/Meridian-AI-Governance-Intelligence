@@ -1,0 +1,10 @@
+# Meridian reverse proxy — used by docker-compose.prod.yml
+# SITE_ADDRESS comes from .env.prod via compose environment substitution.
+{$SITE_ADDRESS:localhost} {
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+    handle {
+        reverse_proxy web:3000
+    }
+}

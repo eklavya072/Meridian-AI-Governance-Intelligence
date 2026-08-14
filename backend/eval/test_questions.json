@@ -1,0 +1,92 @@
+[
+  {
+    "question": "What does the OECD AI Principles say about transparency and explainability of AI systems?",
+    "expected_answer": "The OECD AI Principles state that AI systems should be transparent and deployers should provide meaningful information to enable understanding of AI outcomes.",
+    "reference_framework": "OECD AI Principles",
+    "dimension": "Transparency"
+  },
+  {
+    "question": "According to UNESCO, what is required for meaningful human oversight of AI systems?",
+    "expected_answer": "UNESCO recommends that AI systems should be subject to human oversight, and that humans should be able to intervene and override AI decisions when necessary.",
+    "reference_framework": "UNESCO Recommendation on the Ethics of AI",
+    "dimension": "Human Oversight"
+  },
+  {
+    "question": "What accountability mechanisms does the UNDP Digital Strategy require for AI governance?",
+    "expected_answer": "The UNDP Digital Strategy emphasizes accountability through clear governance structures, audit mechanisms, and responsible digital transformation practices.",
+    "reference_framework": "UNDP Digital Strategy 2022-2025",
+    "dimension": "Accountability"
+  },
+  {
+    "question": "How does the OECD address risk management in AI systems?",
+    "expected_answer": "The OECD AI Principles call for risk-based approaches to AI regulation, including identification, assessment, and mitigation of risks throughout the AI system lifecycle.",
+    "reference_framework": "OECD AI Principles",
+    "dimension": "Risk Management"
+  },
+  {
+    "question": "What does the UNESCO Recommendation say about privacy and data protection in AI?",
+    "expected_answer": "UNESCO emphasizes that privacy must be protected throughout the AI lifecycle, with appropriate data protection frameworks and individual consent mechanisms.",
+    "reference_framework": "UNESCO Recommendation on the Ethics of AI",
+    "dimension": "Privacy"
+  },
+  {
+    "question": "What does the UN Global Digital Compact say about inclusion in digital transformation?",
+    "expected_answer": "The Global Digital Compact emphasizes digital inclusion, bridging the digital divide, and ensuring no one is left behind in digital transformation.",
+    "reference_framework": "UN Global Digital Compact",
+    "dimension": "Inclusion"
+  },
+  {
+    "question": "According to the OECD AI Principles, what are the key values-based principles for trustworthy AI?",
+    "expected_answer": "The OECD AI Principles identify five values-based principles: inclusive growth, human-centred values, transparency, robustness, and accountability.",
+    "reference_framework": "OECD AI Principles",
+    "dimension": "Ethics"
+  },
+  {
+    "question": "What does the UNESCO Recommendation say about governance frameworks for AI?",
+    "expected_answer": "UNESCO recommends that member states establish governance frameworks that ensure ethical oversight, multi-stakeholder participation, and regulatory compliance for AI systems.",
+    "reference_framework": "UNESCO Recommendation on the Ethics of AI",
+    "dimension": "Governance"
+  },
+  {
+    "question": "How does the UNDP Digital Strategy approach digital public infrastructure?",
+    "expected_answer": "The UNDP Digital Strategy promotes digital public infrastructure as a foundation for inclusive digital transformation, emphasizing open standards and interoperability.",
+    "reference_framework": "UNDP Digital Strategy 2022-2025",
+    "dimension": "Governance"
+  },
+  {
+    "question": "What principles does the OECD outline for accountability in AI?",
+    "expected_answer": "The OECD principles state that AI actors should be accountable for the proper functioning of AI systems, including oversight, auditing, and reporting mechanisms.",
+    "reference_framework": "OECD AI Principles",
+    "dimension": "Accountability"
+  },
+  {
+    "question": "According to the UN Roadmap for Digital Cooperation, what are the key governance challenges for AI?",
+    "expected_answer": "The UN Roadmap identifies AI governance challenges including ethical frameworks, bias mitigation, transparency requirements, and international cooperation mechanisms.",
+    "reference_framework": "UN Roadmap for Digital Cooperation",
+    "dimension": "Governance"
+  },
+  {
+    "question": "What does the UNESCO Recommendation say about inclusion and non-discrimination in AI?",
+    "expected_answer": "UNESCO recommends that AI systems should be designed and deployed in ways that promote inclusion, prevent discrimination, and address existing inequalities.",
+    "reference_framework": "UNESCO Recommendation on the Ethics of AI",
+    "dimension": "Inclusion"
+  },
+  {
+    "question": "What human oversight requirements does the OECD specify for AI systems?",
+    "expected_answer": "The OECD AI Principles state that AI systems should be subject to human oversight, including the ability for humans to challenge and override AI decisions.",
+    "reference_framework": "OECD AI Principles",
+    "dimension": "Human Oversight"
+  },
+  {
+    "question": "What risk categories does the UNESCO Recommendation identify for AI ethics?",
+    "expected_answer": "UNESCO identifies risks including bias, discrimination, privacy violations, lack of transparency, and unintended consequences of AI systems.",
+    "reference_framework": "UNESCO Recommendation on the Ethics of AI",
+    "dimension": "Risk Management"
+  },
+  {
+    "question": "How does the UNDP Digital Strategy address ethical considerations in digital transformation?",
+    "expected_answer": "The UNDP Digital Strategy embeds ethics through human rights-based approaches, do-no-harm principles, and inclusive stakeholder engagement in digital programmes.",
+    "reference_framework": "UNDP Digital Strategy 2022-2025",
+    "dimension": "Ethics"
+  }
+]
