@@ -1,0 +1,49 @@
+# ── Environment & secrets (never commit) ────────────────────────────────
+.env
+.env.local
+.env.prod
+.env.*.local
+
+# ── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node / Next.js ──────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+npm-debug.log*
+*.tsbuildinfo
+
+# ── ChromaDB persistence (indexed corpus — shipped separately, never git) ─
+**/chroma/
+
+# ── Raw framework PDFs (large, sourced locally — shipped separately) ────
+**/raw_policies/*.pdf
+!**/raw_policies/.gitkeep
+
+# ── Uploaded documents & generated output (private user data) ───────────
+backend/data/uploads/
+backend/data/reports/
+backend/data/gemini_rpd.json
+
+# ── IDE / OS ────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ── Logs ────────────────────────────────────────────────────────────────
+*.log

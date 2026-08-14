@@ -1,0 +1,470 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ────────────────────────────────────────────────────────
+   Single source of truth for the palette. Components reference these via
+   Tailwind utilities (navy-900, teal-500, glass-*) or directly via var().
+   Palette is black + white + grey, full stop — the old navy/teal values
+   are remapped, never referenced in blue form. */
+:root {
+  /* ── Monochrome tokens — the canonical scale. ───────────────────────── */
+  --black: #0A0A0A; /* primary dark — nav, headings, primary buttons */
+  --grey-900: #1A1A1A;
+  --grey-700: #404040;
+  --grey-500: #737373; /* secondary text, muted labels */
+  --grey-300: #D4D4D4; /* borders */
+  --grey-100: #F5F5F5; /* page background, subtle surface tint */
+  --white: #FFFFFF;
+
+  /* Remapped aliases — keep old names resolving to the greys so no
+     component class silently drops its color. */
+  --navy-950: #0A0A0A; /* primary dark */
+  --navy-800: #404040; /* secondary dark */
+  --navy-600: #737373; /* body/label text on light backgrounds */
+  --teal-500: #8A8A8A; /* grey accent */
+  --teal-100: #E5E5E5; /* pale grey tint */
+  --surface: #F5F5F5; /* page background — warm-neutral off-white */
+  --border: rgba(10, 10, 10, 0.10); /* thin black-tinted border */
+  --shadow-sm: 0 1px 2px rgba(10, 10, 10, 0.05);
+  --shadow-md: 0 4px 12px rgba(10, 10, 10, 0.08);
+
+  /* ── Chart tokens — muted, not the library's default palette. Coverage
+     distribution uses the muted status colors; everything else grey. ─── */
+  --chart-covered: #3F7A52; /* muted forest green */
+  --chart-partial: #B07E2B; /* muted amber */
+  --chart-missing: #A8483F; /* muted red, desaturated */
+  --chart-neutral: #8A8A8A; /* grey for "not assessed" */
+
+  /* ── Nav glass — black, transparent enough that page content reads
+     through the blur, opaque enough that the pill never washes out and
+     white labels stay legible. ────────────────────────────────────────── */
+  --nav-glass: rgba(10, 10, 10, 0.7);
+
+  /* ── Legacy nav height (76px content + 1px border) — retained for the
+     historical backups (pipeline/grainient hero variants) that tuck under
+     a full-width bar. The current floating pill needs no tuck; the live
+     home page cancels main's pt-24 directly. ─────────────────────────── */
+  --nav-h: 77px;
+}
+
+body {
+  background: var(--surface);
+  color: var(--navy-950);
+  @apply antialiased font-sans;
+}
+
+@layer components {
+  /* Glass panel (light) — translucent white fill, visible blur, a bright
+     specular edge along the top (the "glass catch light") and an ambient
+     navy shadow. The specular line is what makes a surface READ as glass. */
+  .glass-panel {
+    background: linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0.5) 100%
+    );
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 8px 32px rgba(10, 10, 10, 0.1);
+    border-radius: 16px;
+  }
+
+  /* Glass panel (dark) — used on the navy hero: frosted glass over the
+     dot-grid backdrop, with a bright specular top edge so the blur is
+     actually visible against the dark background. */
+  .glass-dark {
+    background: linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.05) 100%
+    );
+    backdrop-filter: blur(20px) saturate(1.5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 30px 80px rgba(0, 0, 0, 0.5);
+    border-radius: 16px;
+  }
+
+  /* Floating glass pill nav — the site's ONE glass element. Centered,
+     fully rounded, real backdrop blur. The translucent black fill keeps
+     white labels legible over any page surface while content visibly blurs
+     underneath when scrolling. */
+  .glass-nav,
+  .nav-pill {
+    background: var(--nav-glass);
+    backdrop-filter: blur(20px) saturate(1.5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 8px 24px rgba(0, 0, 0, 0.24);
+  }
+  .nav-pill {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 9999px;
+  }
+
+  /* Clay card — soft, raised, matte surface: pale vertical gradient,
+     rounded, ambient drop shadow + a hint of inner bottom shading, and a
+     bright top catch light. Reads as a soft 3D slab, not a flat box. */
+  .clay-card {
+    background: linear-gradient(
+      180deg,
+      #ffffff 0%,
+      #f0f0f0 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 20px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 1),
+      0 10px 30px rgba(10, 10, 10, 0.08),
+      0 2px 6px rgba(10, 10, 10, 0.06);
+  }
+  .clay-card:hover {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 1),
+      0 18px 44px rgba(10, 10, 10, 0.12),
+      0 3px 8px rgba(10, 10, 10, 0.08);
+    transform: translateY(-3px);
+    transition: box-shadow 200ms ease-out, transform 200ms ease-out;
+  }
+
+  /* Clay button — soft raised pill on dark backgrounds: pale gradient,
+     bright top catch light, under-shadow that makes it sit *above* the
+     surface like a clay slab. White/navy text pair.
+     Note: pressable's :active scale still applies on top. */
+  .clay-button {
+    background: linear-gradient(180deg, #ffffff 0%, #e3e3e3 100%);
+    border-radius: 12px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 1),
+      0 12px 28px rgba(0, 0, 0, 0.35),
+      0 2px 6px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+  }
+  .clay-button:hover {
+    background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 1),
+      0 16px 34px rgba(0, 0, 0, 0.42),
+      0 3px 8px rgba(0, 0, 0, 0.22);
+    transform: translateY(-1px);
+    transition: box-shadow 200ms ease-out, transform 200ms ease-out;
+  }
+
+  /* Glass button — frosted outline on dark backgrounds, for secondary
+     actions. Blurs whatever passes beneath it. */
+  .glass-button {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  .glass-button:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.45);
+    transition: background 200ms ease-out, border-color 200ms ease-out;
+  }
+
+  /* Press feedback: subtle 150ms scale-down on :active, applied to every
+     clickable surface. Transform-only — never animates layout.
+     Declares the FULL property list (transform + colors) so this class can
+     coexist with `transition-colors` on the same element: Tailwind utilities
+     would otherwise override our transition-property and the press scale
+     would snap with no transition. */
+  .pressable {
+    transition-property: transform, color, background-color, border-color,
+      text-decoration-color, fill, stroke, box-shadow;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    transition-duration: 150ms;
+    will-change: transform;
+  }
+  .pressable:active {
+    transform: scale(0.98);
+  }
+
+  /* Indeterminate progress bar for pipeline processing states. */
+  .progress-indeterminate {
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-indeterminate::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: currentColor;
+    opacity: 0.85;
+    animation: indeterminate-slide 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+
+  /* Processing dot: soft breathing pulse, transform/opacity only. */
+  .status-dot {
+    animation: status-pulse 1.6s ease-out infinite;
+  }
+
+  /* Eyebrow / section-label (Section 6): 11-12px, 0.05em tracking,
+     dark weight — applied identically to every section label. The hero
+     eyebrow keeps its wider 0.2em tracking (a deliberate hero-only
+     accent). Near-black, never grey: labels differentiate by weight,
+     size and letter-spacing, not by fading the color. */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.05em] text-navy-950;
+  }
+
+  /* ── Module-card typography (analysis modules) ──────────────────────────
+     One hierarchy shared by the four module cards (Evaluation,
+     Recommendations, Roadmap, Case Intelligence) so headings never read
+     like body copy. The old ad-hoc mixture (14px labels darker than their
+     values, headings same size as paragraphs) is replaced by clear levels:
+
+       .module-heading  — 12px uppercase tracked section label (the
+                          "Coverage Reasoning" / "Recommendations" heads)
+       .module-label    — 12px uppercase quiet label introducing a value
+       .module-value    — 14px/600 dark — the answer, pops off its label
+       .module-body     — 14px/400 relaxed leading — paragraphs & list items
+       .module-list     — body + disc bullets with a clean hanging indent
+       .module-meta     — 12px gray-500 — secondary/summary lines
+  */
+  .module-heading {
+    @apply text-xs font-bold uppercase tracking-[0.08em] text-navy-950;
+  }
+  .module-label {
+    /* One step lighter than .module-heading (bold 700) so a label never
+       reads as a section heading — weight, not colour, carries the cue. */
+    @apply text-xs font-medium uppercase tracking-[0.06em] text-navy-950;
+  }
+  .module-value {
+    @apply text-sm font-bold text-navy-950;
+  }
+  .module-body {
+    @apply text-sm font-medium leading-relaxed text-navy-900;
+  }
+  .module-list {
+    @apply text-sm font-medium leading-relaxed text-navy-900 list-disc pl-5 marker:text-navy-950 space-y-2.5;
+  }
+  .module-meta {
+    @apply text-xs font-medium text-navy-900;
+  }
+
+  /* Card recipe (Section 5) — one consistent surface for every card. */
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    padding: 24px;
+  }
+  .card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+    transition: all 200ms ease-out;
+  }
+
+  /* Dot status indicator (Section 2) — 8px dot + label, no fill. The dot
+     carries the semantic color (green/amber/red); the label is always
+     near-black, never grey. */
+  .dot-indicator {
+    @apply inline-flex items-center gap-2 text-sm font-semibold text-navy-950;
+  }
+  .dot-indicator .dot {
+    @apply w-2 h-2 rounded-full shrink-0;
+  }
+
+  /* Glass chip — small frosted pill used for hero trust markers and
+     floating accents. Bright specular top edge so it reads as glass. */
+  .glass-chip {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.25),
+      0 12px 32px rgba(0, 0, 0, 0.35);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  /* Hero ambient motion — slow, transform-only, never decorative to the
+     point of distraction. Disabled under prefers-reduced-motion. */
+  .aurora {
+    animation: aurora-drift 18s ease-in-out infinite;
+  }
+  .aurora-late {
+    animation-delay: -9s;
+  }
+  .float-slow {
+    animation: float-y 7s ease-in-out infinite;
+  }
+  .float-slower {
+    animation: float-y 9s ease-in-out infinite;
+    animation-delay: -3s;
+  }
+
+  /* App-wide scrollbar: slightly wider than the OS default, with a soft
+     navy thumb — visible but calm on every scrollable surface (including
+     the workspace history list). */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(10, 10, 10, 0.18) transparent;
+  }
+
+  /* Landing pages: the three landing sections snap to viewport boundaries
+     (proximity — gentle), so the page feels like three pages gliding into
+     each other. Only on desktop (lg+) where the sections fit a viewport:
+     on narrow screens the stacked pipeline page is taller than the
+     viewport, and snap-start on a taller-than-viewport section fights the
+     scroll — the animation panel below the stage list becomes hard to
+     reach, which reads as "half the animation missing". No snap points
+     exist on the other routes, so they scroll normally. */
+  @media (min-width: 1024px) {
+    html {
+      scroll-snap-type: y proximity;
+    }
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(10, 10, 10, 0.18);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(10, 10, 10, 0.32);
+    background-clip: padding-box;
+  }
+
+  /* Hide the native scrollbar on the capabilities carousel (snap-scroll
+     driven; the dots + arrows are the visible controls). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Animated underline link ("skiper"-style) — the underline draws itself
+     outward from under the cursor on hover and collapses back on leave.
+     The --u-origin custom property is set per-mouse-move by
+     <UnderlineLink />, so the line always grows from where the pointer
+     touched the link, not just from the left edge. */
+  .link-swipe {
+    position: relative;
+    text-decoration: none;
+    transition: color 200ms ease-out;
+  }
+  .link-swipe::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -3px;
+    height: 2px;
+    border-radius: 999px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: var(--u-origin, left center);
+    transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
+  .link-swipe:hover::after,
+  .link-swipe:focus-visible::after {
+    transform: scaleX(1);
+  }
+
+  /* Nav variant: the underline stays drawn (persistently) on the active
+     route, in the accent blue instead of currentColor. */
+  .link-swipe-active::after {
+    transform: scaleX(1);
+    background: #D4D4D4;
+  }
+
+  /* Auto-hiding nav — slides up out of view on scroll-down and back on
+     scroll-up / hover-near-top. The visibility flip is DELAYED until the
+     0.3s slide-out finishes, so the bar leaves tab order and screen readers
+     only once it is truly off-screen (no invisible focusable links, no
+     aria-hidden mismatch). */
+  .nav-auto-hide {
+    transition: transform 0.3s ease-out, visibility 0s linear 0.3s;
+  }
+  .nav-auto-hide.is-hidden {
+    transform: translateY(-100%);
+    visibility: hidden;
+  }
+}
+
+@keyframes aurora-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, -30px) scale(1.1);
+  }
+}
+
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes indeterminate-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable {
+    transition: none;
+  }
+  .pressable:active {
+    transform: none;
+  }
+  .progress-indeterminate::after,
+  .status-dot,
+  .aurora,
+  .float-slow,
+  .float-slower,
+  .link-swipe::after,
+  .nav-auto-hide {
+    animation: none;
+    transition: none;
+  }
+}

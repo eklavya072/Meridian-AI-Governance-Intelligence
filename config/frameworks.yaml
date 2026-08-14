@@ -1,0 +1,416 @@
+frameworks:
+  # ─────────────────────────────────────────────────────────────
+  # MODULE 1 — GOVERNANCE DIMENSION EVALUATION (Normative sources)
+  # "What good looks like": principles, requirements, obligations.
+  # ─────────────────────────────────────────────────────────────
+  - name: "UNESCO Recommendation on the Ethics of AI"
+    pdf_url: "https://unesdoc.unesco.org/ark:/48223/pf0000381137"
+    website: "https://unesdoc.unesco.org/ark:/48223/pf0000381137"
+    version: "2021"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+
+  - name: "OECD AI Principles"
+    pdf_url: "https://oecd.ai/assets/files/OECD-LEGAL-0449-en.pdf"
+    website: "https://oecd.ai/en/ai-principles"
+    version: "2024"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+
+  - name: "UNDP Digital Strategy 2022-2025"
+    pdf_url: "https://digitalstrategy.undp.org/documents/Digital-Strategy-2022-2025-Full-Document_ENG_Interactive.pdf"
+    website: "https://digitalstrategy.undp.org"
+    version: "2022"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+
+  - name: "UN Roadmap for Digital Cooperation"
+    pdf_url: "https://www.un.org/digital-emerging-technologies/sites/www.un.org.techenvoy/files/general/Roadmap_for_Digital_Cooperation_9June.pdf"
+    website: "https://www.un.org/en/content/digital-cooperation-roadmap"
+    version: "2020"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+
+  - name: "UN Global Digital Compact"
+    pdf_url: "https://www.un.org/global-digital-compact/sites/default/files/2024-09/Global%20Digital%20Compact%20-%20English_0.pdf"
+    website: "https://www.un.org/global-digital-compact"
+    version: "2024"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+
+  - name: "EU AI Act (Regulation (EU) 2024/1689)"
+    pdf_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=OJ:L_202401689"
+    website: "https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai"
+    version: "2024"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+
+  - name: "NIST AI Risk Management Framework 1.0"
+    pdf_url: "https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf"
+    website: "https://www.nist.gov/itl/ai-risk-management-framework"
+    version: "1.0"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+
+  - name: "Keeping an Eye on AI: A Framework for Effective Human Oversight of AI Systems"
+    pdf_url: "https://papers.ssrn.com/sol3/Delivery.cfm/6576159.pdf?abstractid=6576159&mirid=1"
+    website: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6576159"
+    version: "2026"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when evaluating the Human Autonomy dimension.
+    dimensions:
+      - Human Autonomy
+    regions:
+      - Global
+
+  # ─────────────────────────────────────────────────────────────
+  # MODULE 2 — RECOMMENDATIONS & ALIGNMENT (Practical sources)
+  # "How to actually do it": toolkits, mechanisms, methodologies.
+  # ─────────────────────────────────────────────────────────────
+  - name: "CDEI Review into Bias in Algorithmic Decision-Making"
+    pdf_url: "https://assets.publishing.service.gov.uk/media/60142096d3bf7f70ba377b20/Review_into_bias_in_algorithmic_decision-making.pdf"
+    website: "https://www.gov.uk/government/publications/review-into-bias-in-algorithmic-decision-making"
+    version: "2020"
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot when Fairness is
+    # evaluated (dimension reserve in retrieval.py).
+    dimensions:
+      - Fairness
+
+  - name: "ICO & Alan Turing: Explaining Decisions Made with AI"
+    pdf_url: "https://ico.org.uk/media2/about-the-ico/consultations/2616434/explaining-ai-decisions-part-1.pdf"
+    website: "https://www.gov.uk/data-ethics-guidance/explaining-decisions-made-with-ai"
+    version: "2020"
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot for Transparency.
+    dimensions:
+      - Transparency
+
+  - name: "UNESCO Ethical Impact Assessment"
+    pdf_url: "https://unesdoc.unesco.org/ark:/48223/pf0000386276/PDF/386276eng.pdf.multi"
+    website: "https://unesdoc.unesco.org/ark:/48223/pf0000386276"
+    version: "2023"
+    checksum: null
+    local_path: "backend/data/raw_policies/UNESCO_Ethical_Impact_Assessment.pdf"
+    roles: ["module_2_practical"]
+
+  - name: "OECD Catalogue of Tools and Metrics for Trustworthy AI"
+    pdf_url: "https://www.oecd.org/content/dam/oecd/en/publications/reports/2021/06/tools-for-trustworthy-ai_0e36bb08/008232ec-en.pdf"
+    website: "https://oecd.ai/en/"
+    version: "2021"
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+
+  - name: "NIST SP 1270: Bias Management in AI"
+    pdf_url: "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.1270.pdf"
+    website: "https://www.nist.gov/publications/toward-standard-identification-and-management-bias-artificial-intelligence"
+    version: "2025"
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot for Fairness.
+    dimensions:
+      - Fairness
+
+  - name: "CIPL Privacy-Enhancing Technologies in AI"
+    pdf_url: "https://www.informationpolicycentre.com/wp-content/uploads/2017/09/cipl_pets_and_ppts_in_ai_mar25-2.pdf"
+    website: "https://www.informationpolicycentre.com/"
+    version: "2025"
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot for Privacy.
+    dimensions:
+      - Privacy
+
+  - name: "Model Cards for Model Reporting"
+    pdf_url: "https://arxiv.org/pdf/1810.03993"
+    website: "https://dl.acm.org/doi/epdf/10.1145/3287560.3287596"
+    version: "2019"
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot for Transparency.
+    dimensions:
+      - Transparency
+
+  - name: "Revisiting the Measurement of Digital Inclusion"
+    pdf_url: "https://documents1.worldbank.org/curated/en/099655407192421260/pdf/IDU-e0c45264-79f8-4c19-a6c8-b46c294d674e.pdf"
+    website: "https://documents.worldbank.org/en/publication/documents-reports"
+    version: "2024"
+    checksum: null
+    local_path: "backend/data/raw_policies/Revisiting_the_Measurement_of_Digital_Inclusion.pdf"
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot for Inclusivity.
+    dimensions:
+      - Inclusivity
+
+  - name: "Toward Sustainable Generative AI: A Scoping Review of Carbon Footprint"
+    pdf_url: "https://arxiv.org/pdf/2511.17179"
+    website: "https://arxiv.org/abs/2511.17179"
+    version: "2025"
+    checksum: null
+    local_path: "backend/data/raw_policies/Toward_Sustainable_Generative_AI_Scoping_Review_of_Carbon_Footprint.pdf"
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot for Environmental
+    # Sustainability.
+    dimensions:
+      - Environmental Sustainability
+
+  - name: "How Do Companies Manage the Environmental Sustainability of AI? An Interview Study"
+    pdf_url: "https://arxiv.org/pdf/2505.07317"
+    website: "https://arxiv.org/abs/2505.07317"
+    version: "2025"
+    checksum: null
+    local_path: "backend/data/raw_policies/How_Do_Companies_Manage_the_Environmental_Sustainability_of_AI.pdf"
+    roles: ["module_2_practical"]
+    # Dimension-tagged: guaranteed a Module 2 budget slot for Environmental
+    # Sustainability.
+    dimensions:
+      - Environmental Sustainability
+
+  # ─────────────────────────────────────────────────────────────
+  # ROUTED FRAMEWORKS — Module 1 dimension-specific + regional
+  # Selected deterministically by backend code (src/framework_router.py),
+  # never by the LLM. Searched only for the tagged dimension/region.
+  # ─────────────────────────────────────────────────────────────
+
+  - name: "UNESCO Policy Area 5 — Environment and Ecosystems"
+    pdf_url: null
+    website: "https://unesdoc.unesco.org/ark:/48223/pf0000381137"
+    version: "2021"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY for Environmental Sustainability. This is the
+    # Policy Action Area 5 chapter of the UNESCO Recommendation (already
+    # indexed as a core framework). Drop a standalone excerpt PDF into
+    # backend/data/raw_policies/UNESCO_Policy_Area_5_Environment_and_Ecosystems.pdf
+    # to index it separately; until then it is skipped harmlessly.
+    dimensions:
+      - Environmental Sustainability
+    regions:
+      - Global
+
+  - name: "AI for Environment and Ecosystems Toolkit for Policymakers"
+    pdf_url: null
+    website: "https://www.unesco.org/ethics-ai/en/node/288"
+    version: "2026"
+    checksum: null
+    local_path: "backend/data/raw_policies/AI_for_Environment_and_Ecosystems_Toolkit_for_Policymakers.pdf"
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY for Environmental Sustainability. Indexed corpus =
+    # merged AI-environment reports: OECD AI Footprint (2022), ITU-T L.1320
+    # energy-efficiency metrics, ITU "Measuring what matters" (2025), AI Supply
+    # Chain Impact Framework, Landscape Assessment of AI for Climate and Nature
+    # (2024), GPAI Biodiversity & AI (2022), GPAI Responsible AI for the
+    # Environment Workshop (2023).
+    dimensions:
+      - Environmental Sustainability
+    regions:
+      - Global
+
+  - name: "ASEAN Guide on AI Governance and Ethics"
+    pdf_url: "https://asean.org/wp-content/uploads/2024/02/ASEAN-Guide-on-AI-Governance-and-Ethics_beautified_201223_v2.pdf"
+    website: "https://asean.org/asean-guide-on-ai-governance-and-ethics/"
+    version: "2024"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when the document's country is an ASEAN member.
+    dimensions: []
+    regions:
+      - ASEAN
+
+  - name: "Singapore Model AI Governance Framework for Generative AI"
+    pdf_url: null
+    website: "https://www.imda.gov.sg/model-ai-governance-framework"
+    version: "2026"
+    checksum: null
+    local_path: "backend/data/raw_policies/Singapore_Model_AI_Governance_Framework_for_Generative_AI.pdf"
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when the document's country is an ASEAN member.
+    # Indexed corpus (merged, 344 pages): IMDA Model AI Governance Framework
+    # for Generative AI (Jun 2024), AI Safety Red Teaming Challenge evaluation
+    # report (Feb 2025) + challenge report (Jun 2026) + executive summary,
+    # Team CREX safety brief, "100 Experiments" use-case compendium, DBS
+    # money-laundering use-case compendium, Guide to Job Redesign in the Age
+    # of AI, Legal Responsibility for AI Agents discussion paper (May 2026),
+    # CSA+IMDA Safe & Secure Use of Generative AI advisory, and the OpenClaw
+    # responsible-deployment case study.
+    dimensions: []
+    regions:
+      - ASEAN
+
+  - name: "African Union Continental AI Strategy"
+    pdf_url: "https://au.int/sites/default/files/documents/44004-doc-EN-_Continental_AI_Strategy_July_2024.pdf"
+    website: "https://au.int/en/continental-ai-strategy"
+    version: "2024"
+    checksum: null
+    local_path: null
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when the document's country is an African Union member.
+    dimensions: []
+    regions:
+      - AU
+
+  - name: "World Development Report 2026: The Promise of Artificial Intelligence"
+    pdf_url: "https://documents.worldbank.org/en/publication/documents-reports"
+    website: "https://www.worldbank.org/en/news/press-release/2026/08/04/ai-offers-lifeline-to-developing-economies-in-an-era-of-weak-growth"
+    version: "2026"
+    checksum: null
+    local_path: "backend/data/raw_policies/World_Development_Report_2026_The_Promise_of_Artificial_Intelligence.pdf"
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when evaluating the Inclusivity dimension. World
+    # Bank flagship report on AI's implications for developing countries — the
+    # Global-South / inclusive-AI evidence base.
+    dimensions:
+      - Inclusivity
+    regions:
+      - Global
+
+  - name: "Digital Progress and Trends Report 2025: Strengthening AI Foundations"
+    pdf_url: "https://www.worldbank.org/en/publication/dptr2025-ai-foundations"
+    website: "https://www.worldbank.org/en/publication/dptr2025-ai-foundations"
+    version: "2025"
+    checksum: null
+    local_path: "backend/data/raw_policies/Digital_Progress_and_Trends_Report_2025_Strengthening_AI_Foundations.pdf"
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when evaluating the Inclusivity dimension. World
+    # Bank "four Cs" (connectivity, compute, context, competency) framework for
+    # inclusive AI adoption.
+    dimensions:
+      - Inclusivity
+    regions:
+      - Global
+
+  - name: "Mainstreaming Accessibility and Inclusivity in AI and Digital Technologies"
+    pdf_url: null
+    website: "https://www.unesco.org/en/articles/mainstreaming-accessibility-and-inclusivity-ai-and-digital-technologies"
+    version: "2024"
+    checksum: null
+    local_path: "backend/data/raw_policies/Mainstreaming_Accessibility_and_Inclusivity_in_AI_and_Digital_Technologies.pdf"
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when evaluating the Inclusivity dimension. UNESCO
+    # Information for All Programme (IFAP) statement on accessibility and
+    # inclusivity in AI — captured as PDF from the web article (no standalone
+    # PDF exists).
+    dimensions:
+      - Inclusivity
+    regions:
+      - Global
+
+  - name: "OECD Digital Divides — Topic Overview"
+    pdf_url: null
+    website: "https://www.oecd.org/en/topics/digital-divides.html"
+    version: "2024"
+    checksum: null
+    local_path: "backend/data/raw_policies/OECD_Digital_Divides_Topic_Overview.pdf"
+    roles: ["module_1_normative"]
+    # Routed: searched ONLY when evaluating the Inclusivity dimension. OECD
+    # topic page on digital divides (connectivity, age/education/income gaps,
+    # firm-size AI-adoption gaps) — captured as PDF from the web hub (no single
+    # report PDF).
+    dimensions:
+      - Inclusivity
+    regions:
+      - Global
+
+  # ─────────────────────────────────────────────────────────────
+  # MODULE 3 — IMPLEMENTATION ROADMAP (Practical implementation sources)
+  # "How to sequence, resource, and monitor the fix": pilot programmes,
+  # management-system standards, reporting frameworks, toolkits.
+  # Searched ONLY for dimensions whose coverage is Partial or Missing.
+  # ─────────────────────────────────────────────────────────────
+
+  - name: "AI Verify Assurance Pilot — Main Report"
+    pdf_url: "https://assurance.aiverifyfoundation.sg/wp-content/uploads/2025/06/Assurance-Pilot-Main-Report.pdf"
+    website: "https://www.imda.gov.sg/about-imda/emerging-technologies-and-research/artificial-intelligence"
+    version: "2025"
+    checksum: null
+    local_path: "backend/data/raw_policies/AI_Verify_Assurance_Pilot_Main_Report.pdf"
+    roles: ["module_3_implementation"]
+    # Dimension-tagged: guaranteed a Module 3 budget slot for Safety (the
+    # assurance/testing framework most directly serves safety evaluation).
+    dimensions:
+      - Safety
+
+  - name: "G7 Hiroshima AI Process (HAIP) Reporting Framework"
+    pdf_url: null
+    website: "https://oecd.ai/en/transparency/overview"
+    version: "2023"
+    checksum: null
+    local_path: null
+    roles: ["module_3_implementation"]
+    # NOTE: hosted as a web overview on oecd.ai — no stable direct PDF.
+    # Drop an excerpt PDF into
+    # backend/data/raw_policies/G7_Hiroshima_AI_Process_Reporting_Framework.pdf
+    # to index it; until then sync skips it harmlessly.
+
+  - name: "AI Cybersecurity Collaboration Playbook (CISA)"
+    pdf_url: "https://www.cisa.gov/sites/default/files/2025-01/JCDC%20AI%20Playbook.pdf"
+    website: "https://www.cisa.gov/resources-tools/resources/ai-cybersecurity-collaboration-playbook"
+    version: "2024"
+    checksum: null
+    local_path: null
+    roles: ["module_3_implementation"]
+    # Dimension-tagged: guaranteed a Module 3 budget slot for Safety
+    # (cybersecurity of AI systems is a core safety concern).
+    dimensions:
+      - Safety
+
+  # ─────────────────────────────────────────────────────────────
+  # MODULE 4 — CASE INTELLIGENCE (Curated incident records)
+  # "What actually happened when this dimension failed": real incidents,
+  # inquiries, and documented harms. role module_4_incident + source_type
+  # incident_record. Matching is retrieval-only against this curated set,
+  # dimension-grounded via the same DIMENSION_TOPIC_KEYWORDS check as
+  # Module 1+2; the LLM NEVER generates incident content.
+  # ─────────────────────────────────────────────────────────────
+
+  - name: "AI Incident Database (Partnership on AI)"
+    pdf_url: null
+    website: "https://incidentdatabase.ai/"
+    version: "2025"
+    checksum: null
+    local_path: "backend/data/raw_policies/AI_Incident_Database_Curated_Records.pdf"
+    roles: ["module_4_incident"]
+    source_type: incident_record
+    # NOTE: interactive web database — no single PDF. The indexed record is a
+    # curated excerpt PDF built from real, publicly documented incidents
+    # (Robodebt Royal Commission, Allegheny AFST impact evaluation, OpenAI /
+    # Sama Kenyan workers, Meta & Sama lawsuit, Dutch SyRI judgment, UK A-level
+    # grading algorithm) — see backend/data/raw_policies/AI_Incident_Database_Curated_Records.pdf.
+
+  - name: "Royal Commission into the Robodebt Scheme — Final Report"
+    pdf_url: "https://www.royalcommission.gov.au/system/files/2023-07/RC-robodebt-report.pdf"
+    website: "https://www.royalcommission.gov.au/robodebt"
+    version: "2023"
+    checksum: null
+    local_path: "backend/data/raw_policies/Royal_Commission_Robodebt_Report.pdf"
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "Allegheny Family Screening Tool — Impact Evaluation Summary"
+    pdf_url: "https://analytics.alleghenycounty.us/wp-content/uploads/2019/05/Impact-Evaluation-Summary-from-16-ACDHS-26_PredictiveRisk_Package_050119_FINAL-5.pdf"
+    website: "https://www.alleghenycountyanalytics.us/"
+    version: "2019"
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
