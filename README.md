@@ -278,27 +278,6 @@ a running process has no effect until the backend is restarted.
 
 ---
 
-## RAGAS Evaluation
-
-RAGAS metrics measure retrieval and generation quality. Results are reported per metric, not as one aggregate score.
-
-| Metric | Score | Interpretation |
-|--------|-------|----------------|
-| Faithfulness | *TBD* | Proportion of generated claims that are supported by the retrieved context |
-| Answer Relevancy | *TBD* | How relevant the generated answer is to the question |
-| Context Precision | *TBD* | How much of the retrieved context is actually relevant |
-| Context Recall | *TBD* | How much of the required context was actually retrieved |
-
-To run the evaluation:
-```bash
-cd backend
-python eval/ragas_eval.py
-```
-
-*Scores are populated after the first run with indexed frameworks and a running Ollama instance.*
-
----
-
 ## System Limitations
 
 - **Dense retrieval only** — no hybrid (BM25 + embedding) search. Pure embedding similarity means exact keyword matches are not prioritized.
@@ -401,9 +380,6 @@ aura-sdg/
 │   │   ├── tasks.py              # Background analysis pipeline
 │   │   ├── db_models.py          # PostgreSQL ORM models
 │   │   └── logging_config.py     # Structured JSON logging
-│   ├── eval/
-│   │   ├── test_questions.json   # 15 hand-built RAGAS test questions
-│   │   └── ragas_eval.py         # RAGAS evaluation script
 │   ├── tests/
 │   │   ├── unit/                 # Upload validation, chunking, citation verify, guardrails
 │   │   ├── integration/          # End-to-end pipeline tests
