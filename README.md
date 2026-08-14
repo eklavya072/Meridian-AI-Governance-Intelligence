@@ -1,184 +1,55 @@
-# Meridian — AI Policy Intelligence Workbench
+# Meridian — AI Governance Intelligence Workbench
 
-**Meridian** helps UNDP country office teams review draft national AI strategies against international governance frameworks (OECD AI Principles, UNESCO Recommendation on the Ethics of AI, UNDP Digital Strategy, UN Digital Cooperation frameworks), flagging governance gaps with verified citations, risk levels, and recommendations, then exporting the findings as a decision-maker-ready brief.
+**Meridian** analyzes national AI policy documents against international governance
+frameworks and produces an evidence-verified, decision-ready assessment. Upload a
+policy PDF — a national AI strategy, a sectoral framework, a draft bill — and
+Meridian evaluates it across **8 governance dimensions**, grounded in a curated
+corpus of **international standards** (OECD AI Principles, UNESCO Recommendation,
+EU AI Act, NIST AI RMF, UN Global Digital Compact, and more), then generates an
+executive brief you can export as PDF or DOCX.
 
-Built for the **UNDP Digital, AI and Innovation (DAI) Hub** internship application.
-
----
-
-## Architecture
-
-```
-Raw Policy PDFs
-  → Document Parser (pypdf)
-  → Structure-Aware Splitter (headers/clauses first)
-  → Recursive Character Splitter (1000 token / 15% overlap subsplit)
-  → Embedding Model (BAAI/bge-small-en-v1.5 via sentence-transformers)
-  → ChromaDB (persistent, metadata = {doc, section, framework})
-  → Retriever (top-k cosine similarity per governance dimension, multi-framework)
-  → LLM Agent + Pydantic Schema (Qwen 3 8B via Ollama, structured gap-analysis output)
-  → Citation Verification (chunk_id exists, page matches, text supports claim)
-  → Guardrail Check (greeting/off-topic → polite rejection; low-similarity → insufficient evidence)
-  → FastAPI endpoints (/api/v1/workspace, /api/v1/upload, /api/v1/analyze, /api/v1/brief)
-  → Next.js frontend (renders Explainability Chain, Country Office Workspace, Framework Library, text brief export)
-```
-
-### Services
-
-| Service | Role | Technology |
-|---------|------|-----------|
-| `api` | FastAPI backend with REST endpoints | Python 3.12, FastAPI, LangChain |
-| `web` | Next.js frontend | React 18, TypeScript, Tailwind |
-| `postgres` | Relational store (workspace history, analysis records) | PostgreSQL 16 |
-
-**Data stores:**
-- **ChromaDB** — persistent vector store (embeddings + chunks for retrieval). No server needed.
-- **PostgreSQL** — system of record: workspaces, analyses, upload logs, framework sync records, generated reports.
-
-**Retrieval method:** Dense retrieval only (embedding-based cosine similarity via `bge-small-en-v1.5`). Hybrid dense+sparse (BM25) is a valid future enhancement but not implemented in v1.
+Every verdict is backed by **verifiable citations** — every claim is traced to a
+real chunk of a real document, checked programmatically (chunk exists, page
+matches, and the passage supports the claim via an NLI cross-encoder). Nothing is
+invented: where the evidence doesn't support a claim, Meridian says so.
 
 ---
 
-## Setup
+## What it does
 
-### Prerequisites
-
-- Docker and Docker Compose v2
-- [Ollama](https://ollama.com) running locally with the Qwen 3 8B model:
-  ```bash
-  ollama pull qwen3:8b
-  ```
-
-### Quick Start
-
-```bash
-# 1. Clone and enter the project
-cd aura-sdg
-
-# 2. Copy environment file
-cp .env.example .env
-
-# 3. Start all services
-docker compose up --build
-```
-
-This starts:
-- FastAPI backend at `http://localhost:8000` (API docs at `/docs`)
-- Next.js frontend at `http://localhost:3000`
-- PostgreSQL on port 5432
-
-### Without Docker (for development)
-
-```bash
-# Backend
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload
-
-# Frontend
-cd frontend
-npm install
-npm run dev
-```
-
-Requires PostgreSQL running locally or via Docker:
-```bash
-docker run -d --name aura-pg -e POSTGRES_USER=aura -e POSTGRES_PASSWORD=aura -e POSTGRES_DB=aura_sdg -p 5432:5432 postgres:16-alpine
-```
+| Capability | What you get |
+|---|---|
+| **Workspace** | Create per-country workspaces, upload policy PDFs, and run the full analysis pipeline in the background |
+| **Analysis** | Per-dimension evaluations across four modules — coverage verdicts, recommendations, implementation roadmaps, and relevant real-world incidents |
+| **Executive Brief** | A synthesized, decision-maker-ready brief (one LLM synthesis call), cached server-side, exportable as PDF or DOCX |
+| **AI Auditor** | A chat assistant that answers questions about the analysis, the framework library, or an uploaded document — with verified citations |
+| **Framework Library** | Browse all indexed frameworks with indexing status, official sources, and chunk counts |
 
 ---
 
-## API Endpoints
+## How the analysis works
 
-All endpoints are under `/api/v1/`. Full interactive docs at `/docs` when the backend is running.
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/health` | Health check with vector store status |
-| `GET` | `/frameworks` | List all frameworks with indexing status |
-| `POST` | `/frameworks/sync` | Trigger framework re-sync (download + index updates) |
-| `POST` | `/workspace` | Create a new workspace (country, policy title, frameworks) |
-| `GET` | `/workspace` | List all workspaces |
-| `GET` | `/workspace/{id}` | Get workspace details and status |
-| `POST` | `/upload/{workspace_id}` | Upload policy PDF + start background analysis pipeline |
-| `GET` | `/analyze/{workspace_id}` | Get analysis results for a workspace |
-| `POST` | `/brief` | Generate executive brief (text) from completed analysis |
-
----
-
-## Example: Analyze a Policy
-
-**Request:**
-```bash
-# Create workspace
-curl -X POST http://localhost:8000/api/v1/workspace \
-  -H "Content-Type: application/json" \
-  -d '{"country":"India","policy_title":"National Strategy for AI","frameworks":["OECD AI Principles","UNESCO Recommendation on the Ethics of AI"]}'
-
-# Upload PDF (triggers async analysis)
-curl -X POST http://localhost:8000/api/v1/upload/{workspace_id} \
-  -F "file=@National-Strategy-for-Artificial-Intelligence.pdf"
-
-# Get analysis results
-curl http://localhost:8000/api/v1/analyze/{workspace_id}
+```
+Policy PDF
+  → PDF validation (type, size, password, empty, OCR detection)
+  → Structure-aware chunking (headers/clauses first, then recursive split)
+  → Embeddings (BAAI/bge-small-en-v1.5) → ChromaDB (persistent vector store)
+  → Per-dimension retrieval (document chunks + routed frameworks)
+  → Combined Module 1 + Module 2 LLM call (per dimension, bounded-parallel)
+  → Deterministic coverage ladder + maturity + priority (code, not LLM)
+  → Citation verification (chunk exists · page matches · text supports claim)
+  → Conditional Module 3 + Module 4 calls (Partial/Missing dimensions)
+  → Decision analytics → Executive brief (cached) → PDF/DOCX export
 ```
 
-**Example response (truncated):**
-```json
-{
-  "status": "complete",
-  "analyses": [{
-    "analysis_id": "abc123...",
-    "document_name": "National-Strategy-for-Artificial-Intelligence.pdf",
-    "frameworks_used": ["OECD AI Principles", "UNESCO Recommendation on the Ethics of AI"],
-    "governance_gaps": [{
-      "dimension": "Transparency",
-      "gap_found": true,
-      "reason_flagged": "The document lacks specific provisions for algorithmic transparency...",
-      "recommendation": "Include requirements for explainability of AI systems...",
-      "risk_level": "High",
-      "risk_reason": "Without transparency, stakeholders cannot verify AI system behavior...",
-      "confidence_score": 0.82,
-      "evidence": [{
-        "chunk_id": "abc...",
-        "text": "The OECD AI Principles state that AI systems should be transparent...",
-        "page_number": 5,
-        "source_framework": "OECD AI Principles",
-        "similarity_score": 0.87,
-        "verification": {"chunk_exists": true, "page_exists": true, "text_supports_claim": true, "passed": true}
-      }]
-    }]
-  }]
-}
-```
+### The 8 governance dimensions
 
----
-
-## Case Study: India NITI Aayog National Strategy for AI
-
-The project includes a demonstration analysis of India's **National Strategy for Artificial Intelligence (#AIForAll)** published by NITI Aayog (2018), against OECD AI Principles and UNESCO Recommendation on the Ethics of AI.
-
-### Setup
-
-```bash
-# Download the document
-mkdir -p backend/data/raw_policies
-curl -o backend/data/raw_policies/NITI_Aayog_National_Strategy_for_AI.pdf \
-  "https://www.niti.gov.in/sites/default/files/2023-03/National-Strategy-for-Artificial-Intelligence.pdf"
-
-# Sync frameworks, ingest the document, and run analysis via the API
-```
-
-### Governance Dimensions (authoritative list)
-
-The analysis pipeline evaluates exactly these 8 dimensions, defined once in
-`backend/src/gap_analyzer.py` (`GOVERNANCE_DIMENSIONS`) and used by every
-module (evaluation, recommendations, maturity, consistency, chat):
+Defined once in `backend/src/gap_analyzer.py` (`GOVERNANCE_DIMENSIONS`) and used
+by every module — evaluation, recommendations, maturity, consistency, and chat:
 
 | Dimension | Focus |
-|-----------|-------|
-| Transparency | Disclosure of AI capabilities, limitations, decision-making; explainability |
+|---|---|
+| Transparency | Disclosure of AI capabilities and limitations; explainability |
 | Accountability | Allocation of responsibility, liability, oversight, redress |
 | Privacy | Data protection, consent, anonymisation, security |
 | Safety | Risk identification, impact assessment, testing, incident monitoring |
@@ -187,264 +58,372 @@ module (evaluation, recommendations, maturity, consistency, chat):
 | Fairness | Bias testing and mitigation, demographic parity, inclusive design |
 | Environmental Sustainability | Energy efficiency, carbon reporting, e-waste management |
 
----
+### The 4 modules (per dimension)
 
-## Methodology — Coverage & Maturity Determination
+| Module | Content | When it runs |
+|---|---|---|
+| **1 — Governance Dimension Evaluation** | Coverage verdict (`Covered` / `Partial` / `Missing`), reasoning, governance maturity (0–5), document + framework evidence | Always |
+| **2 — Recommendations & Alignment** | Recommendations, deterministic priority, international standard reference, structured framework synthesis (consensus / differences / overall); for Fully Covered dimensions: best practices + international examples instead | Always |
+| **3 — Implementation Roadmap** | Phased roadmap with deterministic timeline estimates, responsible agency (code-grounded, never fabricated), documentation requirements, monitoring checklist | Only for `Partial` / `Missing` dimensions |
+| **4 — Case Intelligence** | Matched real incidents (AI Incident Database, Robodebt Royal Commission, Allegheny AFST, and other curated records) with lessons learned | Only when a genuinely relevant incident match exists |
 
-Coverage (`Covered` / `Partial` / `Missing`) is **not** left to free LLM
-judgment. After the model returns its raw verdict for a dimension, a
-deterministic ladder (`backend/src/deterministic.py`,
-`validate_coverage_deterministic`) enforces the rules below in code. The
-ladder is document-agnostic and reproducible — it keys off the document's
-own retrieved chunks and the model's mechanism report, never off a
-hard-coded country/verdict expectation.
+A full analysis makes **8 combined Module 1+2 calls** (one per dimension, run
+concurrently with bounded parallelism) **plus up to 8 conditional Module 3+4
+calls** — so between 8 and 16 LLM calls total. Fully Covered dimensions cost
+exactly one call.
 
-### The six governance-maturity levels
+### Deterministic framework selection
 
-Each dimension is placed on a 0–5 ladder. The level is derived from the
-LLM's evidence interpretation and then mapped to Coverage:
+Which frameworks are searched is decided **in code, never by the LLM**
+(`backend/src/framework_router.py`):
 
-| Level | Label | What the evidence must show | Coverage |
-|-------|-------|-----------------------------|----------|
-| 0 | No Governance Intent | No treatment, or only a passing acknowledgment with **no proposed action** | **Missing** |
-| 1 | Governance Recognised | An **explicit commitment or attempted mechanism** (even weak: "will establish guidelines", "commits to…") | Partial |
-| 2 | Institutional Ownership Identified | A specific body, office, or role charged with responsibility | Partial |
-| 3 | Implementation Commitment Exists | Named body / programme / initiative / roadmap / mandate | **Covered** |
-| 4 | Operational Mechanisms Established | Concrete processes, standards, obligations, oversight | Covered |
-| 5 | Continuous Monitoring & Enforcement | Active oversight, enforcement powers, audit cycles, redress | Covered |
-
-`LEVEL_TO_COVERAGE = {0: Missing, 1: Partial, 2: Partial, 3: Covered, 4: Covered, 5: Covered}`.
-
-### Rule R1 — the "explicit commitment" floor (Missing → Partial)
-
-Fires when the raw verdict is **Missing** but the document shows evidence of
-an **actual attempted mechanism or explicit commitment** — even a weak one.
-The trigger is detected deterministically from **any** of:
-
-1. a non-empty operational-mechanism report (named body, reporting
-   requirement, enforcement/redress), or
-2. a strong commitment phrase in the document chunks (`will establish`,
-   `setting up`, `roadmap`, `programme`, `initiative`, `task force`, …), or
-3. an explicit commitment verb (`commits to`, `pledge`, `plans to`,
-   `intends to`, `will ensure`, `working towards`, …).
-
-Note: `will support` / `will promote` are the weakest floor triggers — a
-sentence like "the ministry will support research into AI fairness" is
-enough to floor Missing → Partial. That is intentional (the floor is a
-low, honest bar: the document proposes real action, however early), but
-they are the most permissive entries in the detector.
-
-**What this rule does NOT do:** a bare risk acknowledgment with **no proposed
-action attached** (e.g. a sentence that merely mentions the dimension's risk
-with no commitment, body, or programme) does **not** satisfy R1 and stays
-**Missing**. "Mentioned once" and "genuinely partial" are deliberately kept
-apart: Partial now means *the document proposes real action, however early*.
-
-### Rule R2 — the implementation-commitment raise (Partial → Covered)
-
-Fires when the verdict is **Partial** and the document shows a **concrete
-implementation commitment** (never directly on a Missing verdict — R1 is the
-only rule that rescues Missing), from **any** of:
-
-1. an operational mechanism in the model's report (named body / reporting /
-   enforcement-redress), or
-2. a single strong commitment phrase in a document chunk (`will establish`,
-   `programme`, `initiative`, `roadmap`, `task force`, `mandatory`, …), or
-3. weak commitment phrases (`commitment`, `mandate`, `dedicated`, `budget`)
-   corroborated by a named-body keyword in the same chunk, or by appearing in
-   at least two distinct chunks.
-
-### The three-way outcome
-
-| Raw verdict | R1 fires? | R2 fires? | Final coverage | Meaning |
-|-------------|-----------|-----------|----------------|---------|
-| Missing | No | No | **Missing** | Bare acknowledgment or nothing at all |
-| Missing | Yes | No | **Partial** | Explicit commitment / attempted mechanism, not yet concrete |
-| Missing | Yes | Yes | **Covered** | R1 raised to Partial, then R2 raised to Covered on a concrete commitment |
-| Partial | — | No | Partial | Genuinely partial, no implementation commitment |
-| Partial | — | Yes | **Covered** | Concrete implementation commitment exists |
-
-### Configuration
-
-Set `LADDER_FLOOR_ENABLED=0` to disable the R1 floor entirely: Missing is
-never raised to Partial by commitment/acknowledgment alone, and because R2
-only operates on Partial verdicts, such dimensions stay **Missing** — this is
-the honest "no floor" baseline used for before/after comparisons of floor
-impact. R2 cannot be disabled — it is the core anti-under-crediting safeguard
-for genuinely Partial dimensions.
-
-The flag is read **at module import time** (backend startup) — toggling it in
-a running process has no effect until the backend is restarted.
+- **Core normative sources** (Module 1) and **practical tools** (Module 2) are
+  always part of the retrieval budget.
+- **Dimension-tagged sources** are *guaranteed* a retrieval slot for their
+  dimension (e.g. the World Bank's Digital Progress report is reserved for
+  Inclusivity; the CDEI bias review for Fairness).
+- **Regional frameworks** (ASEAN, African Union) are routed by the workspace's
+  country — a Singapore strategy automatically searches the ASEAN + Singapore
+  generative-AI sources.
 
 ---
 
-## System Limitations
+## Anti-fabrication & determinism (the core design)
 
-- **Dense retrieval only** — no hybrid (BM25 + embedding) search. Pure embedding similarity means exact keyword matches are not prioritized.
-- **Local LLM** — Qwen 3 8B via Ollama is competent but significantly less capable than Claude or GPT-4 for nuanced policy analysis. Upgrade path: swap `LLMService` for an OpenAI/Anthropic provider.
-- **Chunk size** — ~1000 tokens with 15% overlap, tuned for legal/policy prose. Very long clauses (>2000 tokens) may lose context.
-- **Async via BackgroundTasks** — FastAPI BackgroundTasks are adequate for portfolio scale but not for production. Lost tasks on server restart. Upgrade: Celery + Redis.
-- **Scanned PDFs** — No OCR support. Scanned image PDFs are detected and flagged, but not processed. Use with text-layer PDFs only.
-- **Non-English documents** — Tested with English-language documents only. Other languages will have degraded retrieval quality with `bge-small-en-v1.5`.
-- **No authentication** — No user/auth layer. Intended for portfolio demonstration, not production deployment.
+Meridian's design principle is that **the LLM never decides verdicts, priorities,
+timelines, or institutions** — those are derived from evidence in code.
+
+### Coverage is a deterministic ladder
+
+After the model returns its raw verdict for a dimension, a deterministic ladder
+(`backend/src/deterministic.py`) enforces rules in code, keyed off the document's
+own retrieved chunks and the model's mechanism report — never a hard-coded
+country/verdict expectation.
+
+- **Six maturity levels (0–5)** — from "No Governance Intent" to "Continuous
+  Monitoring & Enforcement", mapped to `Missing` / `Partial` / `Covered`.
+- **Rule R1 (the "explicit commitment" floor)** — a raw `Missing` verdict is
+  raised to `Partial` only when the document shows an *actual attempted
+  mechanism or explicit commitment* (a named body, a `will establish` /
+  `roadmap` / `programme` commitment). A bare risk acknowledgment does **not**
+  qualify.
+- **Rule R2 (the implementation-commitment raise)** — `Partial` is raised to
+  `Covered` only on a concrete implementation commitment (operational
+  mechanism, named programme, or corroborated commitment phrases).
+- **Priority is tiered in code** — `Covered` → none; `Partial` → Medium (High
+  when a cluster dimension is also open); `Missing` → High (Critical when a
+  cluster dimension is also open).
+- **Risk is cluster-aware** — core dimensions escalate; gaps in related
+  dimensions compound risk.
+- **Overall maturity uses the weakest-dimension (CMMI) rule** — the policy is as
+  mature as its least mature dimension, plus a continuous 0–100 composite index.
+
+Toggle the R1 floor with `LADDER_FLOOR_ENABLED=0` for a strict "no floor"
+baseline (read at startup).
+
+### Every citation is verified
+
+- Each cited chunk is checked: **does the chunk exist? does the page match?
+  does the passage support the claim?** — the last via an NLI cross-encoder
+  (`cross-encoder/nli-deberta-v3-base`).
+- If no retrieved passage supports a claim, the model emits an explicit
+  **"no citation"** sentinel — an honest decline, never a fabricated citation.
+- Low-information glossary/index fragments (e.g. "Explainability15" from PDF
+  extraction) are detected and never become evidence.
+- When a dimension needs a citation and none was found, a deterministic
+  fallback attaches the top **dimension-grounded** chunk — explicitly marked
+  *auto-attached, not LLM-grounded*, so it's never shown as verified.
+- Module 3 citations are **dimension-grounded**: a top-ranked but off-topic
+  chunk (generic risk-assessment boilerplate) is dropped, even if the LLM cited
+  it, because a verified-but-irrelevant citation is worse than honest absence.
+- Module 2 recommendations that name institutions are **document-grounded**: a
+  body (e.g. "MeitY", "Bureau of Indian Standards") is only surfaced when it
+  appears verbatim in the uploaded document — the model can't name an agency
+  from its own knowledge.
+- Module 3's responsible agency is classified in code as
+  `document_named` / `document_implied` / `none_identified` — never fabricated,
+  and never inherited from Module 2 unless the cross-reference verifies it.
+- Module 3 timelines are **computed, not guessed**: phase ranges derive from
+  coverage tier, existing operational mechanisms, maturity, agency grounding,
+  and scope — with the reasoning string exposed in the UI.
+- A deterministic **scope disclaimer** states plainly that the analysis
+  evaluates only the document(s) provided, never the country's complete
+  governance apparatus.
+
+### Confidence is calibrated, not guessed
+
+Confidence scores are the **geometric mean of seven evidence factors** — quality
+(mean similarity), diversity (unique sources), agreement, retrieval stability,
+citation strength, cross-source agreement, and coverage completeness — each
+derived from real pipeline state, never an LLM self-assessment.
 
 ---
 
-## Known Failure Modes
+## Tech stack
 
-| Scenario | Behavior |
-|----------|----------|
-| Heavily scanned document | Detection → explicit OCR warning, analysis not attempted |
-| Very long document (>100 pages) | Processed but may hit LLM context limits per dimension query |
-| Non-English document | Retrieved, but embedding similarity degrades |
-| Password-protected PDF | Rejected at validation layer with specific error message |
-| Corrupted/incomplete PDF | Rejected at validation layer with specific error message |
-| Empty PDF (no text layer) | Rejection with specific error message |
-| File > 25MB | Rejected with size limit explicitly stated |
-| Off-topic query ("hello", "tell me a joke") | Guardrails reject with scope message before LLM call |
-| Query with no retrieval results | Guardrails return "insufficient evidence" — LLM is never called |
-| LLM generates low-confidence answer | Surface confidence score and method; flag as insufficient evidence |
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.12, FastAPI, SQLAlchemy (async) |
+| Vector store | ChromaDB (persistent, embedded) + `BAAI/bge-small-en-v1.5` embeddings |
+| LLM | **Gemini** (primary, multi-key rotation + RPM/RPD throttles), **Groq** fallback, optional **Ollama** local |
+| Verification | `cross-encoder/nli-deberta-v3-base` NLI cross-encoder |
+| Database | PostgreSQL 16 |
+| Frontend | Next.js 14 (fully static output), React 18, TypeScript, Tailwind, Motion (Framer Motion), Recharts |
+
+### LLM provider strategy
+
+`LLM_PROVIDER=gemini` is the default. The provider router (`backend/src/provider_router.py`):
+
+- rotates **multiple Gemini keys** (`GEMINI_API_KEY`, `GEMINI_API_KEY_2/3/4`)
+  to spread free-tier quota;
+- enforces a **rolling RPM throttle** and a **daily request cap** (persisted to
+  `data/gemini_rpd.json` so restarts don't reset the day's count);
+- retries with **jittered backoff** so concurrent dimension calls don't
+  re-collide on the same quota window;
+- falls back to **Groq** when all Gemini keys are exhausted (and to Ollama when
+  configured).
 
 ---
 
-## Future Roadmap
+## Getting started
 
-### Planned upgrades (in priority order):
-1. **Celery + Redis** — production-grade async task queue (documented as the planned Celery upgrade from current BackgroundTasks)
-2. **Cloud LLM support** — Anthropic Claude / OpenAI provider in `LLMService`
-3. **Hybrid retrieval** — BM25 + embedding fusion for better recall
-4. **OCR pipeline** — Tesseract integration for scanned document support
-5. **Authentication** — API key / OAuth-based access control
+### Prerequisites
 
-### Deferred features (not built in v1 — listed here to show deliberate scope):
-- **Timeline Generator** — deferred, not yet approved
-- **Stakeholder Mapping** — cut, too easily faked/generic
-- **Capacity Building Generator** — original Module 3, deferred
-- **SDG Alignment Engine** — original Module 4, deferred
-- **Cross-Jurisdictional Comparison** — original Module 6; if revisited, scope to 2 real countries with real ingested documents only
-- **Full 6-country Policy Comparison Dashboard** — cut for v1
+- Docker and Docker Compose v2 **or** Python 3.12 + Node 18+ for local dev
+- PostgreSQL 16 (Docker image provided in compose)
+- A **Gemini API key** (free tier works) — set `GEMINI_API_KEY` in `.env`
+
+### Quick start (Docker)
+
+```bash
+cd aura-sdg
+cp .env.example .env          # add your GEMINI_API_KEY
+docker compose up --build
+```
+
+- Backend: `http://localhost:8000` (interactive docs at `/docs`)
+- Frontend: `http://localhost:3000`
+- PostgreSQL: `localhost:5432`
+
+### Without Docker
+
+```bash
+# Backend
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp ../.env.example .env       # add GEMINI_API_KEY, DATABASE_URL
+uvicorn main:app --reload
+
+# Frontend
+cd frontend
+npm install
+npm run dev                   # NEXT_PUBLIC_API_URL defaults to localhost:8000/api/v1
+```
+
+Requires PostgreSQL running locally:
+
+```bash
+docker run -d --name meridian-pg -e POSTGRES_USER=aura -e POSTGRES_PASSWORD=aura \
+  -e POSTGRES_DB=aura_sdg -p 5432:5432 postgres:16-alpine
+```
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg` | PostgreSQL connection |
+| `LLM_PROVIDER` | `gemini` | `gemini` \| `groq` \| `ollama` |
+| `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini model |
+| `GEMINI_API_KEY` | — | Primary Gemini key (add `_2`/`_3`/`_4` for rotation) |
+| `GROQ_API_KEY` | — | Groq fallback provider |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | — | Local Ollama fallback |
+| `CHROMA_PERSIST_DIR` | `./data/chroma` | Vector store location |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed browser origins |
+| `LADDER_FLOOR_ENABLED` | `1` | Enable the R1 commitment floor (see methodology) |
+| `ANALYSIS_MAX_CONCURRENCY` | `3` | Parallel dimension-analysis workers |
+| `GEMINI_RPM_LIMIT` / `GEMINI_RPD_LIMIT` | `10` / `1000` | Free-tier throttle ceilings |
+| `LOG_LEVEL` / `DEV_MODE` | `INFO` / `false` | Logging + dev behavior |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api/v1` | Frontend → API base URL (baked at build time) |
+
+---
+
+## API
+
+All endpoints under `/api/v1`. Interactive docs at `/docs`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Health + vector store status (chunk/framework counts) |
+| `GET` | `/frameworks` | Framework library with indexing status |
+| `POST` | `/frameworks/sync` | Re-sync frameworks from `config/frameworks.yaml` |
+| `POST` | `/workspace` | Create a workspace (country, policy title) |
+| `GET` | `/workspace` · `/workspace/{id}` | List / fetch workspaces |
+| `POST` | `/upload/{workspace_id}` | Upload policy PDF → starts background analysis |
+| `GET` | `/analyze/{workspace_id}` | Full analysis results (8 dimensions × 4 modules) |
+| `POST` | `/auditor/upload` | AI Auditor: ingest a PDF for chat only (no analysis) |
+| `POST` | `/brief/{workspace_id}/generate` | Generate the executive brief (one synthesis call) |
+| `GET` | `/brief/{workspace_id}` | Fetch the cached brief |
+| `GET` | `/brief/{workspace_id}/export?format=pdf\|docx` | Export the cached brief (no LLM call) |
+| `POST` | `/chat` | Chat (4 modes: `advisor`, `framework_qa`, `document_overview`, `auditor`) |
+| `GET`/`DELETE` | `/chat/sessions[...]` | List / fetch / delete chat sessions |
+
+### Typical flow
+
+```bash
+# 1. Create a workspace
+curl -X POST http://localhost:8000/api/v1/workspace \
+  -H "Content-Type: application/json" \
+  -d '{"country":"India","policy_title":"National AI Strategy"}'
+
+# 2. Upload the policy PDF (starts the background analysis pipeline)
+curl -X POST http://localhost:8000/api/v1/upload/{workspace_id} \
+  -F "file=@national-ai-strategy.pdf"
+
+# 3. Poll for the completed analysis
+curl http://localhost:8000/api/v1/analyze/{workspace_id}
+
+# 4. Generate + download the executive brief
+curl -X POST http://localhost:8000/api/v1/brief/{workspace_id}/generate
+curl -o brief.pdf "http://localhost:8000/api/v1/brief/{workspace_id}/export?format=pdf"
+```
+
+---
+
+## Frontend
+
+The frontend is **fully static** — every route prerenders, so it can be hosted
+anywhere (Vercel, Netlify, or behind the same Caddy instance as the API).
+
+| Route | Page |
+|---|---|
+| `/` | Landing — three-section glide: hero (typed tagline), the pipeline (Ingestion → Retrieval → Analysis → Brief → AI Auditor), and the 8-dimensions statement |
+| `/workspace` | Create workspaces, upload policy PDFs, watch analysis status |
+| `/analysis` | Per-dimension cards: Module 1 evaluation, Module 2 recommendations, Module 3 roadmap, Module 4 case intelligence, with collapsible evidence toggles |
+| `/brief` | Executive brief preview, coverage dashboard, PDF/DOCX export |
+| `/auditor` | AI Auditor chat — ask about the analysis, the framework library, or an uploaded document |
+| `/frameworks` | Framework library — every indexed source with status and links |
 
 ---
 
 ## Testing
 
 ```bash
-# Unit tests (no external dependencies required)
-cd backend
-python -m pytest tests/unit/ -v
+# Unit tests (no external dependencies)
+cd backend && python -m pytest tests/unit/ -v
 
-# Integration tests (requires running services + Ollama)
+# Integration tests (requires running services + LLM)
 RUN_INTEGRATION_TESTS=1 python -m pytest tests/integration/ -v
 
 # Evaluation tests (requires indexed frameworks)
 RUN_EVALUATION_TESTS=1 python -m pytest tests/evaluation/ -v
 ```
 
-### Test coverage
-
-| Area | Coverage | Notes |
-|------|----------|-------|
-| Upload validation | 6 failure modes individually tested | File type, size, corruption, password, empty, OCR-detection |
-| Chunking | Structure-aware split + recursive split behavior | Overlap correctness, metadata propagation |
-| Citation verification | chunk_exists, page_exists, text_supports_claim | Including deliberately broken cases |
-| Guardrails | Greeting rejection, off-topic rejection, no-retrieval, low-similarity | |
-| Brief generator | Text brief sections | |
-| Workspace status | Enum transitions, state comparisons | |
-| Integration | Upload → ingest → retrieve → analyze → brief | Full pipeline with real small doc |
-| Evaluation | Retrieval quality per dimension | Requires indexed frameworks |
+Coverage: PDF validation failure modes, structure-aware chunking, citation
+verification (including deliberately broken cases), the deterministic coverage
+ladder, guardrails, framework routing and module roles, brief generation,
+stability, and the full pipeline.
 
 ---
 
-## Project Structure
+## Deployment
+
+See **[LAUNCH.md](LAUNCH.md)** for the full runbook. In short:
+
+- **Recommended:** a single VPS (4 GB RAM / ~30 GB disk) running
+  `docker-compose.prod.yml` with Caddy TLS — the only option that survives
+  long in-process analyses without sleeping.
+- **Free frontend:** the static frontend can go on Vercel/Netlify for free;
+  the API still needs an always-on host.
+- **Critical:** `backend/data/chroma` (the indexed corpus — much of it ingested
+  from local files with **no public URL**) and `backend/data/uploads` **cannot
+  be recreated** and must be shipped with the app.
+- **Security:** there is **no auth layer** — anyone with the URL can burn your
+  Gemini quota. Keep the site private (Caddy basic auth) until auth is built.
+
+---
+
+## Known limitations
+
+- **No authentication** — no user/auth layer; intended for portfolio/team
+  demonstration, not multi-tenant production.
+- **Dense retrieval only** — no hybrid (BM25 + embedding) search.
+- **Scanned PDFs** — no OCR. Scanned image PDFs are detected and flagged, not
+  processed.
+- **Non-English documents** — tuned for English; other languages degrade
+  retrieval quality.
+- **Background tasks** — FastAPI `BackgroundTasks` (adequate at portfolio scale;
+  lost on restart; Celery + Redis is the planned upgrade).
+- **LLM quota** — analyses are designed to fit free-tier limits (8–16 calls with
+  throttling and key rotation), but a full run still consumes meaningful daily
+  quota.
+
+---
+
+## Project structure
 
 ```
 aura-sdg/
 ├── config/
-│   └── frameworks.yaml           # Config-driven framework definitions
+│   └── frameworks.yaml           # All indexed frameworks: module roles, dimension tags, regions, URLs
 ├── backend/
 │   ├── data/
-│   │   ├── raw_policies/         # Ingested PDFs
+│   │   ├── raw_policies/         # Ingested framework PDFs (gitignored)
 │   │   ├── chroma/               # ChromaDB persistence (gitignored)
-│   │   └── uploads/              # Uploaded policy PDFs
+│   │   └── uploads/              # Uploaded policy PDFs (gitignored)
 │   ├── src/
-│   │   ├── ingestion.py          # Document parsing + structure-aware chunking
+│   │   ├── gap_analyzer.py       # 8-dimension × 4-module analysis orchestration
+│   │   ├── retrieval.py          # Per-dimension retrieval + dimension-tagged budget reserves
+│   │   ├── framework_router.py   # Deterministic framework selection (roles, tags, regions)
+│   │   ├── deterministic.py      # Coverage ladder (R1/R2), maturity, low-information filter
+│   │   ├── provider_router.py    # LLM routing: Gemini rotation, throttles, Groq/Ollama fallback
+│   │   ├── llm_provider.py       # Provider clients (Gemini / Groq / Ollama)
+│   │   ├── verify.py             # Citation verification (chunk / page / NLI text support)
+│   │   ├── nli_verifier.py       # NLI cross-encoder wrapper
+│   │   ├── ingestion.py          # PDF parsing + structure-aware chunking
 │   │   ├── validation.py         # PDF validation (type, size, password, empty, OCR)
-│   │   ├── vectorstore.py        # ChromaDB + embeddings + dense retrieval
-│   │   ├── gap_analyzer.py       # RAG agent with full enriched Pydantic schema
-│   │   ├── brief_generator.py    # Executive brief text export
-│   │   ├── verify.py             # Citation verification (chunk, page, text support)
-│   │   ├── workspace.py          # Country Office Workspace data model
-│   │   ├── guardrails.py         # Off-topic/greeting rejection, out-of-corpus handling
-│   │   ├── framework_sync.py     # Config-driven sync from official PDF URLs
+│   │   ├── vectorstore.py        # ChromaDB + embeddings
+│   │   ├── brief_synthesis.py    # Executive brief (one synthesis call, cached)
+│   │   ├── brief_export.py       # DOCX / PDF rendering from the cached brief
+│   │   ├── chat.py               # Chat assistant (4 modes)
+│   │   ├── consistency.py        # Cross-dimension consistency + synthesis-drift detection
+│   │   ├── evidence_agreement.py # Cross-source evidence agreement scoring
 │   │   ├── framework_library.py  # Framework Library metadata/indexing status
+│   │   ├── framework_sync.py     # Config-driven framework sync
+│   │   ├── guardrails.py         # Off-topic rejection, insufficient-evidence handling
 │   │   ├── tasks.py              # Background analysis pipeline
+│   │   ├── workspace.py          # Workspace service
 │   │   ├── db_models.py          # PostgreSQL ORM models
 │   │   └── logging_config.py     # Structured JSON logging
-│   ├── tests/
-│   │   ├── unit/                 # Upload validation, chunking, citation verify, guardrails
-│   │   ├── integration/          # End-to-end pipeline tests
-│   │   └── evaluation/           # Retrieval quality checks
-│   ├── main.py                   # FastAPI app with /api/v1/ routes
+│   ├── tests/                    # unit / integration / evaluation
+│   ├── main.py                   # FastAPI app
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   ├── app/
-│   │   ├── workspace/            # Country Office Workspace
-│   │   ├── analysis/             # Gap analysis + Explainability Chain
-│   │   ├── brief/                # Executive Brief export
-│   │   ├── frameworks/           # Framework Library
-│   │   └── page.tsx              # Landing/home
-│   ├── components/               # StatusBadge, RiskTag, CitationCard
-│   ├── lib/
-│   │   └── api.ts                # Typed API client
-│   ├── Dockerfile
-│   ├── package.json
-│   └── tsconfig.json
-├── docker-compose.yml            # v1: api, web, postgres
-├── .env.example
-├── .gitignore
-└── README.md
+│   ├── app/                      # workspace / analysis / brief / auditor / frameworks / landing
+│   ├── components/               # ModuleStack, CitationAccordion, Gauge, RadarChart, PieChart, ...
+│   └── lib/                      # Typed API client, framework links, motion helpers
+├── docker-compose.yml            # Dev: api + web + postgres
+├── docker-compose.prod.yml       # Prod: persistent volumes, healthchecks, Caddy TLS
+├── Caddyfile                     # Caddy reverse proxy config
+├── LAUNCH.md                     # Deployment runbook
+└── .env.example                  # Environment template
 ```
 
 ---
 
-## Deployment (Intended)
+## Design principles
 
-| Service | Target | Notes |
-|---------|--------|-------|
-| API backend | Render | FastAPI as a web service |
-| Frontend | Vercel | Next.js static export or serverless |
-| Database | Render PostgreSQL or Supabase | PostgreSQL-compatible |
-| Vector store | ChromaDB bundled with API | Embedded persistence on Render disk |
-
-**Current deployment status:** Docker Compose for local development. The frontend points to `http://localhost:8000/api/v1` by default — configure via `NEXT_PUBLIC_API_URL`.
-
----
-
-## Design Principles
-
-- **Honest output** — every claim in the UI is backed by real pipeline state. No hardcoded demo data. No templated answers dressed up as analysis.
-- **Verified citations** — every cited chunk is programmatically checked (exists, page matches, text supports claim). Unverifiable citations are discarded and replaced with "insufficient evidence."
-- **No training-data answers** — the LLM only answers from retrieved context. If the context doesn't contain the answer, the system says so.
-- **Testable modules** — every file in `src/` is independently unit-testable without spinning up the full pipeline.
-- **Clean separation** — the backend has zero knowledge of the frontend. All communication is HTTP/JSON.
-
----
-
-## Confidence Score
-
-Each governance gap includes a `confidence_score` (float 0–1) and a `confidence_method` string explaining how it was computed.
-
-**Formula:**
-
-1. Collect all `similarity_score` values from the retrieved evidence chunks (cosine similarity between chunk embedding and query embedding, range 0–1).
-2. `base = mean(similarity_scores)` — average similarity of all retrieved chunks for that dimension.
-3. If `citation_pass_rate` is provided (from citation verification):
-   `confidence = base × (0.5 + 0.5 × citation_pass_rate)`
-   where `citation_pass_rate = passes / (passes + fails)`. A 100% pass rate leaves confidence at the base value; a 0% pass rate halves it.
-4. If no citation data is available: `confidence = base`.
-5. Clamped to [0.0, 1.0].
-
-The `confidence_method` field reports the exact inputs used (mean similarity, score range, citation pass rate if blended).
-
-Confidence is computed from actual retrieval data, not from an LLM self-assessment.
+- **Honest output** — every claim in the UI is backed by real pipeline state.
+  No hardcoded demo data, no templated answers dressed up as analysis.
+- **Verified citations** — every cited chunk is programmatically checked; the
+  "no citation" state is explicit, never masked.
+- **No training-data answers** — the LLM only answers from retrieved context,
+  and never names institutions, timelines, priorities, or verdicts the evidence
+  doesn't support.
+- **Deterministic where it matters** — coverage, maturity, priority, risk,
+  timelines, and responsible agencies are decided in code, reproducible across
+  runs, and auditable.
+- **Testable modules** — every file in `src/` is independently unit-testable.
+- **Clean separation** — the backend has zero knowledge of the frontend; all
+  communication is HTTP/JSON.
