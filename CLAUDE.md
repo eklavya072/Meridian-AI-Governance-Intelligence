@@ -33,7 +33,8 @@ would find it defensible. Consequences that follow:
 
 - Backend: FastAPI, async SQLAlchemy, PostgreSQL
 - Vectors: ChromaDB with BAAI/bge-small-en-v1.5
-- LLM: Gemini (`gemini-3.6-flash`, 5-key rotation) with Groq fallback
+- LLM: Gemini (`gemini-3.6-flash`, quota-aware routing over configured
+  credentials — one key is the supported setup, see `.env.example`) with Groq fallback
   (`openai/gpt-oss-120b`)
 - Frontend: Next.js 14
 
