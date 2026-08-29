@@ -39,7 +39,8 @@ def _resolve_frameworks_config() -> Path:
     for candidate in (
         _BACKEND_DIR.parent / "config" / "frameworks.yaml",  # repo checkout
         _BACKEND_DIR / "config" / "frameworks.yaml",  # config shipped in-tree
-        Path("/app/config/frameworks.yaml"),  # container
+        Path("/opt/config/frameworks.yaml"),  # container (outside any bind mount)
+        Path("/app/config/frameworks.yaml"),  # container, older layout
     ):
         if candidate.is_file():
             return candidate
