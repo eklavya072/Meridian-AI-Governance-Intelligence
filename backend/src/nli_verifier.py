@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
 import os
 import threading
+from typing import Any
 
 import structlog
 
@@ -16,12 +18,54 @@ NLI_THRESHOLD_ENTAILMENT = float(os.getenv("NLI_THRESHOLD_ENTAILMENT", "0.6"))
 NLI_THRESHOLD_CONTRADICTION = float(os.getenv("NLI_THRESHOLD_CONTRADICTION", "0.4"))
 
 
+# Positional label order is NOT a constant across NLI checkpoints, and
+# guessing it wrong is silent: every score still parses, the numbers still
+# look like scores, and the verdicts are simply inverted.
+# cross-encoder/nli-deberta-v3-base reports
+# {0: 'contradiction', 1: 'entailment', 2: 'neutral'} — so the previous
+# positional read of [entailment, neutral, contradiction] took contradiction
+# for entailment and neutral for contradiction. Measured on 403 real stored
+# citations, 85.4% of which quote text that is literally inside the chunk
+# they cite, it labelled 362 of them (89.8%) "contradicts". Read the map.
+_DEFAULT_LABEL_INDEX = {"entailment": 0, "neutral": 1, "contradiction": 2}
+
+
+def _resolve_label_index(model: Any) -> dict[str, int]:
+    """Map entailment/neutral/contradiction onto this checkpoint's own order."""
+    id2label = getattr(getattr(model, "config", None), "id2label", None) or {}
+    resolved: dict[str, int] = {}
+    for idx, raw in id2label.items():
+        name = str(raw).strip().lower()
+        for key in ("entailment", "neutral", "contradiction"):
+            if key in name:
+                resolved[key] = int(idx)
+    if len(resolved) == 3:
+        return resolved
+    logger.warning("nli_label_map_unreadable", id2label=id2label)
+    return dict(_DEFAULT_LABEL_INDEX)
+
+
+def _softmax(values: list[float]) -> list[float]:
+    """CrossEncoder.predict returns LOGITS for a multi-class head, not
+    probabilities — observed range roughly -6 to +6. Comparing those to the
+    0.6 / 0.4 thresholds below is meaningless: a logit of 5.8 for `neutral`
+    cleared a 0.4 "contradiction" bar simply by being a large number."""
+    if not values:
+        return []
+    peak = max(values)
+    exps = [math.exp(v - peak) for v in values]
+    total = sum(exps) or 1.0
+    return [e / total for e in exps]
+
+
 class NLIVerifier:
     def __init__(self, model_name: str = NLI_MODEL, embed_function=None):
         self._model_name = model_name
         self._model = None
         self._load_attempted = False
         self._embed = embed_function
+        # Overwritten from the checkpoint's own id2label at load time.
+        self._label_index: dict[str, int] = dict(_DEFAULT_LABEL_INDEX)
         # The parallel analysis loop verifies citations from multiple
         # dimension threads; the shared CrossEncoder/embed fn is not safe
         # for concurrent inference, so serialize verification.
@@ -38,7 +82,12 @@ class NLIVerifier:
             from sentence_transformers import CrossEncoder
 
             self._model = CrossEncoder(self._model_name)
-            logger.info("nli_model_loaded", model=self._model_name)
+            self._label_index = _resolve_label_index(self._model)
+            logger.info(
+                "nli_model_loaded",
+                model=self._model_name,
+                label_index=self._label_index,
+            )
         except Exception as exc:
             logger.error("nli_model_load_failed", model=self._model_name, error=str(exc))
             self._model = None
@@ -92,16 +141,25 @@ class NLIVerifier:
         chunk_id: str,
     ) -> CitationVerification:
         try:
-            pair = (claim[:256], chunk_text[:512])
+            # Premise first, hypothesis second. The chunk is the evidence and
+            # the claim is what it is being asked to support; the reverse
+            # order asks whether the claim implies the whole document, which
+            # is a different and much harder question.
+            pair = (chunk_text[:512], claim[:256])
             scores = self._model.predict([pair])
-            scores_list = scores[0] if isinstance(scores[0], (list, tuple)) else scores
+            row = scores[0]
+            scores_list = [float(v) for v in row] if hasattr(row, "__len__") else [float(row)]
 
             if len(scores_list) >= 3:
-                entailment = float(scores_list[0])
-                neutral = float(scores_list[1])
-                contradiction = float(scores_list[2])
+                probs = _softmax(scores_list)
+                idx = self._label_index
+                entailment = probs[idx["entailment"]]
+                neutral = probs[idx["neutral"]]
+                contradiction = probs[idx["contradiction"]]
             elif len(scores_list) == 1:
-                entailment = float(scores_list[0])
+                # Single-logit (binary) head: squash to a probability rather
+                # than treating the logit itself as one.
+                entailment = 1.0 / (1.0 + math.exp(-scores_list[0]))
                 neutral = 0.0
                 contradiction = 1.0 - entailment
             else:
