@@ -20,6 +20,7 @@ from src.gap_analyzer import (
 )
 from src.ingestion import ingest_document
 from src.logging_config import log_analysis_run
+from src.provenance import build_provenance
 from src.storage import get_storage
 from src.vectorstore import VectorStore
 from src.verify import verify_gap_analysis_citations
@@ -411,7 +412,15 @@ async def run_full_analysis_pipeline(
             scope_disclaimer = _build_scope_disclaimer(
                 vector_store, workspace_id, country=ws_country
             )
+            # Persisted with the analysis so an auditor can ask what produced
+            # a verdict without needing to know which build was deployed.
+            provenance = build_provenance(
+                llm_model=getattr(result, "generated_by", None),
+                llm_calls=result.llm_call_count,
+            )
+            analysis_dict["provenance"] = provenance
             analysis_dict["ragas_metrics"] = {
+                "provenance": provenance,
                 "llm_call_count": result.llm_call_count,
                 "tier_stats": result.tier_stats,
                 "decision_analytics": result.decision_analytics,

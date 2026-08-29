@@ -175,9 +175,9 @@ from pretending it is not there.
 
 | | |
 |---|---|
-| Result | 743 passed, 18 skipped |
+| Result | 798 passed, 18 skipped |
 | Wall clock | ~10 s |
-| Coverage (`src`) | **59.5%** (8,832 statements, 3,575 missed) |
+| Coverage (`src`) | **61.0%** (9,223 statements, 3,600 missed) |
 
 The 18 skips are deliberate and all need external state: 9 Azurite storage
 integration tests (they run in CI, where Azurite is a service container),
@@ -185,9 +185,9 @@ integration tests (they run in CI, where Azurite is a service container),
 3 integration tests behind `RUN_INTEGRATION_TESTS=1`, and 1 needing a PDF
 with a real text layer.
 
-Lowest-covered modules, honestly: `tasks.py` 0%, `workspace.py` 0%,
-`chat.py` 10%, `governance_advisor.py` 17%, `llm_provider.py` 24%,
-`provider_router.py` 26%. The CI gate is set at **58%** — just below measured,
+Lowest-covered modules, honestly: `tasks.py` 0%, `workspace.py` 29%,
+`chat.py` 10%, `governance_advisor.py` 17%, `llm_provider.py` 24%.
+`provider_router.py` rose from 26% as the resilience tests landed. The CI gate is set at **58%** — just below measured,
 so it catches regression without being aspirational.
 
 ---
@@ -237,6 +237,26 @@ With Gemini, one small structured call through `generate_with_retry`:
 That last row matters beyond the provider check: `quota_status()` is what
 `/readyz` reports, so the probe and the pipeline are demonstrably reading the
 same counter.
+
+---
+
+## Provider resilience (INCIDENT-001 drill)
+
+**Date:** 2026-08-30 · **Gemini calls: 0.** Mocked provider returning
+`429 RESOURCE_EXHAUSTED` with `Retry-After: 37` across three credentials.
+
+| | |
+|---|---|
+| Credentials dropped after | **3 consecutive failures each** |
+| Capacity exhaustion detected after | **9 failed calls** (3 credentials × 3) |
+| In-process detection latency | 0.002 s — flattering; the 9-call figure is the honest one |
+| `/readyz` response once exhausted | **503**, `credentials_healthy: 0`, `has_headroom: true` |
+| Recovery | automatic, one probe per credential after cooldown |
+
+One measurement the design did not intend: `seconds_until_any_available`
+reported 60 s while the provider's `Retry-After` asked for 37 s. The cooldown
+takes the longer of the two, which is safe but delays recovery by 23 s. See
+[INCIDENT-001.md](INCIDENT-001.md).
 
 ---
 

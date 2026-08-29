@@ -16,6 +16,8 @@ import html
 from io import BytesIO
 from typing import Any
 
+from src.provenance import render_provenance_lines
+
 # Design tokens — mirrors the frontend palette (app/globals.css).
 NAVY_950 = "#0A2E6E"
 NAVY_800 = "#14408D"
@@ -229,6 +231,15 @@ def render_docx(brief: dict[str, Any]) -> bytes:
     for para in s["scope_and_methodology"].split("\n\n"):
         body(para)
 
+    # Provenance in the exported file, not only in the database. The export is
+    # what leaves the system and gets forwarded, so it is the copy that has to
+    # answer "what produced this".
+    provenance_lines = render_provenance_lines(brief.get("provenance") or {})
+    if provenance_lines:
+        heading("PROVENANCE")
+        for line in provenance_lines:
+            body(line)
+
     buffer = BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
@@ -429,6 +440,12 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
     _h1("SCOPE & METHODOLOGY")
     for para in s["scope_and_methodology"].split("\n\n"):
         _body(para)
+
+    provenance_lines = render_provenance_lines(brief.get("provenance") or {})
+    if provenance_lines:
+        _h1("PROVENANCE")
+        for line in provenance_lines:
+            _body(line)
 
     doc = SimpleDocTemplate(
         buffer,
