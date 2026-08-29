@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import os
+import threading
 from pathlib import Path
 
 import magic
@@ -17,6 +19,22 @@ MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB (user uploads)
 MAX_FRAMEWORK_FILE_SIZE_BYTES = 200 * 1024 * 1024  # 200 MB
 ALLOWED_MIME_TYPES = {"application/pdf"}
 PDF_MAGIC_BYTES = b"%PDF-"
+
+# Meridian accepts arbitrary PDFs from strangers, so the parser is an attack
+# surface and not merely an inconvenience. pypdf on a malformed or
+# maliciously-compressed file consumes unbounded CPU and memory, and it does
+# it inside a worker thread that the request cannot cancel.
+#
+# A page cap costs nothing on legitimate input: the largest instrument in the
+# corpus, the EU AI Act, is 144 pages. 1,500 leaves an order of magnitude of
+# headroom while refusing a file whose page tree has been inflated to millions
+# of entries.
+MAX_PAGE_COUNT = int(os.getenv("MAX_PDF_PAGE_COUNT", "1500"))
+
+# Wall-clock ceiling on text extraction. A decompression bomb passes every
+# check above — correct magic bytes, correct MIME, plausible size — and then
+# expands during extraction. Without a deadline the worker is simply gone.
+PARSE_TIMEOUT_SECONDS = float(os.getenv("PDF_PARSE_TIMEOUT_SECONDS", "60"))
 
 
 class ValidationResult(BaseModel):
@@ -60,6 +78,22 @@ def validate_pdf_file(
             error_message="Only PDF files are supported.",
         )
 
+    page_count, page_error = _page_count(file_bytes)
+    if page_error:
+        return ValidationResult(
+            valid=False,
+            error_type="malformed_pdf",
+            error_message="This PDF could not be read. It may be corrupt or truncated.",
+        )
+    if page_count > MAX_PAGE_COUNT:
+        return ValidationResult(
+            valid=False,
+            error_type="too_many_pages",
+            error_message=(
+                f"This PDF has {page_count} pages, above the {MAX_PAGE_COUNT}-page limit."
+            ),
+        )
+
     password_protected = _check_password_protected(file_bytes)
     if password_protected:
         return ValidationResult(
@@ -86,6 +120,22 @@ def validate_pdf_file(
     return ValidationResult(valid=True)
 
 
+def _page_count(file_bytes: bytes) -> tuple[int, bool]:
+    """(pages, failed). Reading the page tree is cheap; extraction is not."""
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(file_bytes))
+        if reader.is_encrypted:
+            # Page count is unreadable while encrypted; the dedicated
+            # password check below reports it properly.
+            return 0, False
+        return len(reader.pages), False
+    except Exception as exc:
+        logger.warning("pdf_page_count_failed", error=str(exc))
+        return 0, True
+
+
 def _check_password_protected(file_bytes: bytes) -> bool:
     try:
         from pypdf import PdfReader
@@ -99,6 +149,28 @@ def _check_password_protected(file_bytes: bytes) -> bool:
 
 
 def _extract_text_and_detect_scan(file_bytes: bytes) -> tuple[str, bool]:
+    """Extract text under a wall-clock deadline.
+
+    The work runs on a daemon thread so a page that never returns cannot pin
+    the request. The thread is abandoned rather than killed — Python has no
+    safe way to kill one — but daemon status means it cannot hold the process
+    open, and the caller gets a clean rejection instead of a hung worker.
+    """
+    result: list[tuple[str, bool]] = []
+
+    def _run() -> None:
+        result.append(_extract_text_and_detect_scan_unbounded(file_bytes))
+
+    worker = threading.Thread(target=_run, daemon=True)
+    worker.start()
+    worker.join(timeout=PARSE_TIMEOUT_SECONDS)
+    if worker.is_alive() or not result:
+        logger.error("pdf_extraction_timeout", timeout_seconds=PARSE_TIMEOUT_SECONDS)
+        return "", False
+    return result[0]
+
+
+def _extract_text_and_detect_scan_unbounded(file_bytes: bytes) -> tuple[str, bool]:
     try:
         from pypdf import PdfReader
 

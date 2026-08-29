@@ -32,7 +32,11 @@ class TestPDFMagicBytes:
         data = b"%PDF-1.4\n%empty"
         result = validate_pdf_file(data, "test.pdf")
         assert not result.valid
-        assert result.error_type in ("empty_document", "corrupted")
+        # malformed_pdf since the page-count check was added: this file is
+        # truncated ("Stream has ended unexpectedly"), and saying so is more
+        # accurate than the older "empty_document", which described a
+        # readable PDF with no text layer.
+        assert result.error_type in ("empty_document", "corrupted", "malformed_pdf")
 
 
 class TestFileSize:

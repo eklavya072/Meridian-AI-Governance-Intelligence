@@ -16,9 +16,12 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: aura
-      POSTGRES_PASSWORD: aura
-      POSTGRES_DB: aura_sdg
+      POSTGRES_USER: ${POSTGRES_USER:-aura}
+      # No default. Compose fails to start rather than silently shipping a
+      # publicly-known password to a production database — the dev stack can
+      # keep aura/aura, this one cannot.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-aura_sdg}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -37,7 +40,7 @@ services:
       - .env.prod
     environment:
       # Inside the compose network the DB is reached via the service name.
-      DATABASE_URL: postgresql+asyncpg://aura:aura@postgres:5432/aura_sdg
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@postgres:5432/${POSTGRES_DB:-aura_sdg}
       CHROMA_PERSIST_DIR: /app/data/chroma
       LOG_LEVEL: INFO
       DEV_MODE: "false"

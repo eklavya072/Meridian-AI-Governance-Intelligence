@@ -32,7 +32,7 @@ from src.framework_sync import FrameworkSyncService
 from src.guardrails import Guardrails
 from src.logging_config import log_upload_rejection, setup_logging
 from src.storage import get_storage
-from src.validation import validate_pdf_file
+from src.validation import MAX_FILE_SIZE_BYTES, validate_pdf_file
 from src.vectorstore import VectorStore
 from src.workspace import WorkspaceService
 
@@ -326,6 +326,27 @@ class BriefRequest(BaseModel):
 # took the API down repeatedly (see CLAUDE.md).
 
 
+# The 25MB cap was enforced by validate_pdf_file AFTER `await file.read()` had
+# already pulled the whole upload into memory — so the limit ran one step too
+# late to prevent the allocation it exists to prevent. On an 8GB host a single
+# large POST was enough to matter, and Meridian accepts uploads from
+# strangers. Reading in bounded chunks and stopping the moment the ceiling is
+# crossed makes the limit mean what it says.
+async def _read_upload_within_limit(file: UploadFile, limit: int) -> bytes | None:
+    """Read at most `limit` bytes; None when the upload exceeds it."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @app.get("/healthz")
 async def healthz():
     """Liveness. No dependencies, no I/O — if the process can route, it passes."""
@@ -477,7 +498,20 @@ async def upload_policy(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    file_bytes = await file.read()
+    file_bytes = await _read_upload_within_limit(file, MAX_FILE_SIZE_BYTES)
+    if file_bytes is None:
+        log_upload_rejection(
+            filename=file.filename or "unknown",
+            error_type="file_too_large",
+            error_message=f"File exceeds the {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit.",
+        )
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error": "file_too_large",
+                "message": f"File exceeds the {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit.",
+            },
+        )
     file_size = len(file_bytes)
     file_type = "pdf" if file.filename and file.filename.lower().endswith(".pdf") else "unknown"
     logger.info(
@@ -577,8 +611,18 @@ async def auditor_upload(file: UploadFile = File(...)):
     chat_only workspace, ingests the document chunks tagged to it, and hands
     the workspace id back so the merged auditor chat can scope document
     retrieval to it."""
-    file_bytes = await file.read()
+    # Same bounded read as the workspace upload: this endpoint is equally
+    # public and was equally happy to buffer an arbitrary POST.
+    file_bytes = await _read_upload_within_limit(file, MAX_FILE_SIZE_BYTES)
     file_name = file.filename or "document.pdf"
+    if file_bytes is None:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error": "file_too_large",
+                "message": f"File exceeds the {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit.",
+            },
+        )
     logger.info(
         "auditor_upload_received",
         filename=file_name,
