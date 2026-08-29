@@ -47,3 +47,21 @@ backend/data/gemini_rpd.json
 
 # ── Logs ────────────────────────────────────────────────────────────────
 *.log
+
+# ── Chroma incident backups (kept on disk for forensics, never git) ─────
+backend/data/chroma_broken_*/
+backend/data/chroma_hnsw_corrupt_*/
+
+# ── Stray local SQLite (the app uses Postgres) ──────────────────────────
+backend/data/*.db
+
+# ── Coverage output ────────────────────────────────────────────────────
+.coverage
+coverage.xml
+htmlcov/
+
+# ── Editor backups ─────────────────────────────────────────────────────
+*.bak
+
+# ── Demo PDFs staged for the landing page (large, unreferenced by code) ─
+frontend/public/*.pdf
