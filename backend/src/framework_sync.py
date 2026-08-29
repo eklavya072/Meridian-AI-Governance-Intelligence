@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -14,12 +15,46 @@ from src.vectorstore import VectorStore
 
 logger = structlog.get_logger()
 
-FRAMEWORKS_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "frameworks.yaml"
-RAW_POLICIES_DIR = Path(__file__).parent.parent / "data" / "raw_policies"
+_BACKEND_DIR = Path(__file__).parent.parent
+RAW_POLICIES_DIR = _BACKEND_DIR / "data" / "raw_policies"
+
+
+def _resolve_frameworks_config() -> Path:
+    """Locate config/frameworks.yaml across repo and container layouts.
+
+    This was `Path(__file__).parent.parent.parent / "config" / ...`, which is
+    correct in the repo (backend/src -> backend -> repo root) and resolves to
+    "/config/frameworks.yaml" inside the image, where the app lives at /app.
+    The Docker build context is backend/, so the file was not in the image at
+    all and every framework-routing call raised FileNotFoundError. Caught by
+    running the suite inside the built image; it would have been a runtime
+    failure in production, not just a test one.
+
+    FRAMEWORKS_CONFIG_PATH is the deployment override; the candidates below
+    cover the repo checkout and the container without one.
+    """
+    override = os.getenv("FRAMEWORKS_CONFIG_PATH")
+    if override:
+        return Path(override)
+    for candidate in (
+        _BACKEND_DIR.parent / "config" / "frameworks.yaml",  # repo checkout
+        _BACKEND_DIR / "config" / "frameworks.yaml",  # config shipped in-tree
+        Path("/app/config/frameworks.yaml"),  # container
+    ):
+        if candidate.is_file():
+            return candidate
+    # Nothing found: return the repo-relative path so the error names the
+    # location a developer actually expects rather than the last candidate.
+    return _BACKEND_DIR.parent / "config" / "frameworks.yaml"
+
+
+FRAMEWORKS_CONFIG_PATH = _resolve_frameworks_config()
 
 
 def load_frameworks_config() -> list[dict[str, Any]]:
-    with open(FRAMEWORKS_CONFIG_PATH) as f:
+    # Re-resolved per call rather than trusting the import-time constant, so a
+    # test or a deployment can set FRAMEWORKS_CONFIG_PATH after import.
+    with open(_resolve_frameworks_config()) as f:
         config = yaml.safe_load(f)
     return config.get("frameworks", [])
 

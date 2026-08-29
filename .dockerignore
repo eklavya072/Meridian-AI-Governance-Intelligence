@@ -1,0 +1,60 @@
+# Build context is the repo root (the backend reads config/frameworks.yaml,
+# which lives outside backend/). Everything below would otherwise be uploaded
+# to the daemon on every build — backend/data alone is ~1.4GB.
+
+# Secrets — never in a build context, never in a layer.
+.env
+.env.*
+!.env.example
+
+# Version control and CI
+.git
+.github
+.gitignore
+.git-blame-ignore-revs
+
+# Local virtualenvs. The image builds its own from uv.lock; a macOS venv would
+# also carry ~1.7GB of wrong-platform wheels.
+**/.venv
+**/venv
+
+# Runtime state, not build input: the Chroma index (447MB), the uploaded PDFs,
+# the incident backups (991MB) and generated reports.
+backend/data/
+
+# The frontend has its own build context and its own Dockerfile.
+frontend/
+
+# Caches
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+**/.next
+**/node_modules
+
+# Editor / OS
+**/.DS_Store
+**/*.swp
+**/*.bak
+.idea
+.vscode
+.claude
+.agents
+.kilo
+.zcode
+.freebuff
+
+# Docs are not build input. README.md is the one exception: pyproject.toml
+# declares it as the project readme, so the build fails without it.
+docs/
+LAUNCH.md
+CLAUDE.md
+
+**/*.log
+
+# backend/tests is deliberately NOT ignored: CI runs pytest inside the built
+# image so the suite exercises the artifact that ships.

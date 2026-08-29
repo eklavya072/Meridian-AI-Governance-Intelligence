@@ -77,7 +77,7 @@ test: ## Run the suite with the coverage gate
 		--cov-fail-under=$(COV_MIN)
 
 test-container: ## Run the suite INSIDE the built image, as CI does
-	docker build --target test -t meridian-test:local $(BACKEND)
+	docker build --target test -f $(BACKEND)/Dockerfile -t meridian-test:local .
 	docker run --rm meridian-test:local pytest -q
 
 check: lint typecheck test ## Everything CI runs, in CI's order
@@ -85,7 +85,7 @@ check: lint typecheck test ## Everything CI runs, in CI's order
 # ── Build and release ────────────────────────────────────────────────────
 
 build: ## Build the prod image locally
-	docker build --target prod -t $(IMAGE):$(TAG) $(BACKEND)
+	docker build --target prod -f $(BACKEND)/Dockerfile -t $(IMAGE):$(TAG) .
 
 build-prod: build ## Alias for build
 

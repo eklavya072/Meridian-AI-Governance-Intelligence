@@ -6,6 +6,11 @@
 #             pytest against the same layers the prod image ships
 #   prod    — runtime only: no uv, no compilers, no dev group, non-root
 #
+# Build context is the REPO ROOT, not backend/: the backend reads
+# config/frameworks.yaml, which lives outside backend/. With a backend/
+# context that file never entered the image and every framework-routing
+# call raised FileNotFoundError at runtime.
+#
 # Python 3.13 matches .python-version and the interpreter uv.lock is resolved
 # against. The image previously pinned 3.12 while everything was developed and
 # tested on 3.13, which is exactly the drift a lockfile is supposed to remove.
@@ -47,11 +52,14 @@ WORKDIR /app
 
 # Dependencies resolve from the lockfile in their own layer, so editing source
 # does not re-resolve or re-download ~1.7GB of wheels (torch alone is ~530MB).
-COPY pyproject.toml uv.lock .python-version ./
+COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-COPY . .
+COPY backend/ ./
+# The backend reads config/frameworks.yaml, which lives at the repo root —
+# so the build context is the root and the config is copied explicitly.
+COPY config/ /app/config/
 
 # ── models ───────────────────────────────────────────────────────────────
 # The embedding model is baked into a layer rather than fetched on first use.
@@ -101,7 +109,8 @@ WORKDIR /app
 # compilers and the dev group stay in the builder.
 COPY --from=builder --chown=meridian:meridian /opt/venv /opt/venv
 COPY --from=models --chown=meridian:meridian /opt/hf /opt/hf
-COPY --chown=meridian:meridian . .
+COPY --chown=meridian:meridian backend/ ./
+COPY --chown=meridian:meridian config/ /app/config/
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

@@ -2,8 +2,9 @@
 name = "meridian-backend"
 version = "1.0.0"
 description = "Meridian — evidence-linked AI governance policy analysis"
-readme = "../README.md"
-license = { file = "../LICENSE" }
+# No readme/license keys: package = false below, so nothing is built as a
+# distribution, and pointing at ../README.md would break any build whose
+# context does not include the repo root.
 # Pinned, not a floor. requirements.txt pinned nothing transitively, so two
 # installs a week apart could resolve different builds of chromadb or
 # sentence-transformers and move a latency or quality number with no commit
