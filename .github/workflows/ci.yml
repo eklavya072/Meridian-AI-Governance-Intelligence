@@ -135,6 +135,16 @@ jobs:
           echo "prod image runs as: $user"
           test "$user" = "meridian"
 
+      # Four dependencies were once imported and undeclared, so the built
+      # image raised ImportError the moment PDF export or the Groq fallback
+      # was reached — and libmagic1 was installed in prod but not in the test
+      # stage. Importing the whole app is the cheapest check that neither
+      # class of drift has come back.
+      - name: Assert the prod image can import the full runtime stack
+        run: |
+          docker run --rm -e GEMINI_API_KEY=ci-placeholder-not-a-real-key meridian:prod \
+            python -c "import magic, reportlab, docx, yaml, openai, chromadb, sentence_transformers; import main; print('runtime imports ok')"
+
       - name: Assert build tooling is absent from the runtime layer
         run: |
           if docker run --rm --entrypoint sh meridian:prod -c 'command -v uv gcc' ; then
