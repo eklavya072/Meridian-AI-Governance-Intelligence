@@ -53,6 +53,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "numpy>=2.5.1",
     "azure-storage-blob>=12.23.0",
+    "prometheus-client>=0.21.0",
 ]
 
 [dependency-groups]

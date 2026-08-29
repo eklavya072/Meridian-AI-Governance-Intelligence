@@ -11,13 +11,16 @@ from typing import Any
 import structlog
 from pydantic import ValidationError
 
+from src.key_health import get_registry
 from src.llm_provider import (
     GeminiProvider,
     GroqProvider,
     LLMProvider,
     QuotaExceededError,
     RetryableError,
+    TerminalProviderError,
 )
+from src.provider_errors import FailureKind, classify
 
 logger = structlog.get_logger()
 
@@ -106,6 +109,29 @@ def _persist_daily_requests(count: int) -> None:
         tmp.replace(path)
     except OSError as exc:
         logger.warning("rpd_persist_failed", error=str(exc))
+
+
+def key_ids_for(provider: LLMProvider) -> list[str]:
+    """Every credential id this provider can serve from.
+
+    Exported so readiness and the metrics scrape ask the same question the
+    router does. Both previously rebuilt the id from the class name inline,
+    which meant a rename in one place silently made them look at a different
+    (and always-healthy) set of records.
+    """
+    count = len(getattr(provider, "api_keys", []) or [1])
+    return [_key_id(provider, i) for i in range(count)]
+
+
+def _key_id(provider: LLMProvider, key_index: int | None) -> str:
+    """A stable, non-secret label for one credential.
+
+    Never the key itself: this string reaches logs, /readyz and the metrics
+    endpoint. The index is enough to tell credentials apart operationally.
+    """
+    if key_index is None:
+        return f"{type(provider).__name__.lower()}:default"
+    return f"{type(provider).__name__.lower()}:{key_index}"
 
 
 class TokenThrottle:
@@ -356,6 +382,32 @@ def get_provider() -> LLMProvider:
     return _provider
 
 
+class CapacityExhausted(RuntimeError):
+    """No credential can serve right now, and we know roughly when one can.
+
+    Deliberately distinct from "all keys exhausted": that message was
+    produced by both a genuinely spent quota AND a mistyped model name, so
+    it told an operator nothing about which had happened.
+    """
+
+
+def _pick_healthy_key(provider: GeminiProvider) -> int | None:
+    """Round-robin across credentials the circuit breaker still trusts.
+
+    next_key() alone put a credential that had just 429'd straight back into
+    rotation on the following call, so a 429 storm spent the whole retry
+    budget re-asking keys already known to be exhausted.
+    """
+    registry = get_registry()
+    total = len(provider.api_keys)
+    start = provider.next_key()
+    for offset in range(total):
+        index = (start + offset) % total
+        if registry.is_available(_key_id(provider, index)):
+            return index
+    return None
+
+
 def _estimate_tokens(text: str) -> int:
     return len(text) // 4
 
@@ -476,7 +528,23 @@ def generate_with_retry(
             # the free tier instead of discovering the limit reactively on
             # a 429.
             throttles = _gemini_throttles()
-            key_index = provider.next_key()
+            key_index = _pick_healthy_key(provider)
+            if key_index is None:
+                # Every credential is either circuit-open or out of daily
+                # budget. Degrade honestly with a time rather than spinning
+                # through the retry budget re-asking keys we were just told
+                # are spent.
+                wait = get_registry().seconds_until_any_available(
+                    [_key_id(provider, i) for i in range(len(provider.api_keys))]
+                )
+                raise CapacityExhausted(
+                    f"Provider capacity exhausted for '{operation}'. "
+                    + (
+                        "Daily budget spent; retry tomorrow."
+                        if wait == float("inf")
+                        else f"Retry after {wait:.0f}s."
+                    )
+                )
             gemini_throttle = throttles[key_index]
             gemini_throttle.wait()
         elif isinstance(provider, GroqProvider):
@@ -538,6 +606,13 @@ def generate_with_retry(
                     _persist_daily_requests(_daily_gemini_requests)
                 if gemini_throttle is not None:
                     gemini_throttle.record()
+                # Per-credential accounting, and a success closes this key's
+                # circuit if a previous failure had opened it.
+                if key_index is not None:
+                    get_registry().record_success(
+                        _key_id(provider, key_index),
+                        tokens=estimated_input_tokens,
+                    )
 
             print(
                 f"[DEBUG] REQ #{req_num} | {operation} | "
@@ -570,6 +645,14 @@ def generate_with_retry(
 
             _debug_stats["quota_errors"] += 1
             _debug_stats["failed"] += 1
+            if isinstance(provider, GeminiProvider) and key_index is not None:
+                failure = classify(exc)
+                get_registry().record_failure(
+                    _key_id(provider, key_index),
+                    FailureKind.QUOTA,
+                    error_str,
+                    retry_after=failure.retry_after_seconds,
+                )
 
             print(
                 f"[DEBUG] REQ #{req_num} | {operation} | "
@@ -627,10 +710,35 @@ def generate_with_retry(
                     f"for '{operation}': {groq_exc}"
                 ) from groq_exc
 
+        # ── Terminal: retrying cannot help ────────────────────────────
+        except TerminalProviderError as exc:
+            if isinstance(provider, GeminiProvider) and key_index is not None:
+                get_registry().record_failure(
+                    _key_id(provider, key_index), FailureKind.TERMINAL, str(exc)
+                )
+            request_info["status_code"] = "terminal"
+            request_info["error_response"] = str(exc)[:500]
+            _debug_stats["failed"] += 1
+            _debug_stats["primary_requests"].append(request_info)
+            logger.error(
+                "provider_terminal_failure",
+                operation=operation,
+                key_id=_key_id(provider, key_index),
+                error=str(exc)[:200],
+            )
+            # No rotation, no backoff, no fallback: a retired model or an
+            # invalid credential is not a capacity problem, and dressing it
+            # up as one is what made "all keys exhausted" uninformative.
+            raise
+
         # ── Retryable Error (5xx, timeout) ────────────────────────────
         except RetryableError as exc:
             latency = time.time() - start if start else 0
             error_str = str(exc)
+            if isinstance(provider, GeminiProvider) and key_index is not None:
+                get_registry().record_failure(
+                    _key_id(provider, key_index), FailureKind.RETRYABLE, error_str
+                )
 
             if attempt < MAX_RETRIES:
                 wait = _jittered_wait(RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)))
