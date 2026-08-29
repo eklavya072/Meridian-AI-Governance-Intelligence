@@ -246,6 +246,31 @@ def _gemini_throttles() -> list[RequestThrottle]:
 _daily_gemini_requests = _load_daily_requests()
 
 
+def quota_status() -> dict[str, Any]:
+    """Daily Gemini request budget, for the readiness probe.
+
+    Reports the same counter `_check_gemini_daily_budget` enforces, so a
+    readiness probe and the pipeline can never disagree about whether there
+    is headroom left. `date` is the counter's own key: the budget resets
+    when the local date rolls over, not on a rolling 24h window.
+
+    Note this is Meridian's own accounting, not a reading of Google's
+    quota — the authoritative limit is still enforced provider-side by a
+    429. It answers "will this process accept an analysis right now", which
+    is the question a readiness probe is asking.
+    """
+    with _rpd_lock:
+        used = _daily_gemini_requests
+    remaining = max(GEMINI_RPD_LIMIT - used, 0)
+    return {
+        "requests_today": used,
+        "daily_limit": GEMINI_RPD_LIMIT,
+        "remaining": remaining,
+        "has_headroom": remaining > 0,
+        "date": _rpd_date_key(),
+    }
+
+
 def _check_gemini_daily_budget() -> None:
     """Enforce the Gemini free-tier RPD budget with an early warning.
 
