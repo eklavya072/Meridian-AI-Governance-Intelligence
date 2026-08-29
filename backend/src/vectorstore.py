@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import os
-import math
-import structlog
 from pathlib import Path
 from typing import Any
-from collections import Counter
 
 import chromadb
+import structlog
+from chromadb.api.types import Documents, EmbeddingFunction
 from chromadb.config import Settings
-from chromadb.api.types import EmbeddingFunction, Documents
 from sentence_transformers import SentenceTransformer
 
 from src.ingestion import Chunk
@@ -48,7 +46,7 @@ class EmbeddingService:
         all_embs = []
         failed = 0
         for i in range(0, len(texts), BATCH):
-            batch = texts[i:i + BATCH]
+            batch = texts[i : i + BATCH]
             try:
                 embs = self.model.encode(
                     batch, normalize_embeddings=True, batch_size=32, show_progress_bar=False
@@ -56,7 +54,9 @@ class EmbeddingService:
                 all_embs.extend(embs.tolist())
             except Exception as exc:
                 failed += len(batch)
-                logger.error("embedding_batch_failed", batch_start=i, batch_size=len(batch), error=str(exc))
+                logger.error(
+                    "embedding_batch_failed", batch_start=i, batch_size=len(batch), error=str(exc)
+                )
                 raise
 
         logger.info(
@@ -211,20 +211,20 @@ class VectorStore:
         if not results.get("ids") or not results["ids"][0]:
             return rows
         for i in range(len(results["ids"][0])):
-            rows.append({
-                "chunk_id": results["ids"][0][i],
-                "text": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
-                # Cosine distance ranges [0, 2] in ChromaDB's cosine space;
-                # 1.0 - d goes negative for d > 1 and is NOT a valid 0-1
-                # similarity. 1.0 - d/2 is the correct normalization.
-                "similarity_score": max(
-                    0.0, float(1.0 - results["distances"][0][i] / 2.0)
-                )
-                if results.get("distances")
-                else None,
-                "embedding": query_embedding,
-            })
+            rows.append(
+                {
+                    "chunk_id": results["ids"][0][i],
+                    "text": results["documents"][0][i],
+                    "metadata": results["metadatas"][0][i],
+                    # Cosine distance ranges [0, 2] in ChromaDB's cosine space;
+                    # 1.0 - d goes negative for d > 1 and is NOT a valid 0-1
+                    # similarity. 1.0 - d/2 is the correct normalization.
+                    "similarity_score": max(0.0, float(1.0 - results["distances"][0][i] / 2.0))
+                    if results.get("distances")
+                    else None,
+                    "embedding": query_embedding,
+                }
+            )
         return rows
 
     def retrieve(
@@ -333,10 +333,9 @@ class VectorStore:
         candidates: list[dict[str, Any]],
         top_k: int,
     ) -> list[dict[str, Any]]:
-        query_terms = set(
-            w.lower() for w in query.split()
-            if len(w) > 2 and w.lower() not in self._stopwords()
-        )
+        query_terms = {
+            w.lower() for w in query.split() if len(w) > 2 and w.lower() not in self._stopwords()
+        }
 
         scored = []
         for item in candidates:
@@ -364,10 +363,37 @@ class VectorStore:
 
     def _stopwords(self) -> set[str]:
         return {
-            "the", "and", "for", "are", "was", "has", "had", "but", "not",
-            "its", "can", "all", "any", "each", "their", "that", "this",
-            "with", "from", "have", "been", "would", "could", "should",
-            "about", "which", "than", "into", "over", "such", "also",
+            "the",
+            "and",
+            "for",
+            "are",
+            "was",
+            "has",
+            "had",
+            "but",
+            "not",
+            "its",
+            "can",
+            "all",
+            "any",
+            "each",
+            "their",
+            "that",
+            "this",
+            "with",
+            "from",
+            "have",
+            "been",
+            "would",
+            "could",
+            "should",
+            "about",
+            "which",
+            "than",
+            "into",
+            "over",
+            "such",
+            "also",
         }
 
     def count_chunks(self, framework_filter: list[str] | None = None) -> int:

@@ -6,12 +6,12 @@ concrete misclassifications, not synthetic examples.
 """
 
 from src.evidence_strength import (
-    EvidenceProfile,
     TIER_ASPIRATIONAL,
-    TIER_INTENTIONAL,
     TIER_ASSIGNED,
-    TIER_OBLIGATORY,
     TIER_ENFORCEABLE,
+    TIER_INTENTIONAL,
+    TIER_OBLIGATORY,
+    EvidenceProfile,
     build_profile,
     classify_sentence,
     coverage_from_profile,
@@ -66,7 +66,7 @@ class TestNormativeTiers:
         assert authority.tier == TIER_ENFORCEABLE
 
     def test_modal_without_a_duty_bearer_is_aspirational(self):
-        """"AI must serve as an enabler" is a slogan wearing a modal verb."""
+        """ "AI must serve as an enabler" is a slogan wearing a modal verb."""
         s = classify_sentence(
             "Artificial intelligence must serve as an enabler of inclusive "
             "development and shared prosperity for all."
@@ -145,9 +145,7 @@ class TestExclusions:
         assert detect_nonbinding_document(
             ["These guidelines are non-binding and do not impose legal obligations."]
         )
-        assert not detect_nonbinding_document(
-            ["This Regulation shall be binding in its entirety."]
-        )
+        assert not detect_nonbinding_document(["This Regulation shall be binding in its entirety."])
 
 
 class TestProfileAggregation:
@@ -335,7 +333,13 @@ class TestMechanismDetection:
         from src.evidence_strength import TIER_ASPIRATIONAL, detect_mechanisms
 
         mech = detect_mechanisms(
-            [self._s("Consistent and reliable data used in AI applications.", TIER_ASPIRATIONAL, "none")],
+            [
+                self._s(
+                    "Consistent and reliable data used in AI applications.",
+                    TIER_ASPIRATIONAL,
+                    "none",
+                )
+            ],
             "Accountability",
         )
         assert "liability allocation" not in mech.present
@@ -344,9 +348,13 @@ class TestMechanismDetection:
         from src.evidence_strength import TIER_OBLIGATORY, detect_mechanisms
 
         mech = detect_mechanisms(
-            [self._s(
-                "The provider shall be liable under applicable Union liability "
-                "law for any damage caused.", TIER_OBLIGATORY)],
+            [
+                self._s(
+                    "The provider shall be liable under applicable Union liability "
+                    "law for any damage caused.",
+                    TIER_OBLIGATORY,
+                )
+            ],
             "Accountability",
         )
         assert "liability allocation" in mech.present
@@ -360,11 +368,20 @@ class TestMechanismDetection:
         )
 
         soft = detect_mechanisms(
-            [self._s("Providers should consider explaining automated decisions.", TIER_ASPIRATIONAL)],
+            [
+                self._s(
+                    "Providers should consider explaining automated decisions.", TIER_ASPIRATIONAL
+                )
+            ],
             "Transparency",
         )
         hard = detect_mechanisms(
-            [self._s("Providers shall explain automated decisions to affected persons.", TIER_OBLIGATORY)],
+            [
+                self._s(
+                    "Providers shall explain automated decisions to affected persons.",
+                    TIER_OBLIGATORY,
+                )
+            ],
             "Transparency",
         )
         assert soft.binding_met == 0
@@ -374,7 +391,13 @@ class TestMechanismDetection:
         from src.evidence_strength import TIER_ASPIRATIONAL, detect_mechanisms
 
         mech = detect_mechanisms(
-            [self._s("Privacy is an important value for artificial intelligence.", TIER_ASPIRATIONAL, "none")],
+            [
+                self._s(
+                    "Privacy is an important value for artificial intelligence.",
+                    TIER_ASPIRATIONAL,
+                    "none",
+                )
+            ],
             "Privacy",
         )
         assert mech.absent
@@ -393,8 +416,13 @@ class TestMechanismBreadthGate:
     @staticmethod
     def _strong_profile():
         return EvidenceProfile(
-            dimension="Privacy", n_scored=12, n_commitment=8, n_institutional=6,
-            n_binding=3, n_enforceable=2, max_tier=4,
+            dimension="Privacy",
+            n_scored=12,
+            n_commitment=8,
+            n_institutional=6,
+            n_binding=3,
+            n_enforceable=2,
+            max_tier=4,
         )
 
     def test_narrow_mechanism_coverage_holds_verdict_at_partial(self):
@@ -403,8 +431,14 @@ class TestMechanismBreadthGate:
         mech = MechanismCoverage(
             dimension="Privacy",
             present={"data security": 4},
-            absent=["consent", "data minimisation", "purpose limitation",
-                    "anonymisation / PETs", "data subject rights", "retention limits"],
+            absent=[
+                "consent",
+                "data minimisation",
+                "purpose limitation",
+                "anonymisation / PETs",
+                "data subject rights",
+                "retention limits",
+            ],
         )
         coverage, note = coverage_from_profile(self._strong_profile(), mechanisms=mech)
         assert coverage == "Partial"
@@ -415,8 +449,12 @@ class TestMechanismBreadthGate:
 
         mech = MechanismCoverage(
             dimension="Privacy",
-            present={"consent": 3, "data minimisation": 3, "purpose limitation": 3,
-                     "data subject rights": 4},
+            present={
+                "consent": 3,
+                "data minimisation": 3,
+                "purpose limitation": 3,
+                "data subject rights": 4,
+            },
             absent=["anonymisation / PETs", "retention limits"],
         )
         coverage, _ = coverage_from_profile(self._strong_profile(), mechanisms=mech)
@@ -427,8 +465,13 @@ class TestMechanismBreadthGate:
         from src.evidence_strength import MechanismCoverage
 
         weak = EvidenceProfile(
-            dimension="Privacy", n_scored=10, n_commitment=6, n_institutional=2,
-            n_binding=0, n_enforceable=0, max_tier=2,
+            dimension="Privacy",
+            n_scored=10,
+            n_commitment=6,
+            n_institutional=2,
+            n_binding=0,
+            n_enforceable=0,
+            max_tier=2,
         )
         mech = MechanismCoverage(
             dimension="Privacy",
@@ -459,6 +502,7 @@ class TestCoverageMaturityInvariant:
     @staticmethod
     def _profile(scored, commitment, institutional, binding, enforceable):
         from src.evidence_strength import EvidenceProfile
+
         return EvidenceProfile(
             dimension="Test",
             n_scored=scored,
@@ -489,6 +533,7 @@ class TestCoverageMaturityInvariant:
         """The exact EU Environmental Sustainability shape: binding=1,
         enforceable=0. Coverage calls it thin; maturity must agree."""
         from src.evidence_strength import coverage_from_profile, maturity_from_profile
+
         profile = self._profile(1, 1, 1, 1, 0)
         assert coverage_from_profile(profile)[0] == "Partial"
         assert maturity_from_profile(profile)[0] == "Delegated"
@@ -498,6 +543,7 @@ class TestCoverageMaturityInvariant:
         dimension (coverage below Covered), maturity cannot claim the
         governance is operating or institutionalized."""
         from src.evidence_strength import coverage_from_profile, maturity_from_profile
+
         built_out = {"Operationalized", "Institutionalized"}
         for profile in self._reachable():
             coverage, _ = coverage_from_profile(profile)
@@ -514,6 +560,7 @@ class TestCoverageMaturityInvariant:
         """The converse leak: a dimension the document genuinely governs must
         not be reported as barely emerging."""
         from src.evidence_strength import coverage_from_profile, maturity_from_profile
+
         for profile in self._reachable():
             coverage, _ = coverage_from_profile(profile)
             if coverage != "Covered":
@@ -526,6 +573,7 @@ class TestCoverageMaturityInvariant:
 
     def test_unscored_dimension_is_unaddressed_on_both_ladders(self):
         from src.evidence_strength import coverage_from_profile, maturity_from_profile
+
         profile = self._profile(0, 0, 0, 0, 0)
         assert coverage_from_profile(profile)[0] == "Missing"
         assert maturity_from_profile(profile)[0] == "Unaddressed"
@@ -533,7 +581,8 @@ class TestCoverageMaturityInvariant:
     def test_both_ladders_read_the_same_force_bar(self):
         """Guards against the two functions drifting apart again by keeping a
         single definition of 'is this governed', not two copies of it."""
-        from src.evidence_strength import meets_force_bar, coverage_from_profile
+        from src.evidence_strength import coverage_from_profile, meets_force_bar
+
         for profile in self._reachable():
             if not profile.n_scored:
                 continue
@@ -556,7 +605,8 @@ class TestMechanismGateReachesTheVerdict:
 
     @staticmethod
     def _mechanisms(present_n, absent_n):
-        from src.evidence_strength import MechanismCoverage, TIER_OBLIGATORY
+        from src.evidence_strength import TIER_OBLIGATORY, MechanismCoverage
+
         return MechanismCoverage(
             dimension="Privacy",
             present={f"mech_{i}": TIER_OBLIGATORY for i in range(present_n)},
@@ -566,15 +616,20 @@ class TestMechanismGateReachesTheVerdict:
     @staticmethod
     def _profile(binding, enforceable):
         from src.evidence_strength import EvidenceProfile
+
         return EvidenceProfile(
             dimension="Privacy",
-            n_scored=binding, n_commitment=binding,
-            n_institutional=binding, n_binding=binding, n_enforceable=enforceable,
+            n_scored=binding,
+            n_commitment=binding,
+            n_institutional=binding,
+            n_binding=binding,
+            n_enforceable=enforceable,
         )
 
     def test_the_japan_privacy_shape_is_downgraded(self):
         """2 binding duties, no enforcement, 1 of 7 mechanisms."""
         from src.evidence_strength import coverage_from_profile
+
         profile = self._profile(binding=2, enforceable=0)
         # Without the gate this profile clears the force bar outright.
         assert coverage_from_profile(profile)[0] == "Covered"
@@ -585,6 +640,7 @@ class TestMechanismGateReachesTheVerdict:
     def test_gate_never_promotes(self):
         """Full mechanism breadth cannot manufacture governing force."""
         from src.evidence_strength import coverage_from_profile
+
         profile = self._profile(binding=0, enforceable=0)
         profile.n_scored = 6
         profile.n_commitment = 6
@@ -593,10 +649,9 @@ class TestMechanismGateReachesTheVerdict:
 
     def test_breadth_above_the_floor_is_left_alone(self):
         from src.evidence_strength import coverage_from_profile
+
         profile = self._profile(binding=2, enforceable=1)
-        assert coverage_from_profile(
-            profile, mechanisms=self._mechanisms(4, 1)
-        )[0] == "Covered"
+        assert coverage_from_profile(profile, mechanisms=self._mechanisms(4, 1))[0] == "Covered"
 
 
 class TestDelegatedStage:
@@ -641,16 +696,18 @@ class TestDelegatedStage:
     def test_delegated_ranks_between_emerging_and_operationalized(self):
         from src.gap_analyzer import MATURITY_RANK, MATURITY_STAGE_SCORE
         from src.models import GovernanceMaturity as G
-        assert (MATURITY_RANK[G.EMERGING]
-                < MATURITY_RANK[G.DELEGATED]
-                < MATURITY_RANK[G.DEVELOPING])
-        assert (MATURITY_STAGE_SCORE[G.EMERGING]
-                < MATURITY_STAGE_SCORE[G.DELEGATED]
-                < MATURITY_STAGE_SCORE[G.DEVELOPING])
+
+        assert MATURITY_RANK[G.EMERGING] < MATURITY_RANK[G.DELEGATED] < MATURITY_RANK[G.DEVELOPING]
+        assert (
+            MATURITY_STAGE_SCORE[G.EMERGING]
+            < MATURITY_STAGE_SCORE[G.DELEGATED]
+            < MATURITY_STAGE_SCORE[G.DEVELOPING]
+        )
 
     def test_every_stage_has_a_score(self):
-        from src.gap_analyzer import MATURITY_STAGE_SCORE, MATURITY_RANK
+        from src.gap_analyzer import MATURITY_RANK, MATURITY_STAGE_SCORE
         from src.models import GovernanceMaturity as G
+
         for stage in G:
             assert stage in MATURITY_STAGE_SCORE
             assert stage in MATURITY_RANK
@@ -663,17 +720,24 @@ class TestTwoAxisAnalytics:
     a narrow statute binding hard."""
 
     def _gap(self, dim, maturity, present, absent):
-        from src.models import GovernanceGap, CoverageLevel
+        from src.models import CoverageLevel, GovernanceGap
+
         return GovernanceGap(
-            dimension=dim, coverage=CoverageLevel.PARTIAL, gap_found=False,
-            reason_flagged="", recommendation="", governance_maturity=maturity,
-            mechanisms_present=present, mechanisms_absent=absent,
+            dimension=dim,
+            coverage=CoverageLevel.PARTIAL,
+            gap_found=False,
+            reason_flagged="",
+            recommendation="",
+            governance_maturity=maturity,
+            mechanisms_present=present,
+            mechanisms_absent=absent,
         )
 
     def test_breadth_without_force(self):
         """Soft law: every mechanism mentioned, none of them a duty."""
         from src.gap_analyzer import compute_decision_analytics
         from src.models import GovernanceMaturity as G
+
         gaps = [self._gap("Fairness", G.EMERGING, {"a": 1, "b": 1, "c": 1}, [])]
         a = compute_decision_analytics(gaps)
         assert a["coverage_index"] == 100.0
@@ -684,6 +748,7 @@ class TestTwoAxisAnalytics:
         """Narrow statute: one mechanism, but it is genuinely enforceable."""
         from src.gap_analyzer import compute_decision_analytics
         from src.models import GovernanceMaturity as G
+
         gaps = [self._gap("Privacy", G.ESTABLISHED, {"a": 4}, ["b", "c", "d"])]
         a = compute_decision_analytics(gaps)
         assert a["coverage_index"] == 25.0
@@ -695,14 +760,18 @@ class TestTwoAxisAnalytics:
         and collapse the distinction the second axis exists to draw."""
         from src.gap_analyzer import compute_decision_analytics
         from src.models import GovernanceMaturity as G
+
         weak = [self._gap("D", G.EMERGING, {"a": 0, "b": 0}, ["c"])]
         strong = [self._gap("D", G.ESTABLISHED, {"a": 4, "b": 4}, ["c"])]
-        assert (compute_decision_analytics(weak)["coverage_index"]
-                == compute_decision_analytics(strong)["coverage_index"])
+        assert (
+            compute_decision_analytics(weak)["coverage_index"]
+            == compute_decision_analytics(strong)["coverage_index"]
+        )
 
     def test_no_mechanism_table_does_not_divide_by_zero(self):
         from src.gap_analyzer import compute_decision_analytics
         from src.models import GovernanceMaturity as G
+
         a = compute_decision_analytics([self._gap("D", G.EMERGING, {}, [])])
         assert a["coverage_index"] == 0.0
         assert a["binding_share"] == 0.0

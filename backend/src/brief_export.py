@@ -13,7 +13,6 @@ over headers/footers/page numbers. python-docx is pure-Python too (lxml wheel).
 from __future__ import annotations
 
 import html
-from datetime import datetime
 from io import BytesIO
 from typing import Any
 
@@ -32,6 +31,7 @@ def _esc(text: str) -> str:
 
 
 # ── DOCX ──────────────────────────────────────────────────────────────────
+
 
 def _add_page_number_field(paragraph) -> None:
     """Insert a PAGE field into a footer paragraph (python-docx has no native
@@ -218,7 +218,7 @@ def render_docx(brief: dict[str, Any]) -> bytes:
             f"{ev['citations_verified']} of {ev['citations_total']} citations were "
             "verified against their source passage."
         )
-        for q in (ev.get("representative_quotes") or []):
+        for q in ev.get("representative_quotes") or []:
             bullet(f"{q['dimension']} — \u201c{q['quote']}\u201d")
 
     if s.get("relevant_precedent"):
@@ -235,6 +235,7 @@ def render_docx(brief: dict[str, Any]) -> bytes:
 
 
 # ── PDF ──────────────────────────────────────────────────────────────────
+
 
 def render_pdf(brief: dict[str, Any]) -> bytes:
     from reportlab.lib import colors
@@ -266,33 +267,57 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
         canvas.restoreState()
 
     title_style = ParagraphStyle(
-        "Title", fontName="Helvetica-Bold", fontSize=16.5,
-        leading=20, alignment=TA_CENTER, textColor=colors.HexColor(NAVY_950),
+        "Title",
+        fontName="Helvetica-Bold",
+        fontSize=16.5,
+        leading=20,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor(NAVY_950),
         spaceAfter=2,
     )
     sub_style = ParagraphStyle(
-        "Sub", fontName="Helvetica-Bold", fontSize=11.5,
-        leading=14, alignment=TA_CENTER, textColor=colors.HexColor(NAVY_800),
+        "Sub",
+        fontName="Helvetica-Bold",
+        fontSize=11.5,
+        leading=14,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor(NAVY_800),
         spaceAfter=2,
     )
     h1_style = ParagraphStyle(
-        "H1", fontName="Helvetica-Bold", fontSize=12,
-        leading=15, spaceBefore=12, spaceAfter=4,
+        "H1",
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        spaceBefore=12,
+        spaceAfter=4,
         textColor=colors.HexColor(NAVY_950),
     )
     h2_style = ParagraphStyle(
-        "H2", fontName="Helvetica-Bold", fontSize=10.5,
-        leading=13, spaceBefore=8, spaceAfter=3,
+        "H2",
+        fontName="Helvetica-Bold",
+        fontSize=10.5,
+        leading=13,
+        spaceBefore=8,
+        spaceAfter=3,
         textColor=colors.HexColor(NAVY_800),
     )
     body_style = ParagraphStyle(
-        "Body", fontName="Helvetica", fontSize=9.5,
-        leading=13, spaceAfter=6, textColor=colors.HexColor(BODY_INK),
+        "Body",
+        fontName="Helvetica",
+        fontSize=9.5,
+        leading=13,
+        spaceAfter=6,
+        textColor=colors.HexColor(BODY_INK),
         alignment=TA_LEFT,
     )
 
     story: list[Any] = []
-    story.append(Paragraph(_esc(f"{brief.get('country', '')} — {brief.get('policy_title', '')}"), title_style))
+    story.append(
+        Paragraph(
+            _esc(f"{brief.get('country', '')} — {brief.get('policy_title', '')}"), title_style
+        )
+    )
     story.append(Paragraph("AI Governance Assessment Brief", sub_style))
     story.append(Spacer(1, 4))
 
@@ -306,15 +331,14 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
         story.append(Paragraph(_esc(text), body_style))
 
     def _bullets(items: list[str]) -> None:
-        story.append(ListFlowable(
-            [
-                ListItem(Paragraph(_esc(item), body_style), leftIndent=14)
-                for item in items
-            ],
-            bulletType="bullet",
-            start="•",
-            leftIndent=12,
-        ))
+        story.append(
+            ListFlowable(
+                [ListItem(Paragraph(_esc(item), body_style), leftIndent=14) for item in items],
+                bulletType="bullet",
+                start="•",
+                leftIndent=12,
+            )
+        )
         story.append(Spacer(1, 2))
 
     _h1("EXECUTIVE SUMMARY")
@@ -356,14 +380,13 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
             + (f" — {_esc(r['rationale'])}" if r.get("rationale") else "")
             for r in recs
         ]
-        story.append(ListFlowable(
-            [
-                ListItem(Paragraph(item, body_style), leftIndent=14)
-                for item in items
-            ],
-            bulletType="1",
-            leftIndent=12,
-        ))
+        story.append(
+            ListFlowable(
+                [ListItem(Paragraph(item, body_style), leftIndent=14) for item in items],
+                bulletType="1",
+                leftIndent=12,
+            )
+        )
         story.append(Spacer(1, 2))
     else:
         _body("No critical gaps identified — no priority actions required.")
@@ -392,10 +415,12 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
             "verified against their source passage."
         )
         if ev.get("representative_quotes"):
-            _bullets([
-                f"{q['dimension']} — \u201c{q['quote']}\u201d"
-                for q in ev["representative_quotes"]
-            ])
+            _bullets(
+                [
+                    f"{q['dimension']} — \u201c{q['quote']}\u201d"
+                    for q in ev["representative_quotes"]
+                ]
+            )
 
     if s.get("relevant_precedent"):
         _h1("RELEVANT PRECEDENT")

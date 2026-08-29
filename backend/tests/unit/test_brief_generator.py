@@ -4,14 +4,14 @@ Unit tests for brief generator (text brief).
 
 import pytest
 
+from src.brief_generator import generate_executive_brief_text
 from src.gap_analyzer import (
+    GOVERNANCE_DIMENSIONS,
     GapAnalysisResult,
     GovernanceGap,
-    RiskLevel,
     RetrievedEvidence,
+    RiskLevel,
 )
-from src.brief_generator import generate_executive_brief_text
-from src.gap_analyzer import GOVERNANCE_DIMENSIONS
 
 
 @pytest.fixture
@@ -30,11 +30,15 @@ def sample_result():
             dimension=dim,
             gap_found=(dim in ["Transparency", "Accountability"]),
             evidence=[ev],
-            reason_flagged=f"Document lacks specific {dim.lower()} provisions." if dim in ["Transparency", "Accountability"] else "Sufficient coverage found.",
-            recommendation=f"Strengthen {dim.lower()} provisions." if dim in ["Transparency", "Accountability"] else "Maintain current approach.",
-            risk_level=RiskLevel.HIGH if dim == "Transparency" else (
-                RiskLevel.MEDIUM if dim == "Accountability" else RiskLevel.LOW
-            ),
+            reason_flagged=f"Document lacks specific {dim.lower()} provisions."
+            if dim in ["Transparency", "Accountability"]
+            else "Sufficient coverage found.",
+            recommendation=f"Strengthen {dim.lower()} provisions."
+            if dim in ["Transparency", "Accountability"]
+            else "Maintain current approach.",
+            risk_level=RiskLevel.HIGH
+            if dim == "Transparency"
+            else (RiskLevel.MEDIUM if dim == "Accountability" else RiskLevel.LOW),
             risk_reason=f"Gap in {dim.lower()} poses governance risk.",
             potential_consequence=f"Without {dim.lower()}, AI systems may lack public trust.",
             un_recommendation=f"Align with international standards on {dim.lower()}.",

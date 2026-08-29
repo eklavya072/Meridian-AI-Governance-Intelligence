@@ -4,21 +4,25 @@ import asyncio
 import os
 import re
 import time
-import structlog
 from pathlib import Path
 from typing import Any
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.db_models import WorkspaceStatus
-from src.workspace import WorkspaceService
-from src.vectorstore import VectorStore
+from src.gap_analyzer import (
+    CoverageLevel,
+    GapAnalysisResult,
+    GapAnalyzer,
+    GovernanceGap,
+)
 from src.ingestion import ingest_document
-from src.gap_analyzer import GapAnalyzer, GapAnalysisResult, GovernanceGap, CoverageLevel, RiskLevel, GOVERNANCE_DIMENSIONS
-from src.verify import verify_gap_analysis_citations
-from src.brief_generator import generate_executive_brief_text
 from src.logging_config import log_analysis_run
+from src.vectorstore import VectorStore
+from src.verify import verify_gap_analysis_citations
+from src.workspace import WorkspaceService
 
 logger = structlog.get_logger()
 
@@ -67,13 +71,9 @@ def _build_scope_disclaimer(
         "relative to the evidence supplied."
     )
     pipa_absent = not any(
-        re.search(r"pipa|personal information protection", d, re.IGNORECASE)
-        for d in docs
+        re.search(r"pipa|personal information protection", d, re.IGNORECASE) for d in docs
     )
-    if (
-        (country or "").lower() in ("south korea", "korea", "republic of korea")
-        and pipa_absent
-    ):
+    if (country or "").lower() in ("south korea", "korea", "republic of korea") and pipa_absent:
         disclaimer += (
             " Note: Korea's personal-data governance lives primarily in the "
             "Personal Information Protection Act (PIPA), which is not among "
@@ -90,7 +90,7 @@ def _build_scope_disclaimer(
 def _get_db_session() -> AsyncSession:
     global _engine, _session_factory
     if _engine is None:
-        sync_url = DATABASE_URL.replace("+asyncpg", "").replace("+psycopg2", "")
+        DATABASE_URL.replace("+asyncpg", "").replace("+psycopg2", "")
         _engine = create_async_engine(DATABASE_URL, echo=False)
         _session_factory = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     return _session_factory()
@@ -108,9 +108,7 @@ _UPLOAD_UUID_PREFIX_RE = re.compile(
 
 
 def _display_name(file_name: str | None) -> str:
-    return _UPLOAD_UUID_PREFIX_RE.sub("", file_name or "") or (
-        file_name or "document.pdf"
-    )
+    return _UPLOAD_UUID_PREFIX_RE.sub("", file_name or "") or (file_name or "document.pdf")
 
 
 async def run_full_analysis_pipeline(
@@ -223,8 +221,9 @@ async def run_full_analysis_pipeline(
             )
 
             await ws_service.update_status(
-                workspace_id, WorkspaceStatus.PROCESSING,
-                detail="Ingestion complete. Starting analysis."
+                workspace_id,
+                WorkspaceStatus.PROCESSING,
+                detail="Ingestion complete. Starting analysis.",
             )
 
             full_text = "\n".join(c.text for c in chunks)
@@ -286,15 +285,24 @@ async def run_full_analysis_pipeline(
                 # is observable against the ~8 + up to 8 = up to 16 budget.
                 total_llm_calls=result.llm_call_count,
                 module34_calls=result.llm_call_count - len(result.governance_gaps),
-                covered=sum(1 for g in result.governance_gaps if g.coverage == CoverageLevel.COVERED),
-                partial=sum(1 for g in result.governance_gaps if g.coverage == CoverageLevel.PARTIAL),
-                missing=sum(1 for g in result.governance_gaps if g.coverage == CoverageLevel.MISSING),
+                covered=sum(
+                    1 for g in result.governance_gaps if g.coverage == CoverageLevel.COVERED
+                ),
+                partial=sum(
+                    1 for g in result.governance_gaps if g.coverage == CoverageLevel.PARTIAL
+                ),
+                missing=sum(
+                    1 for g in result.governance_gaps if g.coverage == CoverageLevel.MISSING
+                ),
                 failed=sum(1 for g in result.governance_gaps if g.analysis_error),
             )
 
             for dim_name, gap_dict, p_info in completed_dimensions:
                 await ws_service.update_dimension_result(
-                    workspace_id, dim_name, gap_dict, p_info,
+                    workspace_id,
+                    dim_name,
+                    gap_dict,
+                    p_info,
                 )
 
             doc_total_pages = 0
@@ -308,7 +316,7 @@ async def run_full_analysis_pipeline(
                 stage="citation_verification",
             )
             citation_results = []
-            total_evidence_items = sum(len(gap.evidence) for gap in result.governance_gaps)
+            sum(len(gap.evidence) for gap in result.governance_gaps)
             for gap in result.governance_gaps:
                 ev_dicts = [e.model_dump() for e in gap.evidence]
                 verified = verify_gap_analysis_citations(
@@ -353,8 +361,9 @@ async def run_full_analysis_pipeline(
                 total_citations=len(citation_results),
             )
             await ws_service.update_status(
-                workspace_id, WorkspaceStatus.GENERATING_REPORT,
-                detail="Analysis complete. Generating report."
+                workspace_id,
+                WorkspaceStatus.GENERATING_REPORT,
+                detail="Analysis complete. Generating report.",
             )
 
             analysis_dict = result.model_dump()
@@ -400,7 +409,8 @@ async def run_full_analysis_pipeline(
             failed_dims = [g.dimension for g in result.governance_gaps if g.analysis_error]
             if failed_dims:
                 await ws_service.update_status(
-                    workspace_id, WorkspaceStatus.COMPLETE,
+                    workspace_id,
+                    WorkspaceStatus.COMPLETE,
                     detail=(
                         f"Analysis complete but {len(failed_dims)} dimension(s) failed "
                         f"({', '.join(failed_dims)}): LLM/provider error. "
@@ -421,8 +431,9 @@ async def run_full_analysis_pipeline(
                 # that had just succeeded seconds earlier.
             else:
                 await ws_service.update_status(
-                    workspace_id, WorkspaceStatus.COMPLETE,
-                    detail=f"Analysis complete. {cit_pass}/{len(citation_results)} citations verified."
+                    workspace_id,
+                    WorkspaceStatus.COMPLETE,
+                    detail=f"Analysis complete. {cit_pass}/{len(citation_results)} citations verified.",
                 )
                 # Only safe to drop the scratch cache once every dimension is
                 # clean — nothing left that a future re-run would need to skip.
@@ -460,10 +471,14 @@ async def run_full_analysis_pipeline(
             )
             for dim_name, gap_dict, p_info in completed_dimensions:
                 await ws_service.update_dimension_result(
-                    workspace_id, dim_name, gap_dict, p_info,
+                    workspace_id,
+                    dim_name,
+                    gap_dict,
+                    p_info,
                 )
             await ws_service.update_status(
-                workspace_id, WorkspaceStatus.ERROR,
+                workspace_id,
+                WorkspaceStatus.ERROR,
                 detail=f"Pipeline error: {exc}",
             )
             return {

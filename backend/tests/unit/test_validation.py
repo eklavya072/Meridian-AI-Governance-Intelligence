@@ -4,13 +4,14 @@ Unit tests for the upload validation module.
 Tests every failure mode specified in Section 7a Case B.
 """
 
-import pytest
 from pathlib import Path
 
+import pytest
+
 from src.validation import (
-    validate_pdf_file,
-    validate_file_path,
     MAX_FILE_SIZE_BYTES,
+    validate_file_path,
+    validate_pdf_file,
 )
 
 
@@ -61,8 +62,9 @@ class TestEmptyFile:
 
 class TestPasswordProtected:
     def test_detect_password_protected(self):
-        from pypdf import PdfReader, PdfWriter
         import io
+
+        from pypdf import PdfReader, PdfWriter
 
         writer = PdfWriter()
         writer.add_blank_page(200, 200)
@@ -79,8 +81,9 @@ class TestPasswordProtected:
 
 class TestScannedDocument:
     def test_scanned_image_pdf(self):
-        from pypdf import PdfWriter
         import io
+
+        from pypdf import PdfWriter
 
         writer = PdfWriter()
         writer.add_blank_page(200, 200)
@@ -97,14 +100,15 @@ class TestScannedDocument:
 
 class TestValidPDF:
     def test_valid_pdf_passes(self):
-        from pypdf import PdfWriter
         import io
+
+        from pypdf import PdfWriter
 
         writer = PdfWriter()
         page = writer.add_blank_page(200, 200)
         page.merge_page(page)
 
-        text_page = writer.add_blank_page(200, 200)
+        writer.add_blank_page(200, 200)
 
         buf = io.BytesIO()
         writer.write(buf)

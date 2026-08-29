@@ -1,16 +1,21 @@
 import pytest
+
 from src.consistency import (
-    ConsistencyValidator,
-    build_governance_dimension_graph,
-    ConsistencyViolation,
-    ConsistencyReport,
-    detect_covered_synthesis_drift,
-    detect_ladder_raise_contradiction,
     COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD,
     LADDER_RAISE_REVIEW_THRESHOLD,
+    ConsistencyReport,
+    ConsistencyValidator,
+    ConsistencyViolation,
+    build_governance_dimension_graph,
+    detect_covered_synthesis_drift,
+    detect_ladder_raise_contradiction,
 )
 from src.models import (
-    CoverageLevel, RiskLevel, GovernanceGap, RetrievedEvidence, DimensionGraph,
+    CoverageLevel,
+    DimensionGraph,
+    GovernanceGap,
+    RetrievedEvidence,
+    RiskLevel,
 )
 
 
@@ -107,7 +112,9 @@ def test_graph_child_not_covered():
         ),
     ]
     report = validator.validate(gaps)
-    graph_violations = [v for v in report.violations if v.violation_type == "graph_child_not_covered"]
+    graph_violations = [
+        v for v in report.violations if v.violation_type == "graph_child_not_covered"
+    ]
     assert len(graph_violations) >= 0
 
 
@@ -317,17 +324,14 @@ def test_ladder_raise_detector_strong_gap_assertion_flags():
 
 
 def test_ladder_raise_detector_never_mentions_flags():
-    score, phrases = detect_ladder_raise_contradiction(
-        "Document never mentions transparency."
-    )
+    score, phrases = detect_ladder_raise_contradiction("Document never mentions transparency.")
     assert score >= LADDER_RAISE_REVIEW_THRESHOLD
     assert "never mentions" in phrases
 
 
 def test_ladder_raise_detector_lacks_flags():
     score, phrases = detect_ladder_raise_contradiction(
-        "The policy covers notification but lacks any explainability or "
-        "logging requirements."
+        "The policy covers notification but lacks any explainability or logging requirements."
     )
     assert score >= LADDER_RAISE_REVIEW_THRESHOLD
     assert "lacks" in phrases
@@ -355,8 +359,7 @@ def test_ladder_raise_detector_provides_no_flags():
     # explicit-absence construction is the same contradiction and must
     # flag for review.
     score, phrases = detect_ladder_raise_contradiction(
-        "The Act provides no concrete operational mechanisms for fairness "
-        "or non-discrimination."
+        "The Act provides no concrete operational mechanisms for fairness or non-discrimination."
     )
     assert score >= LADDER_RAISE_REVIEW_THRESHOLD
     assert "provides no" in phrases

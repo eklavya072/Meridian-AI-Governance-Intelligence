@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import uuid
-import structlog
 from datetime import datetime
 from typing import Any
 
+import structlog
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
 
-from src.db_models import Workspace, WorkspaceStatus, Analysis, Report, UploadLog
+from src.db_models import Analysis, UploadLog, Workspace, WorkspaceStatus
 
 logger = structlog.get_logger()
 
@@ -48,9 +48,7 @@ class WorkspaceService:
         return result.scalar_one_or_none()
 
     async def list_workspaces(self) -> list[Workspace]:
-        result = await self.db.execute(
-            select(Workspace).order_by(Workspace.created_at.desc())
-        )
+        result = await self.db.execute(select(Workspace).order_by(Workspace.created_at.desc()))
         return list(result.scalars().all())
 
     async def update_status(
@@ -67,9 +65,7 @@ class WorkspaceService:
             values["status_detail"] = detail
 
         await self.db.execute(
-            update(Workspace)
-            .where(Workspace.id == uuid.UUID(workspace_id))
-            .values(**values)
+            update(Workspace).where(Workspace.id == uuid.UUID(workspace_id)).values(**values)
         )
         await self.db.commit()
         return await self.get_workspace(workspace_id)

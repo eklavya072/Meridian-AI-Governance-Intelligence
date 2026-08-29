@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import structlog
 from typing import Any
+
+import structlog
 
 from src.framework_sync import load_frameworks_config
 from src.vectorstore import VectorStore
@@ -35,14 +36,15 @@ def _framework_chunk_counts(vector_store: VectorStore) -> dict[str, int]:
     counts: dict[str, int] = {}
     offset = 0
     while True:
-        rows = vector_store.collection.get(
-            include=["metadatas"], limit=5000, offset=offset
-        )
+        rows = vector_store.collection.get(include=["metadatas"], limit=5000, offset=offset)
         metadatas = rows.get("metadatas") or []
         if not metadatas:
             break
         for m in metadatas:
-            name = (m or {}).get("framework") or ""
+            # Chroma types a metadata value as str | int | float | bool | list,
+            # so the raw value cannot key a dict[str, int] without narrowing.
+            raw = (m or {}).get("framework")
+            name = raw if isinstance(raw, str) else ""
             if name:
                 counts[name] = counts.get(name, 0) + 1
         offset += len(metadatas)
@@ -67,14 +69,16 @@ def get_framework_library(vector_store: VectorStore) -> list[dict[str, Any]]:
     for fw in frameworks_config:
         name = fw.get("name", "Unknown")
         indexed_count = counts.get(name, 0)
-        library.append({
-            "name": name,
-            "version": fw.get("version", ""),
-            "website": fw.get("website", ""),
-            "official_source_url": fw.get("pdf_url", ""),
-            "indexed": indexed_count > 0,
-            "chunk_count": indexed_count,
-            "status": "indexed" if indexed_count > 0 else "not_indexed",
-        })
+        library.append(
+            {
+                "name": name,
+                "version": fw.get("version", ""),
+                "website": fw.get("website", ""),
+                "official_source_url": fw.get("pdf_url", ""),
+                "indexed": indexed_count > 0,
+                "chunk_count": indexed_count,
+                "status": "indexed" if indexed_count > 0 else "not_indexed",
+            }
+        )
 
     return library

@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import re
+import math
 import os
-import structlog
+import re
 from functools import lru_cache
 from typing import Any
 
+import structlog
 from pydantic import BaseModel
 
 from src.models import VerificationStatus
 from src.nli_verifier import NLIVerifier
+from src.utils import compute_keyword_overlap
 from src.vectorstore import VectorStore
-from src.utils import cosine_similarity, compute_keyword_overlap, l2_normalize
 
 logger = structlog.get_logger()
 
@@ -71,9 +72,6 @@ def _compute_semantic_similarity(
     return dot / (na * nb)
 
 
-import math
-
-
 def _compute_keyword_overlap(claim_text: str, chunk_text: str) -> float:
     return compute_keyword_overlap(claim_text, chunk_text)
 
@@ -115,9 +113,7 @@ def verify_citation(
     if page_number is not None and chunk_page is not None:
         if page_number != chunk_page:
             page_exists = False
-            failures.append(
-                f"Claimed page {page_number} does not match stored page {chunk_page}."
-            )
+            failures.append(f"Claimed page {page_number} does not match stored page {chunk_page}.")
     # document_total_pages is the UPLOADED POLICY's own page count — it must
     # only bound citations that actually come FROM that document. A chunk
     # carries a workspace_id only when it was ingested as part of a
@@ -133,7 +129,9 @@ def verify_citation(
     if document_total_pages and page_number and chunk_belongs_to_workspace_document:
         if page_number > document_total_pages:
             page_exists = False
-            failures.append(f"Page {page_number} exceeds document length ({document_total_pages} pages).")
+            failures.append(
+                f"Page {page_number} exceeds document length ({document_total_pages} pages)."
+            )
 
     chunk_text = chunk["text"]
 
@@ -184,7 +182,9 @@ def verify_citation(
             if len(key_terms) <= 3:
                 key_terms = claim_text.lower().split()
             overlap_count = sum(1 for term in key_terms if term in chunk_text.lower())
-            text_supports_claim = overlap_count >= max(3, len(key_terms) * KEYWORD_OVERLAP_THRESHOLD)
+            text_supports_claim = overlap_count >= max(
+                3, len(key_terms) * KEYWORD_OVERLAP_THRESHOLD
+            )
             verification_method = "keyword_only"
             verification_confidence = overlap_count / max(len(key_terms), 1)
             verification_reason = f"Keyword overlap: {overlap_count}/{len(key_terms)}"
@@ -278,7 +278,7 @@ def verify_chat_citation(
 
     # 2. Find the best matching chunk by comparing quoted text against chunk text
     quote_lower = quote_text.lower().strip()
-    quote_terms = set(w for w in quote_lower.split() if len(w) > 3)
+    quote_terms = {w for w in quote_lower.split() if len(w) > 3}
     if not quote_terms:
         quote_terms = set(quote_lower.split())
 
@@ -444,8 +444,17 @@ def verify_gap_analysis_citations(
 # "Section 4" about a document whose divisions are Parts. See
 # detect_division_vocabulary.
 DIVISION_KINDS = (
-    "Article", "Recital", "Annex", "Section", "Part", "Chapter",
-    "Clause", "Paragraph", "Schedule", "Rule", "Principle",
+    "Article",
+    "Recital",
+    "Annex",
+    "Section",
+    "Part",
+    "Chapter",
+    "Clause",
+    "Paragraph",
+    "Schedule",
+    "Rule",
+    "Principle",
 )
 
 # Sub-references, NOT independently citable divisions. "Article 10, paragraph 2"
@@ -527,9 +536,7 @@ _ENUMERATED_DIVISION_RE = re.compile(r"(?:^|[\n\r\s])([0-9]{1,3})\s*\.\s+(?=[A-Z
 @lru_cache(maxsize=8)
 def _enumerated_ordinals(corpus_text: str) -> frozenset[str]:
     """Division numbers the document enumerates as bare headings."""
-    return frozenset(
-        m.group(1) for m in _ENUMERATED_DIVISION_RE.finditer(corpus_text)
-    )
+    return frozenset(m.group(1) for m in _ENUMERATED_DIVISION_RE.finditer(corpus_text))
 
 
 def _citation_present(kind: str, number: str, corpus_text: str) -> bool:

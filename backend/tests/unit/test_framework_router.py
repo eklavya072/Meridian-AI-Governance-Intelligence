@@ -6,19 +6,26 @@ import pytest
 
 from src.framework_router import (
     CORE_FRAMEWORKS,
+    _routing_metadata,
     resolve_dimension_frameworks,
     resolve_frameworks,
-    resolve_regions,
     resolve_regional_frameworks,
-    _routing_metadata,
+    resolve_regions,
 )
 
 
 class TestCoreFrameworks:
     def test_core_always_included_for_any_dimension(self):
-        for dim in ["Transparency", "Privacy", "Accountability", "Safety",
-                    "Human Autonomy", "Inclusivity", "Fairness",
-                    "Environmental Sustainability"]:
+        for dim in [
+            "Transparency",
+            "Privacy",
+            "Accountability",
+            "Safety",
+            "Human Autonomy",
+            "Inclusivity",
+            "Fairness",
+            "Environmental Sustainability",
+        ]:
             frameworks = resolve_frameworks(dim)
             assert set(CORE_FRAMEWORKS).issubset(set(frameworks))
 
@@ -31,14 +38,20 @@ class TestCoreFrameworks:
         """A dimension with no dedicated frameworks gets ONLY core + any
         regional — never the dimension-specific ones of other dimensions."""
         frameworks = resolve_frameworks("Transparency")
-        assert "Keeping an Eye on AI: A Framework for Effective Human Oversight of AI Systems" not in frameworks
+        assert (
+            "Keeping an Eye on AI: A Framework for Effective Human Oversight of AI Systems"
+            not in frameworks
+        )
         assert "UNESCO Policy Area 5 — Environment and Ecosystems" not in frameworks
 
 
 class TestDimensionSpecificRouting:
     def test_human_autonomy_gets_ssrn(self):
         frameworks = resolve_frameworks("Human Autonomy")
-        assert "Keeping an Eye on AI: A Framework for Effective Human Oversight of AI Systems" in frameworks
+        assert (
+            "Keeping an Eye on AI: A Framework for Effective Human Oversight of AI Systems"
+            in frameworks
+        )
 
     def test_environmental_sustainability_gets_policy_area_5(self):
         frameworks = resolve_frameworks("Environmental Sustainability")
@@ -49,15 +62,32 @@ class TestDimensionSpecificRouting:
         assert "AI for Environment and Ecosystems Toolkit for Policymakers" in frameworks
 
     def test_dimension_frameworks_do_not_leak_to_other_dimensions(self):
-        for dim in ["Transparency", "Privacy", "Accountability", "Safety",
-                    "Human Autonomy", "Inclusivity", "Fairness"]:
+        for dim in [
+            "Transparency",
+            "Privacy",
+            "Accountability",
+            "Safety",
+            "Human Autonomy",
+            "Inclusivity",
+            "Fairness",
+        ]:
             frameworks = resolve_frameworks(dim)
             assert "UNESCO Policy Area 5 — Environment and Ecosystems" not in frameworks
             assert "AI for Environment and Ecosystems Toolkit for Policymakers" not in frameworks
-        for dim in ["Transparency", "Privacy", "Accountability", "Safety",
-                    "Inclusivity", "Fairness", "Environmental Sustainability"]:
+        for dim in [
+            "Transparency",
+            "Privacy",
+            "Accountability",
+            "Safety",
+            "Inclusivity",
+            "Fairness",
+            "Environmental Sustainability",
+        ]:
             frameworks = resolve_frameworks(dim)
-            assert "Keeping an Eye on AI: A Framework for Effective Human Oversight of AI Systems" not in frameworks
+            assert (
+                "Keeping an Eye on AI: A Framework for Effective Human Oversight of AI Systems"
+                not in frameworks
+            )
 
 
 class TestRegionalRouting:
@@ -98,7 +128,10 @@ class TestRegionalRouting:
             assert set(regional).issubset(set(routed))
 
     def test_regional_frameworks_include_own_framework(self):
-        assert "Singapore Model AI Governance Framework for Generative AI" in resolve_regional_frameworks("Singapore")
+        assert (
+            "Singapore Model AI Governance Framework for Generative AI"
+            in resolve_regional_frameworks("Singapore")
+        )
         assert "African Union Continental AI Strategy" in resolve_regional_frameworks("Nigeria")
         assert "ASEAN Guide on AI Governance and Ethics" in resolve_regional_frameworks("Singapore")
 
@@ -112,35 +145,44 @@ class TestDimensionRoleRouting:
     routing and never leak into Module 1's framework list."""
 
     def test_module2_practical_dimension_sources(self):
-        assert "CDEI Review into Bias in Algorithmic Decision-Making" in \
-            resolve_dimension_frameworks("Fairness", ["module_2_practical"])
-        assert "NIST SP 1270: Bias Management in AI" in \
-            resolve_dimension_frameworks("Fairness", ["module_2_practical"])
-        assert "CIPL Privacy-Enhancing Technologies in AI" in \
-            resolve_dimension_frameworks("Privacy", ["module_2_practical"])
+        assert (
+            "CDEI Review into Bias in Algorithmic Decision-Making"
+            in resolve_dimension_frameworks("Fairness", ["module_2_practical"])
+        )
+        assert "NIST SP 1270: Bias Management in AI" in resolve_dimension_frameworks(
+            "Fairness", ["module_2_practical"]
+        )
+        assert "CIPL Privacy-Enhancing Technologies in AI" in resolve_dimension_frameworks(
+            "Privacy", ["module_2_practical"]
+        )
 
     def test_module3_implementation_dimension_sources(self):
-        assert "AI Cybersecurity Collaboration Playbook (CISA)" in \
-            resolve_dimension_frameworks("Safety", ["module_3_implementation"])
-        assert "AI Verify Assurance Pilot — Main Report" in \
-            resolve_dimension_frameworks("Safety", ["module_3_implementation"])
+        assert "AI Cybersecurity Collaboration Playbook (CISA)" in resolve_dimension_frameworks(
+            "Safety", ["module_3_implementation"]
+        )
+        assert "AI Verify Assurance Pilot — Main Report" in resolve_dimension_frameworks(
+            "Safety", ["module_3_implementation"]
+        )
 
     def test_role_filter_respects_module_boundary(self):
         # A Module 2 source must not be resolved as a Module 3 source and
         # vice versa.
-        assert "CDEI Review into Bias in Algorithmic Decision-Making" not in \
-            resolve_dimension_frameworks("Fairness", ["module_3_implementation"])
-        assert "AI Verify Assurance Pilot — Main Report" not in \
-            resolve_dimension_frameworks("Safety", ["module_2_practical"])
+        assert (
+            "CDEI Review into Bias in Algorithmic Decision-Making"
+            not in resolve_dimension_frameworks("Fairness", ["module_3_implementation"])
+        )
+        assert "AI Verify Assurance Pilot — Main Report" not in resolve_dimension_frameworks(
+            "Safety", ["module_2_practical"]
+        )
 
     def test_dimension_tags_do_not_leak_into_module1(self):
         # The dimension-tagged Module 2/3 sources must never join Module 1's
         # routed list — they have no normative chunks and their role is
         # served by the Module 2/3 reserve instead.
-        assert "CDEI Review into Bias in Algorithmic Decision-Making" not in \
-            resolve_frameworks("Fairness")
-        assert "AI Verify Assurance Pilot — Main Report" not in \
-            resolve_frameworks("Safety")
+        assert "CDEI Review into Bias in Algorithmic Decision-Making" not in resolve_frameworks(
+            "Fairness"
+        )
+        assert "AI Verify Assurance Pilot — Main Report" not in resolve_frameworks("Safety")
 
     def test_untagged_dimension_returns_empty(self):
         assert resolve_dimension_frameworks("Human Autonomy", ["module_2_practical"]) == []
@@ -151,7 +193,9 @@ class TestDeterminismAndDedup:
     def test_same_input_same_output(self):
         for dim in ["Human Autonomy", "Environmental Sustainability", "Transparency"]:
             for country in [None, "Singapore", "Nigeria"]:
-                assert resolve_frameworks(dim, country=country) == resolve_frameworks(dim, country=country)
+                assert resolve_frameworks(dim, country=country) == resolve_frameworks(
+                    dim, country=country
+                )
 
     def test_no_duplicates(self):
         frameworks = resolve_frameworks("Environmental Sustainability", country="Singapore")

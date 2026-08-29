@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import re
 import time
-import structlog
-from enum import Enum
-from typing import Any, Callable
 from abc import ABC, abstractmethod
+from enum import Enum
+from typing import Any
+
+import structlog
 
 from src.analysis_prompts import DIMENSION_DEFINITIONS
 from src.deterministic import LEVEL_LABELS
@@ -25,6 +26,7 @@ from src.gap_analyzer import GOVERNANCE_DIMENSIONS
 logger = structlog.get_logger()
 
 # ── Intents ──────────────────────────────────────────────────────────────
+
 
 class Intent(str, Enum):
     CONCEPT_EXPLANATION = "concept_explanation"
@@ -41,18 +43,80 @@ class Intent(str, Enum):
 # Imported from src.gap_analyzer: GOVERNANCE_DIMENSIONS
 
 DIMENSION_ALIASES: dict[str, list[str]] = {
-    "Transparency": ["transparency", "explainability", "explainable", "openness", "disclosure", "audit", "reporting"],
-    "Accountability": ["accountability", "responsible", "liability", "oversight", "redress", "grievance", "responsibility"],
-    "Privacy": ["privacy", "data protection", "personal data", "consent", "anonymization", "confidentiality"],
-    "Safety": ["safety", "robustness", "reliability", "security", "fail.?safe", "incident", "risk assessment"],
-    "Human Autonomy": ["autonomy", "human control", "human.?in.?the.?loop", "human oversight", "opt.?out", "self.?determination"],
-    "Inclusivity": ["inclusivity", "inclusion", "accessibility", "equity", "participation", "digital divide", "multi.?stakeholder"],
-    "Fairness": ["fairness", "bias", "discrimination", "non.?discrimination", "equality", "equitable"],
-    "Environmental Sustainability": ["environmental", "sustainability", "sustainable", "energy", "carbon", "ecological", "climate"],
+    "Transparency": [
+        "transparency",
+        "explainability",
+        "explainable",
+        "openness",
+        "disclosure",
+        "audit",
+        "reporting",
+    ],
+    "Accountability": [
+        "accountability",
+        "responsible",
+        "liability",
+        "oversight",
+        "redress",
+        "grievance",
+        "responsibility",
+    ],
+    "Privacy": [
+        "privacy",
+        "data protection",
+        "personal data",
+        "consent",
+        "anonymization",
+        "confidentiality",
+    ],
+    "Safety": [
+        "safety",
+        "robustness",
+        "reliability",
+        "security",
+        "fail.?safe",
+        "incident",
+        "risk assessment",
+    ],
+    "Human Autonomy": [
+        "autonomy",
+        "human control",
+        "human.?in.?the.?loop",
+        "human oversight",
+        "opt.?out",
+        "self.?determination",
+    ],
+    "Inclusivity": [
+        "inclusivity",
+        "inclusion",
+        "accessibility",
+        "equity",
+        "participation",
+        "digital divide",
+        "multi.?stakeholder",
+    ],
+    "Fairness": [
+        "fairness",
+        "bias",
+        "discrimination",
+        "non.?discrimination",
+        "equality",
+        "equitable",
+    ],
+    "Environmental Sustainability": [
+        "environmental",
+        "sustainability",
+        "sustainable",
+        "energy",
+        "carbon",
+        "ecological",
+        "climate",
+    ],
 }
 
 
 # ── Session Context ──────────────────────────────────────────────────────
+
 
 class SessionContext:
     """Tracks active conversation state — which dimension, what was discussed,
@@ -219,6 +283,7 @@ def classify_intent(
 
 # ── Response Generators ──────────────────────────────────────────────────
 
+
 def _get_dimension_definition(dimension: str) -> str:
     """Get a human-readable definition for a governance dimension."""
     items = DIMENSION_DEFINITIONS.get(dimension, [])
@@ -367,8 +432,7 @@ def _build_analysis_explanation(
     }
 
     explanation = coverage_explanations.get(
-        coverage,
-        "The analysis could not determine a definitive coverage level for this dimension."
+        coverage, "The analysis could not determine a definitive coverage level for this dimension."
     )
     lines.append(explanation)
     lines.append("")
@@ -442,9 +506,7 @@ def _build_analysis_explanation(
             phase = ph.get("phase") or "Phase"
             timeline = ph.get("timeline") or ""
             objective = ph.get("objective") or ""
-            lines.append(
-                f"• **{phase}**{f' ({timeline})' if timeline else ''}: {objective}"
-            )
+            lines.append(f"• **{phase}**{f' ({timeline})' if timeline else ''}: {objective}")
         agency = roadmap.get("responsible_agency")
         if agency:
             lines.append("")
@@ -460,9 +522,7 @@ def _build_analysis_explanation(
             name = inc.get("incident_name", "Incident")
             lines.append(f"• **{name}**")
             if inc.get("potential_consequence"):
-                lines.append(
-                    f"  Potential consequence: {str(inc['potential_consequence'])[:220]}"
-                )
+                lines.append(f"  Potential consequence: {str(inc['potential_consequence'])[:220]}")
         lines.append("")
 
     return "\n".join(lines)
@@ -599,10 +659,10 @@ def _build_educational_response(
     """Build a structured educational response for comparative questions."""
     # Extract comparison terms
     normalized = _normalize(message)
-    
+
     # Check for common comparison patterns
     comparisons: dict[str, tuple[str, str]] = {}
-    
+
     if "responsible" in normalized and "ethical" in normalized:
         comparisons["Responsible AI vs Ethical AI"] = (
             "**Responsible AI** refers to the practice of designing, developing, "
@@ -616,7 +676,7 @@ def _build_educational_response(
             "Both concepts are complementary. Ethical AI sets the normative framework; "
             "Responsible AI provides the operational approach to implement it."
         )
-    
+
     if "governance" in normalized and "regulation" in normalized:
         comparisons["Governance vs Regulation"] = (
             "**AI Governance** is the broader system of rules, practices, "
@@ -646,7 +706,7 @@ def _build_educational_response(
             _get_dimension_definition(dimension),
             _get_dimension_aspects(dimension),
         )
-    
+
     return (
         "I'd be happy to explain AI governance concepts. You can ask about:\n\n"
         "• **Specific dimensions**: What is transparency? Explain accountability.\n"
@@ -675,13 +735,13 @@ def _build_unknown_response() -> str:
     return (
         "I'm not sure I understand your question. I specialize in AI governance "
         "and policy analysis. Here are some things you can ask me:\n\n"
-        "• **About your analysis**: \"Why is Fairness Partial?\" or "
-        "\"Explain the Transparency finding\"\n"
-        "• **About concepts**: \"What is AI accountability?\" or "
-        "\"Define algorithmic fairness\"\n"
-        "• **About recommendations**: \"How can Privacy be improved?\" or "
-        "\"What would bias auditing look like?\"\n"
-        "• **Educational**: \"Difference between governance and regulation?\"\n\n"
+        '• **About your analysis**: "Why is Fairness Partial?" or '
+        '"Explain the Transparency finding"\n'
+        '• **About concepts**: "What is AI accountability?" or '
+        '"Define algorithmic fairness"\n'
+        '• **About recommendations**: "How can Privacy be improved?" or '
+        '"What would bias auditing look like?"\n'
+        '• **Educational**: "Difference between governance and regulation?"\n\n'
         "Can you rephrase your question?"
     )
 
@@ -702,14 +762,14 @@ def build_educational_response(message: str, dimension: str | None) -> str:
 
 # ── Plugin Interface ─────────────────────────────────────────────────────
 
+
 class AdvisorPlugin(ABC):
     """Base class for future capabilities that plug into the advisor without
     modifying the intent classification logic."""
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
     def can_handle(self, intent: Intent, dimension: str | None, message: str) -> bool:
@@ -760,6 +820,7 @@ def register_plugin(plugin: AdvisorPlugin) -> None:
 
 
 # ── Main Entry Point ─────────────────────────────────────────────────────
+
 
 def generate_response(
     message: str,

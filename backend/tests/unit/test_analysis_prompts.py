@@ -1,20 +1,19 @@
 import pytest
 
 from src.analysis_prompts import (
-    build_dimension_definition_block,
-    build_evidence_interpretation_prompt,
-    build_maturity_assessment_prompt,
-    build_recommendation_and_final_prompt,
-    build_module1_2_combined_prompt,
-    build_module3_4_combined_prompt,
-    _national_context_block,
     DIMENSION_DEFINITIONS,
-    truncate,
     INTEGRATED_MATURITY_FRAMEWORK,
     MODULE1_2_COMBINED_SYSTEM,
     MODULE3_4_COMBINED_SYSTEM,
+    _national_context_block,
+    build_dimension_definition_block,
+    build_evidence_interpretation_prompt,
+    build_maturity_assessment_prompt,
+    build_module1_2_combined_prompt,
+    build_module3_4_combined_prompt,
+    build_recommendation_and_final_prompt,
+    truncate,
 )
-
 
 ALL_DIMENSIONS = list(DIMENSION_DEFINITIONS.keys())
 
@@ -411,9 +410,9 @@ class TestModule12CombinedCoveredTierPrompt:
 
     def test_branch_a_forbids_should_would_will(self):
         # The covered branch must forbid future-tense / gap-filling verbs.
-        assert "\"should\"," in MODULE1_2_COMBINED_SYSTEM
-        assert "\"would\"," in MODULE1_2_COMBINED_SYSTEM
-        assert "\"will\"," in MODULE1_2_COMBINED_SYSTEM
+        assert '"should",' in MODULE1_2_COMBINED_SYSTEM
+        assert '"would",' in MODULE1_2_COMBINED_SYSTEM
+        assert '"will",' in MODULE1_2_COMBINED_SYSTEM
 
     def test_branch_a_honesty_flag_instruction(self):
         # If the model cannot ground compliance in document evidence, it must
@@ -432,8 +431,14 @@ class TestModule12CombinedCoveredTierPrompt:
         # The old leaky shared example is now explicitly scoped to Branch B
         # (Partial/Missing), with a REMEMBER warning against using it for
         # Covered dimensions.
-        assert "this recommendation style is ONLY correct when a gap exists" in MODULE1_2_COMBINED_SYSTEM
-        assert "Branch A (Covered) must NEVER use the Branch B recommendation" in MODULE1_2_COMBINED_SYSTEM
+        assert (
+            "this recommendation style is ONLY correct when a gap exists"
+            in MODULE1_2_COMBINED_SYSTEM
+        )
+        assert (
+            "Branch A (Covered) must NEVER use the Branch B recommendation"
+            in MODULE1_2_COMBINED_SYSTEM
+        )
 
     def test_build_module1_2_combined_prompt_contains_compliance_instruction(self):
         sys_p, prompt = build_module1_2_combined_prompt(
@@ -528,12 +533,14 @@ class TestDocumentNameLabelPrecedence:
             dimension="Transparency",
             dimension_definition="def",
             document_chunks=[],
-            module1_chunks=[{
-                "text": "framework text",
-                "source_framework": "OECD AI Principles",
-                "document_name": "OECD_AI_Principles.pdf",
-                "chunk_id": "aaa",
-            }],
+            module1_chunks=[
+                {
+                    "text": "framework text",
+                    "source_framework": "OECD AI Principles",
+                    "document_name": "OECD_AI_Principles.pdf",
+                    "chunk_id": "aaa",
+                }
+            ],
             module2_chunks=[],
         )
         assert "Source: OECD AI Principles" in prompt
@@ -545,12 +552,14 @@ class TestDocumentNameLabelPrecedence:
         sys_p, prompt = build_module1_2_combined_prompt(
             dimension="Transparency",
             dimension_definition="def",
-            document_chunks=[{
-                "text": "policy text",
-                "source_framework": "",
-                "document_name": "nais2023-4.pdf",
-                "chunk_id": "aaa",
-            }],
+            document_chunks=[
+                {
+                    "text": "policy text",
+                    "source_framework": "",
+                    "document_name": "nais2023-4.pdf",
+                    "chunk_id": "aaa",
+                }
+            ],
             module1_chunks=[],
             module2_chunks=[],
         )
@@ -561,11 +570,13 @@ class TestDocumentNameLabelPrecedence:
         sys_p, prompt = build_module1_2_combined_prompt(
             dimension="Transparency",
             dimension_definition="def",
-            document_chunks=[{
-                "text": "policy text",
-                "source_framework": "",
-                "chunk_id": "aaa",
-            }],
+            document_chunks=[
+                {
+                    "text": "policy text",
+                    "source_framework": "",
+                    "chunk_id": "aaa",
+                }
+            ],
             module1_chunks=[],
             module2_chunks=[],
         )
@@ -586,7 +597,9 @@ class TestAllPromptOutputFormats:
         _, p3 = build_recommendation_and_final_prompt(dim, ei, ma, fs, pr, dd)
 
         for i, p in enumerate([p1, p2, p3], 1):
-            assert "Output valid JSON only" in p or "Output JSON" in p, f"Prompt {i} missing JSON instruction"
+            assert "Output valid JSON only" in p or "Output JSON" in p, (
+                f"Prompt {i} missing JSON instruction"
+            )
 
     def test_all_system_prompts_non_empty(self):
         dim = "Accountability"

@@ -14,6 +14,7 @@ Writing the values reads correctly and updates nothing, and because the
 statement fails into a warning rather than an exception, a broken sweep looks
 exactly like a sweep with nothing to do.
 """
+
 import re
 from pathlib import Path
 
@@ -25,9 +26,12 @@ MAIN = Path(__file__).resolve().parents[2] / "main.py"
 def _reclaim_statements() -> list[str]:
     """The UPDATE statements the startup sweep issues against workspaces."""
     source = MAIN.read_text()
-    return re.findall(r"UPDATE workspaces SET status = '(\w+)'[^\"]*?"
-                      r"WHERE status = '(\w+)'",
-                      source.replace('"\n                "', ""), re.DOTALL)
+    return re.findall(
+        r"UPDATE workspaces SET status = '(\w+)'[^\"]*?"
+        r"WHERE status = '(\w+)'",
+        source.replace('"\n                "', ""),
+        re.DOTALL,
+    )
 
 
 class TestOrphanRecoverySql:
@@ -50,11 +54,11 @@ class TestOrphanRecoverySql:
         }
 
     def test_an_interrupted_analysis_becomes_runnable_again(self):
-        moves = dict((source, target) for target, source in _reclaim_statements())
+        moves = {source: target for target, source in _reclaim_statements()}
         assert moves[WorkspaceStatus.PROCESSING.name] == WorkspaceStatus.QUEUED.name
 
     def test_an_interrupted_brief_keeps_its_analysis(self):
         """GENERATING_REPORT had already finished analysing and lost only the
         brief. Sending it back to QUEUED would throw that work away."""
-        moves = dict((source, target) for target, source in _reclaim_statements())
+        moves = {source: target for target, source in _reclaim_statements()}
         assert moves[WorkspaceStatus.GENERATING_REPORT.name] == WorkspaceStatus.COMPLETE.name

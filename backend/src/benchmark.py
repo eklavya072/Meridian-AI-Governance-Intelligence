@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from collections.abc import Callable
+
 import structlog
-from typing import Any, Callable
 
 from src.evaluation import RetrievalEvaluator, evaluate_retrieval
 from src.models import BenchmarkConfig, BenchmarkRun, RetrievalMetrics
@@ -55,14 +56,12 @@ class BenchmarkRunner:
         t0 = time.time()
 
         per_dimension: dict[str, RetrievalMetrics] = {}
-        all_false_positives = 0
-        all_false_negatives = 0
-        all_total_retrieved = 0
-        all_total_relevant = 0
 
         for dim in dimensions:
             result = retrieval_fn(dim, config)
-            chunk_ids = [c.get("chunk_id", "") for c in result.document_chunks + result.framework_chunks]
+            chunk_ids = [
+                c.get("chunk_id", "") for c in result.document_chunks + result.framework_chunks
+            ]
             relevant = (relevant_ids_map or {}).get(dim, set(chunk_ids[:3]))
 
             metrics = evaluate_retrieval(
@@ -70,9 +69,17 @@ class BenchmarkRunner:
                 relevant_chunk_ids=relevant,
                 total_retrieved=len(chunk_ids),
                 duplicate_count=len(chunk_ids) - len(set(chunk_ids)),
-                diversity_count=len({c.get("source_framework", "") for c in result.document_chunks + result.framework_chunks}),
+                diversity_count=len(
+                    {
+                        c.get("source_framework", "")
+                        for c in result.document_chunks + result.framework_chunks
+                    }
+                ),
                 similarity_scores=[
-                    c.get("reranker_score") or c.get("rrf_score") or c.get("similarity_score") or 0.0
+                    c.get("reranker_score")
+                    or c.get("rrf_score")
+                    or c.get("similarity_score")
+                    or 0.0
                     for c in result.document_chunks + result.framework_chunks
                 ],
             )
@@ -107,12 +114,24 @@ class BenchmarkRunner:
 
         agg = RetrievalMetrics()
         fields = [
-            "precision_at_1", "precision_at_3", "precision_at_5", "precision_at_10",
-            "recall_at_3", "recall_at_5", "recall_at_10",
-            "mrr", "ndcg_at_5", "ndcg_at_10",
-            "coverage_recall", "evidence_diversity", "duplicate_rate",
-            "avg_retrieval_similarity", "framework_retrieval_accuracy",
-            "policy_retrieval_accuracy", "false_positive_rate", "false_negative_rate",
+            "precision_at_1",
+            "precision_at_3",
+            "precision_at_5",
+            "precision_at_10",
+            "recall_at_3",
+            "recall_at_5",
+            "recall_at_10",
+            "mrr",
+            "ndcg_at_5",
+            "ndcg_at_10",
+            "coverage_recall",
+            "evidence_diversity",
+            "duplicate_rate",
+            "avg_retrieval_similarity",
+            "framework_retrieval_accuracy",
+            "policy_retrieval_accuracy",
+            "false_positive_rate",
+            "false_negative_rate",
         ]
         for field in fields:
             vals = [getattr(m, field) for m in metrics_list]

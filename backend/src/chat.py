@@ -11,45 +11,45 @@ Architecture:
 
 from __future__ import annotations
 
-import json
+import os
 import re
 import time
-import os
-import structlog
 from collections import OrderedDict
 from typing import Any
 
-from src.guardrails import Guardrails, SCOPE_MESSAGE
-from src.vectorstore import VectorStore
-from src.provider_router import get_provider, generate_text_with_retry
-from src.governance_advisor import (
-    generate_response,
-    build_concept_response,
-    build_educational_response,
-    _gap_to_finding_context,
-    Intent,
-    SessionContext,
+import structlog
+
+from src.analysis_brief import (
+    build_analysis_overview_context,
+    is_analysis_overview_question,
 )
 from src.document_overview import (
-    retrieve_document_overview,
     build_overview_context,
     build_overview_prompt,
     build_overview_system_prompt,
     is_document_specific_question,
     needs_full_analysis,
+    retrieve_document_overview,
 )
+from src.governance_advisor import (
+    Intent,
+    SessionContext,
+    _gap_to_finding_context,
+    build_concept_response,
+    build_educational_response,
+    generate_response,
+)
+from src.guardrails import SCOPE_MESSAGE, Guardrails
 from src.meridian_facts import (
     build_self_knowledge_context,
     is_method_question,
 )
-from src.analysis_brief import (
-    build_analysis_overview_context,
-    is_analysis_overview_question,
-)
+from src.provider_router import generate_text_with_retry, get_provider
+from src.vectorstore import VectorStore
 from src.verify import (
+    classify_narrative_citations,
     verify_chat_citation,
     verify_citation,
-    classify_narrative_citations,
 )
 
 logger = structlog.get_logger()
@@ -79,7 +79,7 @@ def build_framework_qa_system_prompt() -> str:
         "retrieved framework passages you are given.\n\n"
         "Guidelines:\n"
         "1. Answer conversationally and precisely, citing the framework(s) that "
-        "support each point as [Framework Name]: \"exact passage\".\n"
+        'support each point as [Framework Name]: "exact passage".\n'
         "2. Synthesize across frameworks where relevant (UNESCO Recommendation on "
         "the Ethics of AI, OECD AI Principles, EU AI Act, NIST AI RMF, UNDP Digital "
         "Strategy, UN Global Digital Compact, UN Roadmap for Digital Cooperation, "
@@ -113,10 +113,10 @@ def build_auditor_greeting() -> str:
         "what the tool cannot see.\n\n"
         "Upload a policy PDF and I'll also answer what that document says, and "
         "quote it back to you.\n\nTry asking:\n"
-        "• \"Why eight dimensions and not more?\"\n"
-        "• \"What does NIST AI RMF say about accountability?\"\n"
-        "• \"How does the G7 Hiroshima process handle safety?\"\n"
-        "• Upload a PDF, then: \"Where does this mention environmental rules?\"\n\n"
+        '• "Why eight dimensions and not more?"\n'
+        '• "What does NIST AI RMF say about accountability?"\n'
+        '• "How does the G7 Hiroshima process handle safety?"\n'
+        '• Upload a PDF, then: "Where does this mention environmental rules?"\n\n'
         "For scoring a document — how it compares against a framework, what it "
         "should improve — run it through the Analysis section; that produces the "
         "graded verdicts a chat answer can't."
@@ -280,7 +280,11 @@ def build_drill_down_context(finding_context: dict[str, Any]) -> str:
     for e in evidence:
         fw = e.get("source_framework", "Uploaded Document")
         page = f" (p. {e.get('page_number')})" if e.get("page_number") else ""
-        score = f" [similarity: {e.get('similarity_score', 'N/A')}]" if e.get("similarity_score") is not None else ""
+        score = (
+            f" [similarity: {e.get('similarity_score', 'N/A')}]"
+            if e.get("similarity_score") is not None
+            else ""
+        )
         lines.append(f"  • [{fw}{page}]{score}")
         lines.append(f"    {e.get('text', '')[:300]}")
     return "\n".join(lines)
@@ -321,7 +325,7 @@ def build_system_prompt() -> str:
         "is thin, say so in a sentence rather than padding the answer to look "
         "complete.\n\n"
         "CORRECT FALSE PREMISES BEFORE ANSWERING. A question often asserts a "
-        "verdict — \"why is Safety partial\", \"why did Privacy fail\". If the "
+        'verdict — "why is Safety partial", "why did Privacy fail". If the '
         "stored analysis says otherwise, say so in the first sentence and then "
         "answer the corrected question. Never argue for a verdict the analysis "
         "did not reach because the question assumed it; a reader who leaves "
@@ -435,13 +439,32 @@ def build_llm_enrichment_prompt(
 
 
 _PROSE_SOURCE_PREFIXES = (
-    "as noted in guidance from the", "as highlighted in the", "as stated in the",
-    "as described in the", "as noted in the", "as defined in the",
-    "as set out in the", "as outlined in the", "guidance from the",
-    "as noted in", "as highlighted in", "as stated in", "as described in",
-    "as defined in", "as set out in", "as outlined in", "highlighted in the",
-    "stated in the", "noted in the", "described in the", "defined in the",
-    "according to the", "per the", "under the", "in the", "the",
+    "as noted in guidance from the",
+    "as highlighted in the",
+    "as stated in the",
+    "as described in the",
+    "as noted in the",
+    "as defined in the",
+    "as set out in the",
+    "as outlined in the",
+    "guidance from the",
+    "as noted in",
+    "as highlighted in",
+    "as stated in",
+    "as described in",
+    "as defined in",
+    "as set out in",
+    "as outlined in",
+    "highlighted in the",
+    "stated in the",
+    "noted in the",
+    "described in the",
+    "defined in the",
+    "according to the",
+    "per the",
+    "under the",
+    "in the",
+    "the",
 )
 
 
@@ -457,7 +480,7 @@ def _clean_prose_source(raw: str) -> str:
     lowered = name.lower()
     for prefix in sorted(_PROSE_SOURCE_PREFIXES, key=len, reverse=True):
         if lowered.startswith(prefix):
-            name = name[len(prefix):].strip()
+            name = name[len(prefix) :].strip()
             lowered = name.lower()
     # Also drop any remaining leading lowercase words (e.g. 'the u.s. national
     # institute ...' variants the prefix list doesn't cover).
@@ -465,7 +488,7 @@ def _clean_prose_source(raw: str) -> str:
         idx = name.find(" ")
         if idx == -1:
             return ""
-        name = name[idx + 1:].strip()
+        name = name[idx + 1 :].strip()
     return name
 
 
@@ -498,9 +521,7 @@ def _known_framework_names(vector_store) -> list[str]:
         documents: set[str] = set()
         offset = 0
         while True:
-            rows = vector_store.collection.get(
-                include=["metadatas"], limit=5000, offset=offset
-            )
+            rows = vector_store.collection.get(include=["metadatas"], limit=5000, offset=offset)
             metadatas = rows.get("metadatas") or []
             if not metadatas:
                 break
@@ -572,11 +593,14 @@ def extract_citations(text: str) -> list[dict[str, str]]:
         # without brackets. Over-matching here is safe — every quote still
         # passes through verify_chat_citation, which rejects anything that
         # isn't genuinely in the knowledge base.
-        elif ':' in line and '"' in line:
-            m = re.search(r'(?:the\s+|of\s+the\s+|in\s+the\s+)?([A-Z][A-Za-z0-9 &.,()\'-]{3,}?)\s*:\s*\*?\*?"?([^"\n]{15,}?)"?\*?\*?$', line)
+        elif ":" in line and '"' in line:
+            m = re.search(
+                r'(?:the\s+|of\s+the\s+|in\s+the\s+)?([A-Z][A-Za-z0-9 &.,()\'-]{3,}?)\s*:\s*\*?\*?"?([^"\n]{15,}?)"?\*?\*?$',
+                line,
+            )
             if m:
                 source = _clean_prose_source(m.group(1))
-                quote = m.group(2).strip().rstrip("\"").strip()
+                quote = m.group(2).strip().rstrip('"').strip()
                 if source and len(quote) > 15:
                     citations.append({"source": source, "quote": quote[:300]})
     return citations
@@ -650,13 +674,15 @@ def verify_document_overview_citations(
 
             if result.passed:
                 cit_pass += 1
-                citations.append({
-                    "source": chunk.get("document_name") or "Uploaded Document",
-                    "quote": claim[:300],
-                    "verified": True,
-                    "verification_method": result.verification_method,
-                    "verification_confidence": getattr(result, "verification_confidence", 0.0),
-                })
+                citations.append(
+                    {
+                        "source": chunk.get("document_name") or "Uploaded Document",
+                        "quote": claim[:300],
+                        "verified": True,
+                        "verification_method": result.verification_method,
+                        "verification_confidence": getattr(result, "verification_confidence", 0.0),
+                    }
+                )
             else:
                 cit_fail += 1
     return citations, cit_pass, cit_fail
@@ -672,7 +698,7 @@ def verify_document_overview_citations(
 # conversation it had ever seen, each holding up to six messages plus a
 # finding context. That is a slow leak in a server designed to stay up.
 _SESSION_CONTEXT_LIMIT = int(os.getenv("CHAT_SESSION_CONTEXT_LIMIT", "500"))
-_session_contexts: "OrderedDict[str, SessionContext]" = OrderedDict()
+_session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
 
 
 def _get_session(session_id: str) -> SessionContext:
@@ -739,9 +765,7 @@ def chat(
     # improvising verdicts outside it. The Rapporteur does NOT — it already
     # has a completed analysis and answers them from those verdicts.
     wants_full_analysis = (
-        needs_full_analysis(user_message)
-        and not asks_about_method
-        and not analysis_results
+        needs_full_analysis(user_message) and not asks_about_method and not analysis_results
     )
     # "What are the main gaps in this analysis?" reads as document-specific by
     # the marker list ("what are the main", "in the") and was being answered
@@ -750,14 +774,21 @@ def chat(
     # question about the document.
     asks_about_analysis = bool(analysis_results) and is_analysis_overview_question(user_message)
     routed_overview = (
-        not is_qa and not is_overview and not has_finding
-        and not asks_about_method and not asks_about_analysis
-        and bool(workspace_id) and is_document_specific_question(user_message)
+        not is_qa
+        and not is_overview
+        and not has_finding
+        and not asks_about_method
+        and not asks_about_analysis
+        and bool(workspace_id)
+        and is_document_specific_question(user_message)
     )
     effective_mode = (
-        "document_overview" if (is_overview or routed_overview)
-        else "framework_qa" if is_qa
-        else "auditor" if is_auditor
+        "document_overview"
+        if (is_overview or routed_overview)
+        else "framework_qa"
+        if is_qa
+        else "auditor"
+        if is_auditor
         else "advisor"
     )
     mode = effective_mode
@@ -855,11 +886,15 @@ def chat(
             # as drill_down_context to the LLM.
             if frameworks:
                 retrieved_fw = vector_store.retrieve(
-                    query=user_message, top_k=4, framework_filter=frameworks,
+                    query=user_message,
+                    top_k=4,
+                    framework_filter=frameworks,
                 )
             if workspace_id:
                 retrieved_doc = vector_store.retrieve(
-                    query=user_message, top_k=4, workspace_filter=[workspace_id],
+                    query=user_message,
+                    top_k=4,
+                    workspace_filter=[workspace_id],
                 )
         else:
             # Mode A: unscoped across the full corpus. Frameworks list is
@@ -869,7 +904,9 @@ def chat(
             retrieved_fw = vector_store.retrieve(query=user_message, top_k=8)
             if workspace_id:
                 retrieved_doc = vector_store.retrieve(
-                    query=user_message, top_k=4, workspace_filter=[workspace_id],
+                    query=user_message,
+                    top_k=4,
+                    workspace_filter=[workspace_id],
                 )
         for r in retrieved_fw + retrieved_doc:
             cid = r.get("chunk_id")
@@ -1038,7 +1075,9 @@ def chat(
                 enrichment = generate_text_with_retry(
                     provider=provider,
                     prompt=llm_prompt,
-                    system_prompt=build_framework_qa_system_prompt() if is_qa else build_system_prompt(),
+                    system_prompt=build_framework_qa_system_prompt()
+                    if is_qa
+                    else build_system_prompt(),
                     operation=f"chat_{mode}_{intent}_{session_id or 'default'}",
                 )
                 llm_latency = time.time() - llm_start
@@ -1080,13 +1119,17 @@ def chat(
                     cit_pass += 1
                     # Only verified citations are shown — the user-facing rule is
                     # never surface an unverified source.
-                    verified_citations.append({
-                        "source": source_known,
-                        "quote": cit["quote"],
-                        "verified": True,
-                        "verification_method": getattr(v_result, "verification_method", ""),
-                        "verification_confidence": getattr(v_result, "verification_confidence", 0.0),
-                    })
+                    verified_citations.append(
+                        {
+                            "source": source_known,
+                            "quote": cit["quote"],
+                            "verified": True,
+                            "verification_method": getattr(v_result, "verification_method", ""),
+                            "verification_confidence": getattr(
+                                v_result, "verification_confidence", 0.0
+                            ),
+                        }
+                    )
                 else:
                     cit_fail += 1
 

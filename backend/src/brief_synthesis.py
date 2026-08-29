@@ -14,14 +14,14 @@ Sections split:
 
 from __future__ import annotations
 
-import structlog
-from datetime import datetime, timezone
 import re
+from datetime import UTC, datetime
 from typing import Any
 
+import structlog
 from pydantic import BaseModel, Field
 
-from src.provider_router import get_provider, generate_with_retry
+from src.provider_router import generate_with_retry, get_provider
 
 logger = structlog.get_logger()
 
@@ -29,6 +29,7 @@ PRIORITY_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, None: 9}
 
 
 # ── LLM-written narrative schema ──────────────────────────────────────────
+
 
 class BriefPriorityRecommendation(BaseModel):
     """One selected recommendation with a one-line rationale. Both fields are
@@ -92,6 +93,7 @@ BRIEF_SYSTEM_PROMPT = (
 
 # ── Digest builders (compact, prompt-budget-friendly) ─────────────────────
 
+
 def build_dimension_digest(gaps: list[dict[str, Any]]) -> str:
     """Compress each dimension's stored verdict into a few lines. The LLM's
     only allowed source of facts — every claim here was already computed and
@@ -136,9 +138,11 @@ def build_brief_prompt(
     parts.append("=== EXECUTIVE AGGREGATES (computed by the analysis — use them as-is) ===")
     if decision:
         parts.append(f"Assessed dimensions: {decision.get('assessed_dimensions', num_dimensions)}")
-        parts.append(f"Coverage distribution: {decision.get('covered', 0)} Covered, "
-                     f"{decision.get('partial', 0)} Partial, "
-                     f"{decision.get('missing', 0)} Missing")
+        parts.append(
+            f"Coverage distribution: {decision.get('covered', 0)} Covered, "
+            f"{decision.get('partial', 0)} Partial, "
+            f"{decision.get('missing', 0)} Missing"
+        )
         strongest = decision.get("strongest_dimension")
         if strongest:
             parts.append(f"Strongest dimension: {strongest}")
@@ -148,13 +152,12 @@ def build_brief_prompt(
     else:
         parts.append(f"Assessed dimensions: {num_dimensions}")
     parts.append("")
-    parts.append(
-        "Write the executive brief now. Return ONLY the JSON object matching the schema."
-    )
+    parts.append("Write the executive brief now. Return ONLY the JSON object matching the schema.")
     return "\n".join(parts)
 
 
 # ── Deterministic sections (code-computed, never LLM) ─────────────────────
+
 
 def build_risk_overview(
     gaps: list[dict[str, Any]],
@@ -166,7 +169,10 @@ def build_risk_overview(
     multiple high-priority dimensions share a cluster.
     """
     distribution: dict[str, int] = {
-        "High": 0, "Medium": 0, "Low": 0, "Insufficient Evidence": 0,
+        "High": 0,
+        "Medium": 0,
+        "Low": 0,
+        "Insufficient Evidence": 0,
     }
     for g in gaps:
         rl = g.get("risk_level")
@@ -186,10 +192,12 @@ def build_risk_overview(
     high_priority_dimensions = [d for d, _ in priority_dims]
 
     assessed = len(gaps)
-    para = f"The analysis assessed {assessed} dimension(s). Risk distribution: " \
-           f"{distribution['High']} High, {distribution['Medium']} Medium, " \
-           f"{distribution['Low']} Low, {distribution['Insufficient Evidence']} " \
-           "Insufficient Evidence."
+    para = (
+        f"The analysis assessed {assessed} dimension(s). Risk distribution: "
+        f"{distribution['High']} High, {distribution['Medium']} Medium, "
+        f"{distribution['Low']} Low, {distribution['Insufficient Evidence']} "
+        "Insufficient Evidence."
+    )
     if high_priority_dimensions:
         para += f" High-priority dimensions: {', '.join(high_priority_dimensions)}."
     if len(high_priority_dimensions) >= 2:
@@ -218,7 +226,7 @@ def build_relevant_precedent(gaps: list[dict[str, Any]]) -> str | None:
     incident_names: list[str] = []
     for g in gaps:
         m4 = g.get("module_4") or {}
-        for inc in (m4.get("incident_matches") or []):
+        for inc in m4.get("incident_matches") or []:
             name = (inc.get("incident_name") or "").strip()
             if name and name not in incident_names:
                 incident_names.append(name)
@@ -253,29 +261,35 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
     rows: list[dict[str, Any]] = []
     for g in gaps:
         if g.get("analysis_error"):
-            rows.append({
-                "dimension": g.get("dimension", ""),
-                "coverage": "Not assessed",
-                "maturity": "",
-                "basis": "This dimension could not be analysed (provider or quota error). "
-                         "It is not a finding about the document.",
-                "absent_mechanisms": [],
-                "confidence": None,
-            })
+            rows.append(
+                {
+                    "dimension": g.get("dimension", ""),
+                    "coverage": "Not assessed",
+                    "maturity": "",
+                    "basis": "This dimension could not be analysed (provider or quota error). "
+                    "It is not a finding about the document.",
+                    "absent_mechanisms": [],
+                    "confidence": None,
+                }
+            )
             continue
-        rows.append({
-            "dimension": g.get("dimension", ""),
-            "coverage": g.get("coverage", ""),
-            "maturity": g.get("governance_maturity", "") or "",
-            # risk_basis states what the document contains and what it lacks;
-            # coverage_reasoning is the fuller narrative and is the fallback.
-            # The trailing "Not addressed: ..." clause is stripped because the
-            # absent mechanisms are rendered as their own structured line —
-            # leaving it in printed the same list twice in consecutive lines.
-            "basis": _ABSENT_RE.sub("", (g.get("risk_basis") or g.get("coverage_reasoning") or "")).strip(),
-            "absent_mechanisms": _absent_mechanisms(g),
-            "confidence": g.get("confidence_score"),
-        })
+        rows.append(
+            {
+                "dimension": g.get("dimension", ""),
+                "coverage": g.get("coverage", ""),
+                "maturity": g.get("governance_maturity", "") or "",
+                # risk_basis states what the document contains and what it lacks;
+                # coverage_reasoning is the fuller narrative and is the fallback.
+                # The trailing "Not addressed: ..." clause is stripped because the
+                # absent mechanisms are rendered as their own structured line —
+                # leaving it in printed the same list twice in consecutive lines.
+                "basis": _ABSENT_RE.sub(
+                    "", (g.get("risk_basis") or g.get("coverage_reasoning") or "")
+                ).strip(),
+                "absent_mechanisms": _absent_mechanisms(g),
+                "confidence": g.get("confidence_score"),
+            }
+        )
     return rows
 
 
@@ -307,34 +321,42 @@ def build_implementation_roadmap(gaps: list[dict[str, Any]]) -> list[dict[str, A
     """
     severity = {"Missing": 0, "Partial": 1, "Covered": 2}
     ordered = sorted(
-        (g for g in gaps if not g.get("analysis_error") and (g.get("module_3") or {}).get("phases")),
+        (
+            g
+            for g in gaps
+            if not g.get("analysis_error") and (g.get("module_3") or {}).get("phases")
+        ),
         key=lambda g: severity.get(g.get("coverage", ""), 3),
     )
     out: list[dict[str, Any]] = []
     for g in ordered:
         m3 = g.get("module_3") or {}
         phases = []
-        for ph in (m3.get("phases") or []):
+        for ph in m3.get("phases") or []:
             steps = [str(x).strip() for x in (ph.get("steps") or []) if str(x).strip()]
             if not steps:
                 continue
-            phases.append({
-                "phase": (ph.get("phase") or "").strip(),
-                "timeline": (ph.get("timeline") or "").strip(),
-                "objective": (ph.get("objective") or "").strip(),
-                "steps": steps[:4],
-            })
+            phases.append(
+                {
+                    "phase": (ph.get("phase") or "").strip(),
+                    "timeline": (ph.get("timeline") or "").strip(),
+                    "objective": (ph.get("objective") or "").strip(),
+                    "steps": steps[:4],
+                }
+            )
         if not phases:
             continue
-        out.append({
-            "dimension": g.get("dimension", ""),
-            "coverage": g.get("coverage", ""),
-            "responsible_agency": (m3.get("responsible_agency") or "").strip(),
-            "phases": phases,
-            "monitoring": [
-                str(x).strip() for x in (m3.get("monitoring_checklist") or []) if str(x).strip()
-            ][:3],
-        })
+        out.append(
+            {
+                "dimension": g.get("dimension", ""),
+                "coverage": g.get("coverage", ""),
+                "responsible_agency": (m3.get("responsible_agency") or "").strip(),
+                "phases": phases,
+                "monitoring": [
+                    str(x).strip() for x in (m3.get("monitoring_checklist") or []) if str(x).strip()
+                ][:3],
+            }
+        )
     return out
 
 
@@ -349,7 +371,7 @@ def build_evidence_base(gaps: list[dict[str, Any]]) -> dict[str, Any]:
     total = verified = 0
     quotes: list[dict[str, str]] = []
     for g in gaps:
-        for e in (g.get("evidence") or []):
+        for e in g.get("evidence") or []:
             total += 1
             if e.get("verified"):
                 verified += 1
@@ -365,10 +387,12 @@ def build_evidence_base(gaps: list[dict[str, Any]]) -> dict[str, Any]:
             candidates = [c for c in candidates if len(c) > 80]
             if candidates:
                 best = max(candidates, key=len)
-                quotes.append({
-                    "dimension": g.get("dimension", ""),
-                    "quote": " ".join(best.split())[:320],
-                })
+                quotes.append(
+                    {
+                        "dimension": g.get("dimension", ""),
+                        "quote": " ".join(best.split())[:320],
+                    }
+                )
     return {
         "citations_total": total,
         "citations_verified": verified,
@@ -399,6 +423,7 @@ def build_scope_and_methodology(
 
 # ── Assembly + orchestration ──────────────────────────────────────────────
 
+
 def assemble_brief(
     *,
     workspace_id: str,
@@ -417,7 +442,7 @@ def assemble_brief(
     sections. This exact dict is what gets persisted (reports.meta) and what
     both exporters (DOCX/PDF) and the frontend render from."""
     if not generated_at:
-        generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     coverage_summary = {
         "covered": sum(1 for g in gaps if g.get("coverage") == "Covered"),
@@ -430,7 +455,8 @@ def assemble_brief(
         # real verdict; a provider/quota failure is not. Mirrors the same guard
         # already applied in GapAnalyzer._generate_summary.
         "insufficient_evidence": sum(
-            1 for g in gaps
+            1
+            for g in gaps
             if g.get("coverage") == "Insufficient Evidence" and not g.get("analysis_error")
         ),
         "analysis_failed": sum(1 for g in gaps if g.get("analysis_error")),
@@ -592,9 +618,7 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
             if r.get("basis"):
                 lines.append(r["basis"])
             if r.get("absent_mechanisms"):
-                lines.append(
-                    "Mechanisms not addressed: " + ", ".join(r["absent_mechanisms"]) + "."
-                )
+                lines.append("Mechanisms not addressed: " + ", ".join(r["absent_mechanisms"]) + ".")
             lines.append("")
     lines.append("## PRIORITY RECOMMENDATIONS")
     recs = s["priority_recommendations"]
@@ -630,8 +654,8 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
             f"{ev['citations_verified']} of {ev['citations_total']} citations "
             "were verified against their source passage."
         )
-        for q in (ev.get("representative_quotes") or []):
-            lines.append(f"- **{q['dimension']}** — \"{q['quote']}\"")
+        for q in ev.get("representative_quotes") or []:
+            lines.append(f'- **{q["dimension"]}** — "{q["quote"]}"')
 
     if s.get("relevant_precedent"):
         lines.append("")

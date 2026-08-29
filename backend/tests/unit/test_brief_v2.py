@@ -31,7 +31,10 @@ def gaps():
             "module_1": {"governance_maturity": "Emerging"},
             "module_2": {
                 "priority": "Medium",
-                "recommendations": ["Mandate model-level disclosure", "Publish an AI system registry"],
+                "recommendations": [
+                    "Mandate model-level disclosure",
+                    "Publish an AI system registry",
+                ],
             },
         },
         {
@@ -54,7 +57,9 @@ def gaps():
             "module_2": {
                 "priority": None,
                 "recommendations": [],
-                "best_practices": {"future_strengthening_opportunities": ["Cross-border data flow code"]},
+                "best_practices": {
+                    "future_strengthening_opportunities": ["Cross-border data flow code"]
+                },
             },
         },
         {
@@ -78,7 +83,10 @@ def _synthesis():
         areas_of_strength=["Privacy is fully addressed at Formalized maturity."],
         areas_requiring_attention=["Accountability has no owner mechanism."],
         priority_recommendations=[
-            {"recommendation": "Establish a responsible AI oversight body", "rationale": "No accountable owner exists today"}
+            {
+                "recommendation": "Establish a responsible AI oversight body",
+                "rationale": "No accountable owner exists today",
+            }
         ],
     )
 
@@ -129,8 +137,11 @@ class TestAssembly:
         )
         assert brief["num_dimensions"] == 4
         assert brief["coverage_summary"] == {
-            "covered": 1, "partial": 2, "missing": 1,
-            "insufficient_evidence": 0, "analysis_failed": 0,
+            "covered": 1,
+            "partial": 2,
+            "missing": 1,
+            "insufficient_evidence": 0,
+            "analysis_failed": 0,
         }
         sec = brief["sections"]
         assert sec["executive_summary"] == _synthesis().executive_summary
@@ -141,10 +152,16 @@ class TestAssembly:
 
     def test_markdown_roundtrip(self, gaps):
         brief = assemble_brief(
-            workspace_id="w1", country="Testland", policy_title="AI Strategy",
-            document_name="strat.pdf", documents=["strat.pdf"],
-            frameworks_used=["EU AI Act"], scope_disclaimer=SCOPE,
-            gaps=gaps, synthesis=_synthesis(), decision_analytics=None,
+            workspace_id="w1",
+            country="Testland",
+            policy_title="AI Strategy",
+            document_name="strat.pdf",
+            documents=["strat.pdf"],
+            frameworks_used=["EU AI Act"],
+            scope_disclaimer=SCOPE,
+            gaps=gaps,
+            synthesis=_synthesis(),
+            decision_analytics=None,
         )
         md = render_brief_markdown(brief)
         for marker in [
@@ -164,10 +181,16 @@ class TestAssembly:
 class TestExporters:
     def _brief(self, gaps):
         return assemble_brief(
-            workspace_id="w1", country="Testland", policy_title="AI Strategy",
-            document_name="strat.pdf", documents=["strat.pdf"],
-            frameworks_used=["EU AI Act"], scope_disclaimer=SCOPE,
-            gaps=gaps, synthesis=_synthesis(), decision_analytics=None,
+            workspace_id="w1",
+            country="Testland",
+            policy_title="AI Strategy",
+            document_name="strat.pdf",
+            documents=["strat.pdf"],
+            frameworks_used=["EU AI Act"],
+            scope_disclaimer=SCOPE,
+            gaps=gaps,
+            synthesis=_synthesis(),
+            decision_analytics=None,
         )
 
     def test_docx_valid(self, gaps):

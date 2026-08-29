@@ -6,9 +6,7 @@ from typing import Any
 from src.models import RetrievalMetrics
 
 
-def precision_at_k(
-    retrieved: list[str], relevant: set[str], k: int
-) -> float:
+def precision_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
     if k <= 0 or not retrieved:
         return 0.0
     top_k = retrieved[:k]
@@ -18,9 +16,7 @@ def precision_at_k(
     return hits / len(top_k)
 
 
-def recall_at_k(
-    retrieved: list[str], relevant: set[str], k: int
-) -> float:
+def recall_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
     if not relevant:
         return 0.0
     top_k = retrieved[:k]
@@ -28,9 +24,7 @@ def recall_at_k(
     return hits / len(relevant)
 
 
-def mean_reciprocal_rank(
-    retrieved: list[str], relevant: set[str]
-) -> float:
+def mean_reciprocal_rank(retrieved: list[str], relevant: set[str]) -> float:
     for i, cid in enumerate(retrieved):
         if cid in relevant:
             return 1.0 / (i + 1)
@@ -80,7 +74,7 @@ def evaluate_retrieval(
     policy_retrieval_total: int = 0,
     similarity_scores: list[float] | None = None,
 ) -> RetrievalMetrics:
-    rel_scores = relevance_scores or {cid: 2.0 for cid in relevant_chunk_ids}
+    rel_scores = relevance_scores or dict.fromkeys(relevant_chunk_ids, 2.0)
 
     metrics = RetrievalMetrics()
 
@@ -109,18 +103,14 @@ def evaluate_retrieval(
     metrics.ndcg_at_10 = ndcg_at_k(retrieved_chunk_ids, rel_scores, 10)
 
     if total_relevant_in_corpus is not None and total_relevant_in_corpus > 0:
-        metrics.coverage_recall = (
-            len(relevant_chunk_ids) / total_relevant_in_corpus
-        )
+        metrics.coverage_recall = len(relevant_chunk_ids) / total_relevant_in_corpus
 
     if total_retrieved > 0:
         metrics.evidence_diversity = diversity_count / total_retrieved
         metrics.duplicate_rate = duplicate_count / total_retrieved
 
     if similarity_scores:
-        metrics.avg_retrieval_similarity = (
-            sum(similarity_scores) / len(similarity_scores)
-        )
+        metrics.avg_retrieval_similarity = sum(similarity_scores) / len(similarity_scores)
 
     if framework_retrieval_total > 0:
         metrics.framework_retrieval_accuracy = (
@@ -128,9 +118,7 @@ def evaluate_retrieval(
         )
 
     if policy_retrieval_total > 0:
-        metrics.policy_retrieval_accuracy = (
-            policy_retrieval_correct / policy_retrieval_total
-        )
+        metrics.policy_retrieval_accuracy = policy_retrieval_correct / policy_retrieval_total
 
     total_classified = false_positives + false_negatives
     if total_classified > 0:
@@ -160,17 +148,14 @@ class RetrievalEvaluator:
             relevant_ids = set(retrieved_ids[:3])
 
         similarity_scores = [
-            c.get("rrf_score") or c.get("similarity_score") or 0.0
-            for c in retrieved_chunks
+            c.get("rrf_score") or c.get("similarity_score") or 0.0 for c in retrieved_chunks
         ]
 
-        doc_count = sum(1 for c in retrieved_chunks if c.get("is_document", True))
-        fw_count = sum(1 for c in retrieved_chunks if not c.get("is_document", True))
+        sum(1 for c in retrieved_chunks if c.get("is_document", True))
+        sum(1 for c in retrieved_chunks if not c.get("is_document", True))
 
         source_frameworks = {
-            c.get("source_framework", "")
-            for c in retrieved_chunks
-            if c.get("source_framework")
+            c.get("source_framework", "") for c in retrieved_chunks if c.get("source_framework")
         }
 
         seen_texts: set[str] = set()

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 DIMENSION_DEFINITIONS: dict[str, list[str]] = {
     "Transparency": [
         "AI systems should be developed and operated in a transparent manner",
@@ -66,7 +65,9 @@ DIMENSION_DEFINITIONS: dict[str, list[str]] = {
 
 
 def build_dimension_definition_block(dimension: str) -> str:
-    items = DIMENSION_DEFINITIONS.get(dimension, [f"Principles related to {dimension} in AI governance"])
+    items = DIMENSION_DEFINITIONS.get(
+        dimension, [f"Principles related to {dimension} in AI governance"]
+    )
     lines = [f"Dimension: {dimension}"]
     for item in items:
         lines.append(f"  - {item}")
@@ -77,6 +78,7 @@ def truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + "..."
+
 
 # ── Integrated Governance Maturity Framework ──────────────────────────────
 # Replaces DOCUMENT_TYPE_AWARENESS, MATURITY_LEVELS, FALSE_NEGATIVE_SAFEGUARDS,
@@ -153,9 +155,9 @@ EVIDENCE_INTERPRETATION_SYSTEM = (
     "Identify which evidence is strong (specific, actionable, enforceable) "
     "and which is weak (aspirational, vague, general).\n\n"
     "Base analysis solely on the document. Do not compare against international frameworks.\n\n"
-    'Output JSON: dimension, explicit_evidence (list), implicit_evidence (list), '
-    'demonstrated_capability (str), absent_capability (str), '
-    'strong_evidence (list), weak_evidence (list), contradictory_evidence (list), '
+    "Output JSON: dimension, explicit_evidence (list), implicit_evidence (list), "
+    "demonstrated_capability (str), absent_capability (str), "
+    "strong_evidence (list), weak_evidence (list), contradictory_evidence (list), "
     'evidence_strength ("Strongly Operationalised"|"Explicitly Addressed"|'
     '"Implicitly Addressed"|"Weakly Demonstrated"|"Not Demonstrated"), '
     "interpretation_summary (str)"
@@ -205,26 +207,26 @@ EVIDENCE_AND_MATURITY_SYSTEM = (
     "without substantive treatment, or covers only narrow sub-aspects.\n"
     "   - Missing: No evidence of any substantive treatment, direct or indirect.\n"
     "5. Before Missing, verify all functional equivalence checks. If uncertain, prefer Partial.\n\n"
-    'Output JSON with ALL of the following keys:\n'
-    'dimension: str,\n'
-    'explicit_evidence: list,\n'
-    'implicit_evidence: list,\n'
-    'demonstrated_capability: str,\n'
-    'absent_capability: str,\n'
-    'strong_evidence: list,\n'
-    'weak_evidence: list,\n'
-    'contradictory_evidence: list,\n'
+    "Output JSON with ALL of the following keys:\n"
+    "dimension: str,\n"
+    "explicit_evidence: list,\n"
+    "implicit_evidence: list,\n"
+    "demonstrated_capability: str,\n"
+    "absent_capability: str,\n"
+    "strong_evidence: list,\n"
+    "weak_evidence: list,\n"
+    "contradictory_evidence: list,\n"
     'evidence_strength: "Strongly Operationalised" | "Explicitly Addressed" | '
     '"Implicitly Addressed" | "Weakly Demonstrated" | "Not Demonstrated",\n'
-    'interpretation_summary: str,\n'
-    'maturity_level: int (0-5),\n'
-    'maturity_label: str,\n'
+    "interpretation_summary: str,\n"
+    "maturity_level: int (0-5),\n"
+    "maturity_label: str,\n"
     'coverage: "Covered" | "Partial" | "Missing",\n'
-    'maturity_reasoning: str,\n'
-    'level_justification: str,\n'
-    'uncertainty_flags: list,\n'
-    'false_negative_check: str,\n'
-    'maturity_trace: str'
+    "maturity_reasoning: str,\n"
+    "level_justification: str,\n"
+    "uncertainty_flags: list,\n"
+    "false_negative_check: str,\n"
+    "maturity_trace: str"
 )
 
 
@@ -243,6 +245,7 @@ def build_evidence_and_maturity_prompt(
         "Proceed through both steps. Output valid JSON with all required keys."
     )
     return system_prompt, prompt
+
 
 # ── Stage 2: Maturity Assessment (simplified, integrated framework) ───────
 
@@ -263,7 +266,7 @@ MATURITY_ASSESSMENT_SYSTEM = (
     "5. Derive coverage from semantic substance: Level 0→Missing, Levels 1-2→Partial, Levels 3-5→Covered.\n"
     "6. Before Missing, verify all functional equivalence checks were considered. "
     "If uncertain, prefer Partial.\n\n"
-    'Output JSON: dimension (str), maturity_level (0-5), maturity_label (str), '
+    "Output JSON: dimension (str), maturity_level (0-5), maturity_label (str), "
     'coverage ("Covered"|"Partial"|"Missing"), '
     "maturity_reasoning (str including document type, functional equivalence outcomes, "
     "and how each capability assessment contributed), "
@@ -296,11 +299,25 @@ def build_maturity_assessment_prompt(
     prompt_lines.append(f"Evidence Interpretation Summary: {interpretation_summary}")
     prompt_lines.append(f"Evidence Strength: {evidence_strength}\n")
 
-    prompt_lines.append("Explicit Evidence:\n" + ("\n".join(f"- {e}" for e in explicit) if explicit else "None identified"))
-    prompt_lines.append("Implicit Evidence:\n" + ("\n".join(f"- {e}" for e in implicit) if implicit else "None identified"))
-    prompt_lines.append("Strong Evidence:\n" + ("\n".join(f"- {s}" for s in strong) if strong else "None identified"))
-    prompt_lines.append("Weak Evidence:\n" + ("\n".join(f"- {w}" for w in weak) if weak else "None identified"))
-    prompt_lines.append("Absent Capability:\n" + ("\n".join(f"- {a}" for a in absent) if absent else "None identified"))
+    prompt_lines.append(
+        "Explicit Evidence:\n"
+        + ("\n".join(f"- {e}" for e in explicit) if explicit else "None identified")
+    )
+    prompt_lines.append(
+        "Implicit Evidence:\n"
+        + ("\n".join(f"- {e}" for e in implicit) if implicit else "None identified")
+    )
+    prompt_lines.append(
+        "Strong Evidence:\n"
+        + ("\n".join(f"- {s}" for s in strong) if strong else "None identified")
+    )
+    prompt_lines.append(
+        "Weak Evidence:\n" + ("\n".join(f"- {w}" for w in weak) if weak else "None identified")
+    )
+    prompt_lines.append(
+        "Absent Capability:\n"
+        + ("\n".join(f"- {a}" for a in absent) if absent else "None identified")
+    )
 
     prompt_lines.append(
         "\nApply the maturity assessment framework. "
@@ -310,6 +327,7 @@ def build_maturity_assessment_prompt(
     )
 
     return system_prompt, "\n".join(prompt_lines)
+
 
 # ── Stage 3 (merged): Recommendation + Final Output ───────────────────────
 
@@ -332,26 +350,26 @@ RECOMMENDATION_AND_FINAL_SYSTEM = (
     "6. Vary transitions. Avoid repeating 'However', 'Furthermore'.\n"
     "7. Vary recommendation phrasing: 'The government should consider...', "
     "'A priority is...', 'Building on existing capacity...'.\n\n"
-    'Output JSON with these keys:\n'
-    '- dimension: str\n'
+    "Output JSON with these keys:\n"
+    "- dimension: str\n"
     '- coverage: "Covered" | "Partial" | "Missing"\n'
-    '- maturity_level: int (0-5)\n'
-    '- maturity_label: str\n'
-    '- existing_strengths: str\n'
-    '- governance_capability: str\n'
-    '- remaining_limitations: str\n'
+    "- maturity_level: int (0-5)\n"
+    "- maturity_label: str\n"
+    "- existing_strengths: str\n"
+    "- governance_capability: str\n"
+    "- remaining_limitations: str\n"
     "- evidence_analysis: str (trace each claim to specific policy provisions)\n"
     "- framework_synthesis: str (compare against international expectations)\n"
-    '- recommendations: list of str (each identifies which mechanism it extends)\n'
-    '- smallest_effective_improvement: str\n'
-    '- uncertainty_note: str\n'
+    "- recommendations: list of str (each identifies which mechanism it extends)\n"
+    "- smallest_effective_improvement: str\n"
+    "- uncertainty_note: str\n"
     '- confidence_in_assessment: "High" | "Medium" | "Low"\n'
-    '- reason_flagged: str\n'
+    "- reason_flagged: str\n"
     '- risk_level: "High" | "Medium" | "Low"\n'
-    '- risk_reason: str\n'
-    '- potential_consequence: str\n'
-    '- evidence_quotes: list of str\n'
-    '- gap_analysis: str'
+    "- risk_reason: str\n"
+    "- potential_consequence: str\n"
+    "- evidence_quotes: list of str\n"
+    "- gap_analysis: str"
 )
 
 
@@ -855,8 +873,7 @@ def build_module3_4_combined_prompt(
     so the roadmap never recommends adopting the country's own mechanisms.
     """
     system_prompt = (
-        MODULE3_4_COMBINED_SYSTEM
-        .replace("{dimension_definition}", dimension_definition)
+        MODULE3_4_COMBINED_SYSTEM.replace("{dimension_definition}", dimension_definition)
         .replace("{dimension_verdict}", dimension_verdict)
         .replace("{dimension}", dimension)
         .replace("{national_context}", _national_context_block(country))
@@ -878,9 +895,7 @@ def build_module3_4_combined_prompt(
         # chunks have source_framework == "" so they fall through to their
         # document_name.
         source_label = src or doc_name or "Uploaded Document"
-        return (
-            f"[{prefix}-{idx}]{id_str}{page_str} Source: {source_label}\n{text}"
-        )
+        return f"[{prefix}-{idx}]{id_str}{page_str} Source: {source_label}\n{text}"
 
     parts: list[str] = []
     parts.append(f"Dimension: {dimension}")
@@ -982,11 +997,10 @@ def _citation_instruction(division_vocabulary: list[str] | None) -> str:
         return (
             "This document numbers its divisions as "
             f"{forms} — use that exact wording when you cite one. Do NOT "
-            "translate it into another scheme (do not write \"Section\" for a "
+            'translate it into another scheme (do not write "Section" for a '
             "document organised into Parts). Cite ONLY numbers that literally "
             "appear in the passages above; if you cannot see the number there, "
-            "describe the provision without numbering it. "
-            + _CHUNK_ID_PROHIBITION
+            "describe the provision without numbering it. " + _CHUNK_ID_PROHIBITION
         )
     return (
         "When you cite a numbered division, copy the document's own wording "
@@ -1025,8 +1039,7 @@ def build_module1_2_combined_prompt(
     # NOTE: use .replace(), NOT .format() — the prompt contains a literal JSON
     # output example with raw braces that would break str.format().
     system_prompt = (
-        MODULE1_2_COMBINED_SYSTEM
-        .replace("{dimension_definition}", dimension_definition)
+        MODULE1_2_COMBINED_SYSTEM.replace("{dimension_definition}", dimension_definition)
         .replace("{dimension}", dimension)
         .replace("{national_context}", _national_context_block(country))
     )
@@ -1050,9 +1063,7 @@ def build_module1_2_combined_prompt(
         # chunks have source_framework == "" so they fall through to their
         # document_name.
         source_label = src or doc_name or "Uploaded Document"
-        return (
-            f"[{prefix}-{idx}]{id_str}{page_str} Source: {source_label}\n{text}"
-        )
+        return f"[{prefix}-{idx}]{id_str}{page_str} Source: {source_label}\n{text}"
 
     parts: list[str] = []
     parts.append(f"Dimension: {dimension}")
@@ -1080,9 +1091,7 @@ def build_module1_2_combined_prompt(
             )
         present = determined_verdict.get("present_mechanisms") or []
         if present:
-            parts.append(
-                "Mechanisms the document DOES provide: " + ", ".join(present)
-            )
+            parts.append("Mechanisms the document DOES provide: " + ", ".join(present))
         n_bind = determined_verdict.get("binding_provisions")
         n_enf = determined_verdict.get("enforceable_provisions")
         if n_bind is not None:
@@ -1164,10 +1173,12 @@ def build_recommendation_and_final_prompt(
     dimension_definition: str,
     evidence_quotes: list[str] | None = None,
 ) -> tuple[str, str]:
-    validated_level = plausibility_result.get("validated_maturity_level",
-                                               maturity_result.get("maturity_level", 0))
-    validated_coverage = plausibility_result.get("validated_coverage",
-                                                  maturity_result.get("coverage", "Missing"))
+    validated_level = plausibility_result.get(
+        "validated_maturity_level", maturity_result.get("maturity_level", 0)
+    )
+    validated_coverage = plausibility_result.get(
+        "validated_coverage", maturity_result.get("coverage", "Missing")
+    )
     confidence = plausibility_result.get("confidence_in_assessment", "Medium")
 
     fm = framework_synthesis or {}

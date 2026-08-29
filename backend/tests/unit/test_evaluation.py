@@ -1,7 +1,11 @@
 import pytest
+
 from src.evaluation import (
-    precision_at_k, recall_at_k, mean_reciprocal_rank,
-    ndcg_at_k, evaluate_retrieval,
+    evaluate_retrieval,
+    mean_reciprocal_rank,
+    ndcg_at_k,
+    precision_at_k,
+    recall_at_k,
 )
 from src.models import RetrievalMetrics
 

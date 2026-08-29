@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import structlog
 from datetime import datetime
-from typing import Any
+
+import structlog
 
 from src.gap_analyzer import GapAnalysisResult, RiskLevel
 
@@ -17,23 +17,23 @@ def generate_executive_brief_text(
     sections.append("=" * 72)
     sections.append("EXECUTIVE BRIEF — AI Policy Gap Analysis")
     sections.append("=" * 72)
-    sections.append(f"")
+    sections.append("")
     sections.append(f"Document analyzed: {result.document_name}")
     sections.append(f"Analysis ID: {result.analysis_id}")
     sections.append(f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
     sections.append(f"Frameworks used: {', '.join(result.frameworks_used)}")
-    sections.append(f"")
+    sections.append("")
 
     sections.append("-" * 72)
     sections.append("1. EXECUTIVE SUMMARY")
     sections.append("-" * 72)
     sections.append(result.summary)
-    sections.append(f"")
+    sections.append("")
 
     sections.append("-" * 72)
     sections.append("2. KEY FINDINGS BY GOVERNANCE DIMENSION")
     sections.append("-" * 72)
-    sections.append(f"")
+    sections.append("")
 
     logger.info(
         "stage_8_report_generation_started",
@@ -71,7 +71,7 @@ def generate_executive_brief_text(
             sections.append(f"  Recommendation: {gap.recommendation}")
         if gap.un_recommendation:
             sections.append(f"  Smallest Effective Improvement: {gap.un_recommendation}")
-        sections.append(f"")
+        sections.append("")
 
     sections.append("-" * 72)
     sections.append("3. RISK SUMMARY")
@@ -79,32 +79,42 @@ def generate_executive_brief_text(
     high_risk = [g for g in result.governance_gaps if g.risk_level == RiskLevel.HIGH]
     med_risk = [g for g in result.governance_gaps if g.risk_level == RiskLevel.MEDIUM]
     low_risk = [g for g in result.governance_gaps if g.risk_level == RiskLevel.LOW]
-    insufficient = [g for g in result.governance_gaps if g.risk_level == RiskLevel.INSUFFICIENT_EVIDENCE]
+    insufficient = [
+        g for g in result.governance_gaps if g.risk_level == RiskLevel.INSUFFICIENT_EVIDENCE
+    ]
 
-    sections.append(f"  High Risk: {len(high_risk)} — {', '.join(g.dimension for g in high_risk) if high_risk else 'None'}")
-    sections.append(f"  Medium Risk: {len(med_risk)} — {', '.join(g.dimension for g in med_risk) if med_risk else 'None'}")
-    sections.append(f"  Low Risk: {len(low_risk)} — {', '.join(g.dimension for g in low_risk) if low_risk else 'None'}")
-    sections.append(f"  Insufficient Evidence: {len(insufficient)} — {', '.join(g.dimension for g in insufficient) if insufficient else 'None'}")
-    sections.append(f"")
+    sections.append(
+        f"  High Risk: {len(high_risk)} — {', '.join(g.dimension for g in high_risk) if high_risk else 'None'}"
+    )
+    sections.append(
+        f"  Medium Risk: {len(med_risk)} — {', '.join(g.dimension for g in med_risk) if med_risk else 'None'}"
+    )
+    sections.append(
+        f"  Low Risk: {len(low_risk)} — {', '.join(g.dimension for g in low_risk) if low_risk else 'None'}"
+    )
+    sections.append(
+        f"  Insufficient Evidence: {len(insufficient)} — {', '.join(g.dimension for g in insufficient) if insufficient else 'None'}"
+    )
+    sections.append("")
 
     sections.append("-" * 72)
     sections.append("4. RECOMMENDATIONS")
     sections.append("-" * 72)
-    sections.append(f"")
+    sections.append("")
     for i, gap in enumerate(result.governance_gaps, 1):
         if gap.gap_found:
             rec_text = gap.un_recommendation or gap.recommendation
             sections.append(f"  {i}. {gap.dimension}: {rec_text}")
 
-    sections.append(f"")
+    sections.append("")
     sections.append("-" * 72)
     sections.append("5. REFERENCES")
     sections.append("-" * 72)
-    sections.append(f"")
-    sections.append(f"  Reference frameworks consulted:")
+    sections.append("")
+    sections.append("  Reference frameworks consulted:")
     for fw in result.frameworks_used:
         sections.append(f"    - {fw}")
-    sections.append(f"")
+    sections.append("")
     sections.append(f"  Retrieved evidence chunks: {result.total_retrieved}")
     sections.append(f"  Processing time: {result.total_processing_time:.2f}s")
     sections.append("=" * 72)
@@ -117,8 +127,13 @@ def generate_executive_brief_text(
         analysis_id=result.analysis_id,
         brief_length=len(brief_text),
         num_sections=5,
-        report_structure=["Executive Summary", "Key Findings", "Risk Summary", "Recommendations", "References"],
+        report_structure=[
+            "Executive Summary",
+            "Key Findings",
+            "Risk Summary",
+            "Recommendations",
+            "References",
+        ],
     )
 
     return brief_text
-

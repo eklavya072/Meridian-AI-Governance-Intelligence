@@ -93,14 +93,13 @@ def is_corpus_question(message: str) -> bool:
 
 # ── The method, stated ───────────────────────────────────────────────────
 
+
 def _dimension_line() -> str:
     return ", ".join(GOVERNANCE_DIMENSIONS)
 
 
 def _ladder_line() -> str:
-    return " → ".join(
-        f"T{tier} {label}" for tier, label in sorted(TIER_LABELS.items())
-    )
+    return " → ".join(f"T{tier} {label}" for tier, label in sorted(TIER_LABELS.items()))
 
 
 def _stage_line() -> str:
@@ -113,9 +112,7 @@ def _stage_line() -> str:
 
 def _mechanism_counts() -> tuple[int, str]:
     total = sum(len(m) for m in DIMENSION_MECHANISMS.values())
-    per_dim = ", ".join(
-        f"{dim} {len(mechs)}" for dim, mechs in DIMENSION_MECHANISMS.items()
-    )
+    per_dim = ", ".join(f"{dim} {len(mechs)}" for dim, mechs in DIMENSION_MECHANISMS.items())
     return total, per_dim
 
 
@@ -127,89 +124,91 @@ def build_method_context() -> str:
     that was actually asked.
     """
     mech_total, mech_per_dim = _mechanism_counts()
-    return "\n".join([
-        "--- How Meridian Works (the instrument being used right now) ---",
-        "",
-        "PURPOSE. Meridian reads a national AI policy document and reports, per "
-        "governance dimension, how much of the dimension the document addresses "
-        "and how much normative force it carries. It is an assessment instrument, "
-        "not a compliance checker and not a country league table.",
-        "",
-        f"THE {len(GOVERNANCE_DIMENSIONS)} DIMENSIONS: {_dimension_line()}.",
-        "",
-        "WHY THESE, AND WHY NOT MORE. They are the commitments that recur across "
-        "the instruments in the knowledge base — UNESCO's Recommendation, the OECD "
-        "AI Principles, the EU AI Act, the NIST AI RMF — so a verdict on any one of "
-        "them can be grounded in more than one framework's requirements rather than "
-        "one author's taxonomy. Dimensions are deliberately NOT split finer: every "
-        "extra dimension divides the same document into thinner evidence, and a "
-        "verdict resting on one or two sentences is exactly the kind of claim this "
-        "instrument is built to avoid. Adjacent concerns are handled as mechanisms "
-        "INSIDE a dimension instead — explainability under Transparency, "
-        "non-discrimination under Fairness, redress under Accountability.",
-        "",
-        "WHAT IS NOT COVERED. The dimensions describe how a state governs AI. They "
-        "say nothing about state CAPACITY to build or deploy AI — compute, skills, "
-        "data infrastructure, public-sector adoption. Against UNDP's AI Landscape "
-        "Assessment, Meridian speaks to the AI Regulation and Ethics pillar and "
-        "parts of the ecosystem pillar; it does not assess AI for Government at all. "
-        "Read it as one instrument among several, not a readiness index.",
-        "",
-        f"NORMATIVE-FORCE LADDER. Every finding is graded {_ladder_line()}. "
-        "T0 is a value statement, T1 an intention, T2 a task given to a named body, "
-        "T3 a duty someone owes, T4 a duty backed by a consequence or a supervisory "
-        "power. The ladder follows the Abbott and Snidal legalization framework "
-        "(obligation, precision, delegation) — this is what makes the scores "
-        "arguable on their merits rather than arbitrary.",
-        "",
-        "THE FORCE BAR. A dimension only reads as fully covered when the document "
-        "carries two binding findings, or one binding finding paired with an "
-        "enforceable one. Not simply 'one binding sentence exists': the tier "
-        "counters are cumulative, so a single binding sentence also lifts every "
-        "weaker counter beneath it. Pairing a duty with actual enforcement is the "
-        "one genuinely independent signal available.",
-        "",
-        f"MATURITY STAGES, with the score each is worth: {_stage_line()}. The gaps "
-        "between stages are not uniform, which is why explicit stage scores replaced "
-        "an earlier rank average — treating the distance from Emerging to Delegated "
-        "as equal to the distance from Operationalized to Institutionalized "
-        "understated strong statutes and flattered weak ones.",
-        "",
-        "TWO AXES, REPORTED SEPARATELY. Coverage index is the share of the "
-        f"{mech_total} framework-required mechanisms the document addresses at all "
-        f"({mech_per_dim}). Binding force (the maturity index) is how much duty sits "
-        "behind what it addresses. Binding share bridges them: of the mechanisms "
-        "present, how many are carried by an actual duty. These are kept apart on "
-        "purpose. One number cannot say both 'this document addresses nearly "
-        "everything' and 'it binds almost nobody', and soft-law instruments read "
-        "high on the first and low on the second. The interesting cases are exactly "
-        "where the two diverge.",
-        "",
-        "NO SINGLE COUNTRY SCORE, AND NO RANKING. Meridian does not aggregate the "
-        "dimensions into one headline number for a country, and does not rank "
-        "countries against each other. Comparison across countries is a comparison "
-        "of what specific instruments do — not of who is 'ahead'.",
-        "",
-        "EVIDENCE DISCIPLINE. Every verdict cites the document. Citations are "
-        "verified against the retrieved passages and the full document text, and "
-        "citations that cannot be traced are surfaced rather than quietly kept. A "
-        "dimension the model could not assess is excluded from scoring instead of "
-        "guessed at — a wrong verdict is worse than a missing one.",
-        "",
-        "WHAT THE FRAMEWORKS ARE FOR. They supply the requirements a dimension is "
-        "read against and the comparative narrative. They do NOT set the verdict: "
-        "the verdict comes from the country document's own text through the force "
-        "ladder. Framework alignment was tested as a scoring input and rejected, "
-        "because it rewards a document for resembling an international instrument "
-        "rather than for binding anyone.",
-        "",
-        "KNOWN LIMITS, STATED PLAINLY. Meridian measures enforceable normative "
-        "force in the text as written. It cannot see whether a duty is enforced in "
-        "practice, whether a named regulator is funded or staffed, or what case law "
-        "has done to a provision since. A country with strong implementation and "
-        "thin drafting will score below what its practice deserves; that is a scope "
-        "choice, not an oversight.",
-    ])
+    return "\n".join(
+        [
+            "--- How Meridian Works (the instrument being used right now) ---",
+            "",
+            "PURPOSE. Meridian reads a national AI policy document and reports, per "
+            "governance dimension, how much of the dimension the document addresses "
+            "and how much normative force it carries. It is an assessment instrument, "
+            "not a compliance checker and not a country league table.",
+            "",
+            f"THE {len(GOVERNANCE_DIMENSIONS)} DIMENSIONS: {_dimension_line()}.",
+            "",
+            "WHY THESE, AND WHY NOT MORE. They are the commitments that recur across "
+            "the instruments in the knowledge base — UNESCO's Recommendation, the OECD "
+            "AI Principles, the EU AI Act, the NIST AI RMF — so a verdict on any one of "
+            "them can be grounded in more than one framework's requirements rather than "
+            "one author's taxonomy. Dimensions are deliberately NOT split finer: every "
+            "extra dimension divides the same document into thinner evidence, and a "
+            "verdict resting on one or two sentences is exactly the kind of claim this "
+            "instrument is built to avoid. Adjacent concerns are handled as mechanisms "
+            "INSIDE a dimension instead — explainability under Transparency, "
+            "non-discrimination under Fairness, redress under Accountability.",
+            "",
+            "WHAT IS NOT COVERED. The dimensions describe how a state governs AI. They "
+            "say nothing about state CAPACITY to build or deploy AI — compute, skills, "
+            "data infrastructure, public-sector adoption. Against UNDP's AI Landscape "
+            "Assessment, Meridian speaks to the AI Regulation and Ethics pillar and "
+            "parts of the ecosystem pillar; it does not assess AI for Government at all. "
+            "Read it as one instrument among several, not a readiness index.",
+            "",
+            f"NORMATIVE-FORCE LADDER. Every finding is graded {_ladder_line()}. "
+            "T0 is a value statement, T1 an intention, T2 a task given to a named body, "
+            "T3 a duty someone owes, T4 a duty backed by a consequence or a supervisory "
+            "power. The ladder follows the Abbott and Snidal legalization framework "
+            "(obligation, precision, delegation) — this is what makes the scores "
+            "arguable on their merits rather than arbitrary.",
+            "",
+            "THE FORCE BAR. A dimension only reads as fully covered when the document "
+            "carries two binding findings, or one binding finding paired with an "
+            "enforceable one. Not simply 'one binding sentence exists': the tier "
+            "counters are cumulative, so a single binding sentence also lifts every "
+            "weaker counter beneath it. Pairing a duty with actual enforcement is the "
+            "one genuinely independent signal available.",
+            "",
+            f"MATURITY STAGES, with the score each is worth: {_stage_line()}. The gaps "
+            "between stages are not uniform, which is why explicit stage scores replaced "
+            "an earlier rank average — treating the distance from Emerging to Delegated "
+            "as equal to the distance from Operationalized to Institutionalized "
+            "understated strong statutes and flattered weak ones.",
+            "",
+            "TWO AXES, REPORTED SEPARATELY. Coverage index is the share of the "
+            f"{mech_total} framework-required mechanisms the document addresses at all "
+            f"({mech_per_dim}). Binding force (the maturity index) is how much duty sits "
+            "behind what it addresses. Binding share bridges them: of the mechanisms "
+            "present, how many are carried by an actual duty. These are kept apart on "
+            "purpose. One number cannot say both 'this document addresses nearly "
+            "everything' and 'it binds almost nobody', and soft-law instruments read "
+            "high on the first and low on the second. The interesting cases are exactly "
+            "where the two diverge.",
+            "",
+            "NO SINGLE COUNTRY SCORE, AND NO RANKING. Meridian does not aggregate the "
+            "dimensions into one headline number for a country, and does not rank "
+            "countries against each other. Comparison across countries is a comparison "
+            "of what specific instruments do — not of who is 'ahead'.",
+            "",
+            "EVIDENCE DISCIPLINE. Every verdict cites the document. Citations are "
+            "verified against the retrieved passages and the full document text, and "
+            "citations that cannot be traced are surfaced rather than quietly kept. A "
+            "dimension the model could not assess is excluded from scoring instead of "
+            "guessed at — a wrong verdict is worse than a missing one.",
+            "",
+            "WHAT THE FRAMEWORKS ARE FOR. They supply the requirements a dimension is "
+            "read against and the comparative narrative. They do NOT set the verdict: "
+            "the verdict comes from the country document's own text through the force "
+            "ladder. Framework alignment was tested as a scoring input and rejected, "
+            "because it rewards a document for resembling an international instrument "
+            "rather than for binding anyone.",
+            "",
+            "KNOWN LIMITS, STATED PLAINLY. Meridian measures enforceable normative "
+            "force in the text as written. It cannot see whether a duty is enforced in "
+            "practice, whether a named regulator is funded or staffed, or what case law "
+            "has done to a provision since. A country with strong implementation and "
+            "thin drafting will score below what its practice deserves; that is a scope "
+            "choice, not an oversight.",
+        ]
+    )
 
 
 # ── The corpus, as it actually stands ────────────────────────────────────

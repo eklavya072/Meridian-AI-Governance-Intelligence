@@ -2,14 +2,15 @@
 Unit tests for guardrails (out-of-scope input detection).
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.guardrails import (
-    Guardrails,
     GREETING_PATTERNS,
     OFF_TOPIC_PATTERNS,
     SCOPE_MESSAGE,
+    Guardrails,
 )
 
 

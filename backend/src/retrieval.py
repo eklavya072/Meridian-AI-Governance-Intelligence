@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 import os
+import re as _re
 import threading
 import time
-import structlog
 from typing import Any
 
-import numpy as np
-
+import structlog
 from pydantic import BaseModel, Field
 
-import re as _re
-
+from src.deterministic import _chunk_matches_dimension, is_low_information_fragment
 from src.models import DimensionProfile, RetrievalResult
-from src.utils import l2_normalize, reciprocal_rank_fusion, batch_fetch_chunk_metadata
-from src.deterministic import is_low_information_fragment, _chunk_matches_dimension
+from src.utils import batch_fetch_chunk_metadata, l2_normalize, reciprocal_rank_fusion
 
 
 def _dedup_key(text: str) -> str:
@@ -46,6 +43,7 @@ def _is_near_duplicate(key: str, accepted_keys: list[str]) -> bool:
         if key in k or k in key:
             return True
     return False
+
 
 logger = structlog.get_logger()
 
@@ -206,6 +204,7 @@ class CrossEncoderReranker:
         self._load_attempted = True
         try:
             from sentence_transformers import CrossEncoder
+
             self._model = CrossEncoder(self._model_name)
             logger.info("reranker_loaded", model=self._model_name)
         except Exception as exc:
@@ -236,9 +235,7 @@ class CrossEncoderReranker:
             logger.error("reranker_predict_failed", error=str(exc))
             return candidates[:top_k] if top_k else candidates
 
-        scored = [
-            (c, float(s)) for c, s in zip(candidates, scores)
-        ]
+        scored = [(c, float(s)) for c, s in zip(candidates, scores)]
         scored.sort(key=lambda x: x[1], reverse=True)
 
         if top_k is not None:
@@ -315,12 +312,7 @@ class RetrievalPipeline:
             # Fall back to doc_id, then chunk_id: a chunk with no
             # document_name must not share a cap bucket with every OTHER
             # unnamed chunk, which would silently cap them collectively at 2.
-            key = str(
-                md.get("document_name")
-                or md.get("doc_id")
-                or c.get("chunk_id")
-                or id(c)
-            )
+            key = str(md.get("document_name") or md.get("doc_id") or c.get("chunk_id") or id(c))
             if per_doc.get(key, 0) >= max_per_document:
                 overflow.append(c)
                 continue
@@ -397,10 +389,7 @@ class RetrievalPipeline:
             ),
         }
 
-        core = {
-            "Transparency", "Accountability", "Fairness",
-            "Privacy", "Safety", "Human Autonomy"
-        }
+        core = {"Transparency", "Accountability", "Fairness", "Privacy", "Safety", "Human Autonomy"}
 
         for dim, definition in profiles.items():
             profiles[dim] = DimensionProfile(
@@ -479,10 +468,7 @@ class RetrievalPipeline:
         result: dict[str, dict[str, list[float]]] = {}
         for dim, profile in profiles.items():
             definition_emb = self.vectorstore.embed_query(profile.definition)
-            aspect_embs = [
-                self.vectorstore.embed_query(aspect)
-                for aspect in profile.aspects
-            ]
+            aspect_embs = [self.vectorstore.embed_query(aspect) for aspect in profile.aspects]
             result[dim] = {
                 "definition": definition_emb,
                 "aspects": aspect_embs,
@@ -583,7 +569,9 @@ class RetrievalPipeline:
                 "section_title": chunk_data.get("section_title"),
                 "source_framework": chunk_data.get("source_framework", ""),
                 "rrf_score": rr_score,
-                "is_document": chunk_data.get("is_document", not bool(chunk_data.get("source_framework", ""))),
+                "is_document": chunk_data.get(
+                    "is_document", not bool(chunk_data.get("source_framework", ""))
+                ),
             }
             all_candidates.append(entry)
             if chunk_data.get("is_document", True):
@@ -597,7 +585,9 @@ class RetrievalPipeline:
             rerank_input = len(all_candidates)
             reranked = self._apply_reranker(dim_query, all_candidates, TOP_K_AFTER_RERANK)
             rerank_latency = time.time() - t_rerank
-            reranked = [c for c in reranked if c.get("reranker_score", 0.0) >= CONFIDENCE_FILTER_THRESHOLD]
+            reranked = [
+                c for c in reranked if c.get("reranker_score", 0.0) >= CONFIDENCE_FILTER_THRESHOLD
+            ]
             doc_chunks = [c for c in reranked if c.get("is_document", True)]
             fw_chunks = [c for c in reranked if not c.get("is_document", True)]
             logger.info(
@@ -638,23 +628,23 @@ class RetrievalPipeline:
             total_candidates=len(all_candidates),
         )
 
-    def _search_vectorstore(
-        self, query: str, top_k: int = 10
-    ) -> list[dict[str, Any]]:
-        is_doc = "document" in query.lower() or "report" in query.lower()
+    def _search_vectorstore(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
+        "document" in query.lower() or "report" in query.lower()
         results = self.vectorstore.search(query, top_k=top_k)
         chunks = []
         for r in results:
             md = r.get("metadata", {})
-            chunks.append({
-                "chunk_id": r.get("id", ""),
-                "text": r.get("text", r.get("content", "")),
-                "page_number": md.get("page_number"),
-                "section_title": md.get("section_title"),
-                "source_framework": md.get("source_framework", md.get("framework", "")),
-                "similarity_score": r.get("similarity", r.get("score", 0.0)),
-                "is_document": md.get("is_document", not bool(md.get("framework", ""))),
-            })
+            chunks.append(
+                {
+                    "chunk_id": r.get("id", ""),
+                    "text": r.get("text", r.get("content", "")),
+                    "page_number": md.get("page_number"),
+                    "section_title": md.get("section_title"),
+                    "source_framework": md.get("source_framework", md.get("framework", "")),
+                    "similarity_score": r.get("similarity", r.get("score", 0.0)),
+                    "is_document": md.get("is_document", not bool(md.get("framework", ""))),
+                }
+            )
         return chunks
 
     def _query_by_embedding(
@@ -696,9 +686,14 @@ class RetrievalPipeline:
     # ── Module 1 + Module 2 combined budget retrieval ─────────────────
 
     _PREAMBLE_MARKERS = (
-        "intentionally left blank", "acknowledgment", "acknowledgement",
-        "table of contents", "contents", "copyright",
-        "all rights reserved", "this page has been intentionally left blank",
+        "intentionally left blank",
+        "acknowledgment",
+        "acknowledgement",
+        "table of contents",
+        "contents",
+        "copyright",
+        "all rights reserved",
+        "this page has been intentionally left blank",
     )
 
     def _is_preamble_chunk(self, chunk: dict[str, Any]) -> bool:
@@ -738,9 +733,7 @@ class RetrievalPipeline:
             chunk = {**chunk, "text": text[:MODULE_CHUNK_MAX_CHARS]}
         return chunk
 
-    def _prioritize_substantive(
-        self, bucket: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _prioritize_substantive(self, bucket: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Stable reorder: substantive chunks first, low-information fragments last.
 
         Glossary/index fragments (a term + footnote number like
@@ -805,7 +798,9 @@ class RetrievalPipeline:
                 docs = data.get("documents") or []
                 out = [(cid, txt or "") for cid, txt in zip(ids, docs)]
             except Exception as exc:
-                logger.warning("workspace_chunk_fetch_failed", workspace_id=workspace_id, error=str(exc))
+                logger.warning(
+                    "workspace_chunk_fetch_failed", workspace_id=workspace_id, error=str(exc)
+                )
             self._lexical_cache[workspace_id] = out
             return out
 
@@ -972,7 +967,7 @@ class RetrievalPipeline:
                 raise ValueError("batch embed returned mismatched length")
         except Exception:
             query_embs = [self.vectorstore.embed_query(t) for t in query_texts]
-        for text, emb in zip(query_texts, query_embs):
+        for _text, emb in zip(query_texts, query_embs):
             scored = self._query_by_embedding(emb, candidates, where=where)
             if scored:
                 rank_lists.append(scored)
@@ -1013,17 +1008,19 @@ class RetrievalPipeline:
             m = meta.get(cid, {})
             if not m.get("text"):
                 continue
-            out.append({
-                "chunk_id": cid,
-                "text": m.get("text", ""),
-                "metadata": {
-                    "page_number": m.get("page_number"),
-                    "section": m.get("section_title"),
-                    "framework": m.get("source_framework", ""),
-                    "document_name": m.get("document_name", ""),
-                },
-                "similarity_score": round(best_sim.get(cid, 0.0), 4),
-            })
+            out.append(
+                {
+                    "chunk_id": cid,
+                    "text": m.get("text", ""),
+                    "metadata": {
+                        "page_number": m.get("page_number"),
+                        "section": m.get("section_title"),
+                        "framework": m.get("source_framework", ""),
+                        "document_name": m.get("document_name", ""),
+                    },
+                    "similarity_score": round(best_sim.get(cid, 0.0), 4),
+                }
+            )
         return out
 
     def retrieve_document_evidence_pool(
@@ -1182,9 +1179,7 @@ class RetrievalPipeline:
         """
         if not candidates or reserve <= 0:
             return
-        reserved_in_budget = [
-            c for c in clean if c.get("source_framework") in reserved_names
-        ]
+        reserved_in_budget = [c for c in clean if c.get("source_framework") in reserved_names]
         missing = reserve - len(reserved_in_budget)
         inserted = 0
         for rc in candidates:
@@ -1340,10 +1335,7 @@ class RetrievalPipeline:
             [self._truncate_chunk(_to_entry(c, "module_1_normative")) for c in module1_raw]
         )
         module1_regional = self._prioritize_substantive(
-            [
-                self._truncate_chunk(_to_entry(c, "module_1_normative"))
-                for c in module1_regional_raw
-            ]
+            [self._truncate_chunk(_to_entry(c, "module_1_normative")) for c in module1_regional_raw]
         )
         module2_dimension = self._prioritize_substantive(
             [

@@ -1,4 +1,5 @@
 import pytest
+
 from src.retrieval import CrossEncoderReranker, RetrievalPipeline
 
 
@@ -22,6 +23,7 @@ def test_reranker_empty_candidates():
 
 def test_rrf_score():
     from src.utils import rrf_score
+
     assert rrf_score(0) > rrf_score(1)
     assert rrf_score(0, 60) == 1.0 / 60.0
     assert rrf_score(1, 60) == 1.0 / 61.0
@@ -29,6 +31,7 @@ def test_rrf_score():
 
 def test_reciprocal_rank_fusion():
     from src.utils import reciprocal_rank_fusion
+
     list_a = [("c1", 0.8), ("c2", 0.7)]
     list_b = [("c2", 0.9), ("c1", 0.6)]
 
@@ -39,20 +42,24 @@ def test_reciprocal_rank_fusion():
 
 def test_reciprocal_rank_fusion_empty():
     from src.utils import reciprocal_rank_fusion
+
     assert reciprocal_rank_fusion([]) == []
 
 
 def test_batch_fetch_chunk_metadata_empty():
     from src.utils import batch_fetch_chunk_metadata
+
     result = batch_fetch_chunk_metadata(None, [])
     assert result == {}
 
 
 def test_l2_normalize():
     from src.utils import l2_normalize
+
     vec = [3.0, 4.0]
     normalized = l2_normalize(vec)
     import math
+
     assert abs(math.sqrt(sum(v * v for v in normalized)) - 1.0) < 1e-6
 
     zero_vec = [0.0, 0.0]
@@ -61,6 +68,7 @@ def test_l2_normalize():
 
 def test_cosine_similarity():
     from src.utils import cosine_similarity
+
     a = [1.0, 0.0]
     b = [0.0, 1.0]
     assert cosine_similarity(a, b) == 0.0
@@ -72,6 +80,7 @@ def test_cosine_similarity():
 
 def test_keyword_overlap():
     from src.utils import compute_keyword_overlap
+
     a = "transparency and accountability in AI systems"
     b = "transparency requires accountability in AI governance"
     overlap = compute_keyword_overlap(a, b)
@@ -86,6 +95,7 @@ def test_search_vectorstore_empty():
     retrieval.vectorstore = None
     retrieval._reranker = None
     from unittest.mock import MagicMock
+
     retrieval.vectorstore = MagicMock()
     retrieval.vectorstore.search.return_value = []
     result = retrieval._search_vectorstore("test", top_k=5)
@@ -141,38 +151,55 @@ def test_document_evidence_pool_filters_and_dedups():
     chunks while dropping preamble fragments, low-information glossary
     fragments, and text duplicates — the ladder must never see boilerplate."""
     chunks = [
-        {"chunk_id": "a1", "text": LONG_SAFETY_PASSAGE,
-         "metadata": {"page_number": 5, "section": "Oversight"},
-         "score": 0.7},
+        {
+            "chunk_id": "a1",
+            "text": LONG_SAFETY_PASSAGE,
+            "metadata": {"page_number": 5, "section": "Oversight"},
+            "score": 0.7,
+        },
         # Text duplicate of a1 (recursive split overlap) — must dedup.
-        {"chunk_id": "a1dup", "text": LONG_SAFETY_PASSAGE,
-         "metadata": {"page_number": 6, "section": "Oversight"},
-         "score": 0.6},
+        {
+            "chunk_id": "a1dup",
+            "text": LONG_SAFETY_PASSAGE,
+            "metadata": {"page_number": 6, "section": "Oversight"},
+            "score": 0.6,
+        },
         # Preamble: cover page fragment — must be dropped.
-        {"chunk_id": "toc", "text": "Table of Contents 1 2 3",
-         "metadata": {"page_number": 1, "section": "Front"},
-         "score": 0.9},
+        {
+            "chunk_id": "toc",
+            "text": "Table of Contents 1 2 3",
+            "metadata": {"page_number": 1, "section": "Front"},
+            "score": 0.9,
+        },
         # Low-information glossary fragment — must be dropped.
-        {"chunk_id": "frag", "text": "Explainability15",
-         "metadata": {"page_number": 12, "section": "Glossary"},
-         "score": 0.8},
-        {"chunk_id": "a2",
-         "text": (
-             "Operators must report serious incidents to the regulator "
-             "without delay, including near-misses and unexpected system "
-             "behaviour, so that emerging risks in high-impact AI "
-             "deployments are logged, investigated, and remediated as "
-             "required by the incident notification obligations of this Act."
-         ),
-         "metadata": {"page_number": 7, "section": "Incidents"},
-         "score": 0.5},
+        {
+            "chunk_id": "frag",
+            "text": "Explainability15",
+            "metadata": {"page_number": 12, "section": "Glossary"},
+            "score": 0.8,
+        },
+        {
+            "chunk_id": "a2",
+            "text": (
+                "Operators must report serious incidents to the regulator "
+                "without delay, including near-misses and unexpected system "
+                "behaviour, so that emerging risks in high-impact AI "
+                "deployments are logged, investigated, and remediated as "
+                "required by the incident notification obligations of this Act."
+            ),
+            "metadata": {"page_number": 7, "section": "Incidents"},
+            "score": 0.5,
+        },
     ]
     pipe = RetrievalPipeline.__new__(RetrievalPipeline)
     pipe.vectorstore = _FakePoolStore(chunks)
     pipe._reranker = None
 
     pool = pipe.retrieve_document_evidence_pool(
-        "Safety", "ws-1", candidates=10, max_chunks=10,
+        "Safety",
+        "ws-1",
+        candidates=10,
+        max_chunks=10,
     )
     ids = [c["chunk_id"] for c in pool]
     assert "a1" in ids
@@ -240,6 +267,7 @@ def test_retrieve_doc_bucket_multi_query_shapes_entries():
     # module cache first so the rebuild runs; the class-bound method works
     # on the __new__ instance without any instance-attribute override.
     from src.retrieval import DIMENSION_PROFILES
+
     DIMENSION_PROFILES.clear()
     profiles = retrieval.get_or_build_profiles()
     assert "Transparency" in profiles
@@ -248,7 +276,12 @@ def test_retrieve_doc_bucket_multi_query_shapes_entries():
     chunk_ids = [f"doc-{i}" for i in range(6)]
     chunk_texts = [f"policy passage number {i} about governance" for i in range(6)]
     chunk_meta = [
-        {"workspace_id": "ws-1", "framework": "", "page_number": str(85 + i), "section": "Section X"}
+        {
+            "workspace_id": "ws-1",
+            "framework": "",
+            "page_number": str(85 + i),
+            "section": "Section X",
+        }
         for i in range(6)
     ]
 
@@ -285,8 +318,10 @@ def test_retrieve_doc_bucket_multi_query_shapes_entries():
 
     with patch("src.retrieval.batch_fetch_chunk_metadata", fake_batch_fetch):
         result = retrieval._retrieve_doc_bucket_multi_query(
-            dimension="Transparency", dim_query="Transparency",
-            workspace_id="ws-1", candidates=6,
+            dimension="Transparency",
+            dim_query="Transparency",
+            workspace_id="ws-1",
+            candidates=6,
         )
 
     # Every sub-query must have been scoped to the workspace.
@@ -320,6 +355,7 @@ _OFFTOPIC = "The turbine generated additional megawatt hours during the reportin
 
 def test_incident_pool_drops_chunks_the_grounding_gate_would_reject():
     from src.deterministic import _chunk_matches_dimension
+
     assert _chunk_matches_dimension(_PRIVACY, "Privacy")
     assert not _chunk_matches_dimension(_OFFTOPIC, "Privacy")
 

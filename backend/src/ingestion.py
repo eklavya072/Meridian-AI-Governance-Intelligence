@@ -3,16 +3,15 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-import structlog
 from pathlib import Path
 from typing import Any
 
+import structlog
 from pydantic import BaseModel
 
 from src.validation import (
-    validate_file_path,
-    ValidationResult,
     MAX_FRAMEWORK_FILE_SIZE_BYTES,
+    validate_file_path,
 )
 
 logger = structlog.get_logger()
@@ -29,8 +28,9 @@ class Chunk(BaseModel):
 
 
 def parse_pdf(file_path: Path) -> list[dict[str, Any]]:
-    from pypdf import PdfReader
     import io
+
+    from pypdf import PdfReader
 
     parser_name = "pypdf.PdfReader"
     file_bytes = file_path.read_bytes()
@@ -47,10 +47,12 @@ def parse_pdf(file_path: Path) -> list[dict[str, Any]]:
         page_text_lengths.append(char_count)
         if char_count == 0:
             empty_pages += 1
-        pages.append({
-            "page_number": i + 1,
-            "text": text,
-        })
+        pages.append(
+            {
+                "page_number": i + 1,
+                "text": text,
+            }
+        )
 
     logger.info(
         "stage_2_document_parsed",
@@ -83,12 +85,14 @@ def structure_aware_split(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if current_text:
             text = "\n".join(current_text).strip()
             if text:
-                sections.append({
-                    "section_title": current_section,
-                    "text": text,
-                    "pages": sorted(current_pages),
-                    "start_page": min(current_pages) if current_pages else None,
-                })
+                sections.append(
+                    {
+                        "section_title": current_section,
+                        "text": text,
+                        "pages": sorted(current_pages),
+                        "start_page": min(current_pages) if current_pages else None,
+                    }
+                )
 
     for page in pages:
         lines = page["text"].split("\n")
@@ -105,12 +109,14 @@ def structure_aware_split(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not sections:
         logger.warning("stage_3_chunking_no_structure_detected", pages=len(pages))
         for page in pages:
-            sections.append({
-                "section_title": None,
-                "text": page["text"],
-                "pages": [page["page_number"]],
-                "start_page": page["page_number"],
-            })
+            sections.append(
+                {
+                    "section_title": None,
+                    "text": page["text"],
+                    "pages": [page["page_number"]],
+                    "start_page": page["page_number"],
+                }
+            )
 
     MIN_SECTION_CHARS = 250
     merged: list[dict[str, Any]] = []
@@ -151,32 +157,153 @@ OVERLAP_SENTENCES = 2
 # documents are never filtered (they may legitimately be in any language).
 
 _EN_STOPWORDS = {
-    "the", "a", "an", "and", "of", "to", "in", "for", "on", "with",
-    "is", "are", "that", "this", "these", "those", "as", "at", "by",
-    "from", "or", "be", "it", "its", "not", "but", "which", "will",
-    "can", "their", "has", "have", "had", "was", "were", "about",
+    "the",
+    "a",
+    "an",
+    "and",
+    "of",
+    "to",
+    "in",
+    "for",
+    "on",
+    "with",
+    "is",
+    "are",
+    "that",
+    "this",
+    "these",
+    "those",
+    "as",
+    "at",
+    "by",
+    "from",
+    "or",
+    "be",
+    "it",
+    "its",
+    "not",
+    "but",
+    "which",
+    "will",
+    "can",
+    "their",
+    "has",
+    "have",
+    "had",
+    "was",
+    "were",
+    "about",
 }
 
 _FOREIGN_STOPWORDS: dict[str, set[str]] = {
     "fr": {
-        "le", "la", "les", "un", "une", "des", "et", "en", "au", "aux",
-        "du", "de", "ce", "cette", "ces", "sur", "pour", "par", "dans",
-        "avec", "est", "sont", "que", "qui", "plus", "pas", "nous",
-        "vous", "ils", "elles", "dans", "à", "l'ia", "d'une", "d'un",
+        "le",
+        "la",
+        "les",
+        "un",
+        "une",
+        "des",
+        "et",
+        "en",
+        "au",
+        "aux",
+        "du",
+        "de",
+        "ce",
+        "cette",
+        "ces",
+        "sur",
+        "pour",
+        "par",
+        "dans",
+        "avec",
+        "est",
+        "sont",
+        "que",
+        "qui",
+        "plus",
+        "pas",
+        "nous",
+        "vous",
+        "ils",
+        "elles",
+        "à",
+        "l'ia",
+        "d'une",
+        "d'un",
     },
     "es": {
-        "el", "la", "los", "las", "un", "una", "unos", "unas", "de",
-        "del", "y", "en", "con", "por", "para", "que", "es", "son",
-        "se", "su", "sus", "como", "más", "pero",
+        "el",
+        "la",
+        "los",
+        "las",
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "de",
+        "del",
+        "y",
+        "en",
+        "con",
+        "por",
+        "para",
+        "que",
+        "es",
+        "son",
+        "se",
+        "su",
+        "sus",
+        "como",
+        "más",
+        "pero",
     },
     "de": {
-        "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer",
-        "eines", "und", "oder", "mit", "von", "für", "ist", "sind",
-        "auf", "zu", "nicht", "auch", "als", "im", "in",
+        "der",
+        "die",
+        "das",
+        "den",
+        "dem",
+        "des",
+        "ein",
+        "eine",
+        "einer",
+        "eines",
+        "und",
+        "oder",
+        "mit",
+        "von",
+        "für",
+        "ist",
+        "sind",
+        "auf",
+        "zu",
+        "nicht",
+        "auch",
+        "als",
+        "im",
+        "in",
     },
     "it": {
-        "il", "lo", "la", "i", "gli", "le", "un", "una", "di", "del",
-        "e", "con", "per", "che", "è", "sono", "su", "da", "non",
+        "il",
+        "lo",
+        "la",
+        "i",
+        "gli",
+        "le",
+        "un",
+        "una",
+        "di",
+        "del",
+        "e",
+        "con",
+        "per",
+        "che",
+        "è",
+        "sono",
+        "su",
+        "da",
+        "non",
     },
 }
 
@@ -253,7 +380,6 @@ def recursive_character_split(
 
     chunks: list[Chunk] = []
     start = 0
-    sentences = None
 
     while start < len(text):
         end = min(start + MAX_CHUNK_CHARS, len(text))
@@ -264,12 +390,20 @@ def recursive_character_split(
 
         chunk_text = text[start:end].strip()
         if chunk_text:
-            pg = _estimate_chunk_page(start, len(text), section_pages) if section_pages else page_number
+            pg = (
+                _estimate_chunk_page(start, len(text), section_pages)
+                if section_pages
+                else page_number
+            )
             chunks.append(
                 Chunk(
                     chunk_id=str(uuid.uuid4()),
                     text=chunk_text,
-                    metadata={**metadata_base, "section": section_title, "framework": framework_name},
+                    metadata={
+                        **metadata_base,
+                        "section": section_title,
+                        "framework": framework_name,
+                    },
                     page_number=pg,
                     section_title=section_title,
                     framework_name=framework_name,
@@ -356,7 +490,8 @@ def ingest_document(
         "framework": framework_name,
         "workspace_id": workspace_id,
         "roles": ",".join(roles) if roles else "",
-        "source_type": source_type or ("incident_record" if roles and "module_4_incident" in roles else "framework"),
+        "source_type": source_type
+        or ("incident_record" if roles and "module_4_incident" in roles else "framework"),
     }
 
     all_chunks: list[Chunk] = []
@@ -374,7 +509,7 @@ def ingest_document(
             framework_name=framework_name,
             section_pages=section_pages,
         )
-        section_text = section.get("text", "")
+        section.get("text", "")
         for c in chunks:
             c.workspace_id = workspace_id
             if not c.text.strip():

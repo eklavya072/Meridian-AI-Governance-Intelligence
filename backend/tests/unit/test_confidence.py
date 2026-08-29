@@ -1,6 +1,7 @@
 import pytest
-from src.models import CalibratedConfidence, CoverageLevel, RetrievedEvidence
+
 from src.gap_analyzer import compute_calibrated_confidence
+from src.models import CalibratedConfidence, CoverageLevel, RetrievedEvidence
 
 
 def test_calibrated_confidence_geometric_mean():
@@ -81,7 +82,6 @@ def test_calibrated_confidence_agreement_factor_improves():
     ]
 
     import src.evidence_agreement
-    original_fn = src.evidence_agreement.compute_evidence_agreement_score
 
     # evidence_pairs=None (never computed, unknown agreement) is the real
     # "no signal" baseline — falls back to the neutral 0.5 default.
@@ -91,10 +91,12 @@ def test_calibrated_confidence_agreement_factor_improves():
     # scores at or above the unknown baseline, never below it.
     score_unknown, _ = compute_calibrated_confidence(evidence, evidence_pairs=None)
 
-    from src.models import EvidencePair, EvidenceAgreement
+    from src.models import EvidenceAgreement, EvidencePair
+
     good_pairs = [
-        EvidencePair(item_a_id="c1", item_b_id="c2",
-                     agreement=EvidenceAgreement.SUPPORTING, score=0.9),
+        EvidencePair(
+            item_a_id="c1", item_b_id="c2", agreement=EvidenceAgreement.SUPPORTING, score=0.9
+        ),
     ]
     score_with_pairs, _ = compute_calibrated_confidence(evidence, evidence_pairs=good_pairs)
 

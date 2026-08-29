@@ -12,6 +12,7 @@ times:
      live EU corpus "market surveillance authorit" occurs 0 times literally
      and 233 times once OCR word-splitting is allowed.
 """
+
 import pytest
 
 from src.gap_analyzer import (
@@ -23,14 +24,18 @@ from src.gap_analyzer import (
 
 DIM = "Environmental Sustainability"
 # Verbatim from the uploaded EU AI Act: "Office" is split by extraction.
-OCR_CHUNK = [{
-    "text": "The European Ar tif icial Intellig ence Off ice (AI Offi ce) shall "
-            "monitor energy consumption and carbon emission reporting for AI syste ms."
-}]
-CLEAN_CHUNK = [{
-    "text": "The AI Office shall monitor energy consumption and carbon "
-            "emission reporting for AI systems."
-}]
+OCR_CHUNK = [
+    {
+        "text": "The European Ar tif icial Intellig ence Off ice (AI Offi ce) shall "
+        "monitor energy consumption and carbon emission reporting for AI syste ms."
+    }
+]
+CLEAN_CHUNK = [
+    {
+        "text": "The AI Office shall monitor energy consumption and carbon "
+        "emission reporting for AI systems."
+    }
+]
 
 
 class TestAIPrefixedBodiesAreIdentifiable:
@@ -42,30 +47,38 @@ class TestAIPrefixedBodiesAreIdentifiable:
 
     def test_ai_office_and_ai_board_are_found(self):
         found = _extract_document_grounded_institutions(
-            ["Task the AI Office with periodic reviews.",
-             "Coordinate with the AI Board on guidance."],
+            [
+                "Task the AI Office with periodic reviews.",
+                "Coordinate with the AI Board on guidance.",
+            ],
             self.DOC,
         )
         assert found == ["AI Office", "AI Board"]
 
     def test_generic_capitalised_noun_phrases_are_still_rejected(self):
         """The designator gate, not the skip list, is what excludes these."""
-        assert _extract_document_grounded_institutions(
-            ["Expand Digital Public Infrastructure and Generative AI adoption."],
-            self.DOC,
-        ) == []
+        assert (
+            _extract_document_grounded_institutions(
+                ["Expand Digital Public Infrastructure and Generative AI adoption."],
+                self.DOC,
+            )
+            == []
+        )
 
     def test_bare_ai_is_never_named_as_an_institution(self):
-        """"AI" appears in every sentence of every document this tool reads."""
+        """ "AI" appears in every sentence of every document this tool reads."""
         found = _extract_document_grounded_institutions(
             ["Improve AI adoption across AI programmes using AI."], self.DOC
         )
         assert "AI" not in found
 
     def test_a_body_absent_from_the_document_is_not_returned(self):
-        assert _extract_document_grounded_institutions(
-            ["Task the Ministry of Truth with oversight."], self.DOC
-        ) == []
+        assert (
+            _extract_document_grounded_institutions(
+                ["Task the Ministry of Truth with oversight."], self.DOC
+            )
+            == []
+        )
 
     def test_acronyms_of_three_or_more_letters_still_work(self):
         doc = "BIS and MeitY jointly publish standards."

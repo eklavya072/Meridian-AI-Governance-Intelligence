@@ -11,9 +11,10 @@ told to name the responsible body, and warned three times not to invent one, so
 "none_identified" was the only safe answer available to it. Candidates are now
 extracted deterministically from the dimension's own passages and offered.
 """
+
 import pytest
 
-from src.gap_analyzer import document_named_bodies, _is_institution_phrase
+from src.gap_analyzer import _is_institution_phrase, document_named_bodies
 
 PRIVACY_TEXT = (
     "The Personal Information Protection Commission shall supervise the handling "
@@ -32,12 +33,8 @@ class TestBodiesAreFound:
         assert "Personal Information Protection Commission" in found
 
     def test_ordering_is_by_frequency(self):
-        other = (
-            "The Board of Audit reviews personal data handling once. "
-        )
-        found = document_named_bodies(
-            _chunks(PRIVACY_TEXT, PRIVACY_TEXT, other), "Privacy"
-        )
+        other = "The Board of Audit reviews personal data handling once. "
+        found = document_named_bodies(_chunks(PRIVACY_TEXT, PRIVACY_TEXT, other), "Privacy")
         assert found[0] == "Personal Information Protection Commission"
 
     def test_only_dimension_topical_passages_are_read(self):
@@ -50,23 +47,29 @@ class TestBodiesAreFound:
 class TestNoiseIsRejected:
     """All six of these appeared as candidates on the live Japan corpus."""
 
-    @pytest.mark.parametrize("phrase", [
-        "Cabinet Order",                                   # an instrument
-        "Local Incorporated Administrative Agency Act",    # an Act
-        "General Rules for Incorporated Administrative Agency",
-        "Term of Office",                                  # ordinary noun
-        "Delegation of Authority",
-        "Exercising Authority",
-    ])
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "Cabinet Order",  # an instrument
+            "Local Incorporated Administrative Agency Act",  # an Act
+            "General Rules for Incorporated Administrative Agency",
+            "Term of Office",  # ordinary noun
+            "Delegation of Authority",
+            "Exercising Authority",
+        ],
+    )
     def test_designator_bearing_non_institutions_are_dropped(self, phrase):
         assert not _is_institution_phrase(phrase)
 
-    @pytest.mark.parametrize("phrase", [
-        "Personal Information Protection Commission",
-        "Ministry of Internal Affairs and Communications",
-        "Board of Audit",
-        "Administrative Complaint Review Board",
-    ])
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "Personal Information Protection Commission",
+            "Ministry of Internal Affairs and Communications",
+            "Board of Audit",
+            "Administrative Complaint Review Board",
+        ],
+    )
     def test_real_institutions_survive(self, phrase):
         assert _is_institution_phrase(phrase)
 

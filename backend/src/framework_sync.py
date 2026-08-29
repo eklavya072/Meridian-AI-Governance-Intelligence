@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import hashlib
-import os
-import structlog
 import uuid
 from pathlib import Path
 from typing import Any
 
 import httpx
+import structlog
 import yaml
 
-from src.vectorstore import VectorStore
 from src.ingestion import _CHUNK_ID_NAMESPACE, Chunk, ingest_document
+from src.vectorstore import VectorStore
 
 logger = structlog.get_logger()
 
@@ -20,7 +19,7 @@ RAW_POLICIES_DIR = Path(__file__).parent.parent / "data" / "raw_policies"
 
 
 def load_frameworks_config() -> list[dict[str, Any]]:
-    with open(FRAMEWORKS_CONFIG_PATH, "r") as f:
+    with open(FRAMEWORKS_CONFIG_PATH) as f:
         config = yaml.safe_load(f)
     return config.get("frameworks", [])
 
@@ -141,9 +140,7 @@ class FrameworkSyncService:
                         # remove, so every re-sync orphaned the evidence any
                         # cached dimension had carried over for these
                         # frameworks.
-                        copy.chunk_id = str(
-                            uuid.uuid5(_CHUNK_ID_NAMESPACE, f"{c.chunk_id}|{role}")
-                        )
+                        copy.chunk_id = str(uuid.uuid5(_CHUNK_ID_NAMESPACE, f"{c.chunk_id}|{role}"))
                         copy.metadata["roles"] = role
                         expanded.append(copy)
                 chunks = expanded
@@ -219,12 +216,14 @@ class FrameworkSyncService:
             name = fw["name"]
             local_path = RAW_POLICIES_DIR / f"{name.replace(' ', '_').replace('/', '_')}.pdf"
             indexed_chunks = self.vector_store.count_chunks(framework_filter=[name])
-            results.append({
-                "name": name,
-                "version": fw.get("version", ""),
-                "website": fw.get("website", ""),
-                "is_indexed": indexed_chunks > 0,
-                "chunk_count": indexed_chunks,
-                "local_file_exists": local_path.exists(),
-            })
+            results.append(
+                {
+                    "name": name,
+                    "version": fw.get("version", ""),
+                    "website": fw.get("website", ""),
+                    "is_indexed": indexed_chunks > 0,
+                    "chunk_count": indexed_chunks,
+                    "local_file_exists": local_path.exists(),
+                }
+            )
         return results

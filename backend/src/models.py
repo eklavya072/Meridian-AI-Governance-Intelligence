@@ -86,7 +86,7 @@ class ModuleCitation(BaseModel):
 
     quote: str = ""
     chunk_id: str = ""
-    source: str = ""            # framework name or "Uploaded Document"
+    source: str = ""  # framework name or "Uploaded Document"
     source_type: str = "framework"  # "document" | "framework"
     # Which uploaded document the chunk came from (multi-document workspaces,
     # e.g. NAIS vs the Model AI Governance Framework). None for framework
@@ -188,14 +188,14 @@ class RetrievedEvidence(BaseModel):
 class Module3Phase(BaseModel):
     """A single implementation phase in the Module 3 roadmap."""
 
-    phase: str = ""                # "Phase 1" / "Phase 2"
-    timeline: str = ""             # e.g. "0-12 months" — deterministic
+    phase: str = ""  # "Phase 1" / "Phase 2"
+    timeline: str = ""  # e.g. "0-12 months" — deterministic
     # Deterministic estimate rationale (code-computed, never LLM guesswork):
     # which signals (coverage tier, existing mechanisms, maturity, agency
     # grounding, scope) produced the range, so the timeline is auditable.
     timeline_reasoning: str = ""
-    objective: str = ""            # what this phase accomplishes
-    steps: list[str] = []          # sequential implementation steps
+    objective: str = ""  # what this phase accomplishes
+    steps: list[str] = []  # sequential implementation steps
 
 
 class Module3Implementation(BaseModel):
@@ -207,7 +207,7 @@ class Module3Implementation(BaseModel):
     """
 
     dimension: str = ""
-    coverage_tier: str = ""        # "Partial" | "Missing" (persisted tier)
+    coverage_tier: str = ""  # "Partial" | "Missing" (persisted tier)
     phases: list[Module3Phase] = []
     # Responsible Agency — the highest-fabrication-risk field. Must be
     # grounded in an institution the input document already names or clearly
@@ -220,7 +220,7 @@ class Module3Implementation(BaseModel):
     responsible_agency_grounding: str = "none_identified"
     documentation_requirements: list[str] = []
     monitoring_checklist: list[str] = []
-    citations: list[ModuleCitation] = []   # module_3_implementation sources
+    citations: list[ModuleCitation] = []  # module_3_implementation sources
 
 
 class IncidentMatch(BaseModel):
@@ -234,7 +234,7 @@ class IncidentMatch(BaseModel):
     """
 
     incident_name: str = ""
-    source: str = ""               # curated incident record name
+    source: str = ""  # curated incident record name
     dimension_relevance: str = ""  # why it relates to this dimension
     potential_consequence: str = ""
     lessons_learned: str = ""
@@ -527,7 +527,6 @@ class CalibratedConfidence(BaseModel):
                 self.coverage_completeness_factor,
             ]
         ]
-        import math
         product = 1.0
         for f in factors:
             product *= f

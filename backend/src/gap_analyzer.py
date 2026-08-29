@@ -2,71 +2,84 @@ from __future__ import annotations
 
 import os
 import re
-from functools import lru_cache
 import threading
 import time
 import uuid
-import structlog
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable
+from functools import lru_cache
+from typing import Any
 
+import structlog
 from pydantic import BaseModel, Field
 
-from src.vectorstore import VectorStore
-from src.provider_router import get_provider, generate_with_retry, print_debug_summary
-from src.llm_provider import LLMProvider
-from src.models import (
-    GovernanceGap, CoverageLevel, RiskLevel, Priority,
-    RetrievedEvidence, CalibratedConfidence, EvidenceItem,
-    GovernanceMaturity, ModuleCitation, Module1Evaluation, Module2Recommendation,
-    BestPractices, InternationalExample,
-    Module3Implementation, Module3Phase, Module4CaseIntelligence, IncidentMatch,
-)
-from src.retrieval import RetrievalPipeline, ModuleRetrievalResult, Module34RetrievalResult
+from src import analysis_prompts
 from src.consistency import (
+    LADDER_RAISE_REVIEW_THRESHOLD,
     ConsistencyValidator,
     detect_covered_synthesis_drift,
     detect_ladder_raise_contradiction,
-    COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD,
-    LADDER_RAISE_REVIEW_THRESHOLD,
 )
-from src.nli_verifier import NLIVerifier
-from src.evidence_agreement import compute_evidence_agreement_score, analyze_evidence_agreement
-from src import analysis_prompts
 from src.deterministic import (
-    compute_governance_maturity,
-    validate_coverage_deterministic,
-    plain_language_ladder_note,
+    NAMED_BODY_KEYWORDS,
     _chunk_matches_dimension,
     _has_keyword,
-    _split_sentences,
-    _split_sentences as _split_sentences_for_cache,
     _sentence_has_core_term,
+    _split_sentences,
+    compute_governance_maturity,
     is_low_information_fragment,
+    plain_language_ladder_note,
     text_contains_mechanism,
-    NAMED_BODY_KEYWORDS,
+    validate_coverage_deterministic,
 )
+from src.deterministic import (
+    _split_sentences as _split_sentences_for_cache,
+)
+from src.evidence_agreement import analyze_evidence_agreement, compute_evidence_agreement_score
 from src.evidence_strength import (
+    TIER_OBLIGATORY,
     build_profile,
     coverage_from_profile,
-    maturity_from_profile,
-    detect_nonbinding_document,
+    describe_risk_basis,
     detect_enforcement_regime,
     detect_mechanisms,
-    describe_risk_basis,
-    TIER_OBLIGATORY,
+    detect_nonbinding_document,
+    maturity_from_profile,
 )
-from src.verify import (
-    verify_citation,
-    find_unverifiable_citations,
-    classify_narrative_citations,
-    detect_division_vocabulary,
-)
-from src.utils import strip_chunk_id_citations
 from src.framework_router import (
     resolve_dimension_frameworks,
     resolve_frameworks,
     resolve_regional_frameworks,
+)
+from src.llm_provider import LLMProvider
+from src.models import (
+    BestPractices,
+    CalibratedConfidence,
+    CoverageLevel,
+    EvidenceItem,
+    GovernanceGap,
+    GovernanceMaturity,
+    IncidentMatch,
+    InternationalExample,
+    Module1Evaluation,
+    Module2Recommendation,
+    Module3Implementation,
+    Module3Phase,
+    Module4CaseIntelligence,
+    ModuleCitation,
+    Priority,
+    RetrievedEvidence,
+    RiskLevel,
+)
+from src.nli_verifier import NLIVerifier
+from src.provider_router import generate_with_retry, get_provider, print_debug_summary
+from src.retrieval import Module34RetrievalResult, ModuleRetrievalResult, RetrievalPipeline
+from src.utils import strip_chunk_id_citations
+from src.vectorstore import VectorStore
+from src.verify import (
+    classify_narrative_citations,
+    detect_division_vocabulary,
+    verify_citation,
 )
 
 # Bounded concurrency for the per-dimension analysis loop. The 8 dimensions
@@ -84,9 +97,7 @@ ANALYSIS_MAX_CONCURRENCY = int(os.getenv("ANALYSIS_MAX_CONCURRENCY", "8"))
 # needs commitment/obligation language inside it to fire R1/R2, so the bar
 # controls recall (terminology-miss recall) while the combined gate controls
 # precision (off-topic chunks stay inert). Model-dependent; env-tunable.
-DIMENSION_RELEVANCE_THRESHOLD = float(
-    os.getenv("DIMENSION_RELEVANCE_THRESHOLD", "0.42")
-)
+DIMENSION_RELEVANCE_THRESHOLD = float(os.getenv("DIMENSION_RELEVANCE_THRESHOLD", "0.42"))
 
 # Substantive-specificity threshold for the ladder's ANTI-FALSE-POSITIVE
 # gate. The relevance gate (0.42) admits any chunk whose meaning overlaps
@@ -102,9 +113,7 @@ DIMENSION_RELEVANCE_THRESHOLD = float(
 # passages: genuine dimension mechanisms score 0.64-0.80 against their
 # dimension's aspects, procedural provisions 0.48-0.59 — a clean split at
 # ~0.62. Model-dependent; env-tunable.
-SUBSTANTIVE_RELEVANCE_THRESHOLD = float(
-    os.getenv("SUBSTANTIVE_RELEVANCE_THRESHOLD", "0.62")
-)
+SUBSTANTIVE_RELEVANCE_THRESHOLD = float(os.getenv("SUBSTANTIVE_RELEVANCE_THRESHOLD", "0.62"))
 
 
 # Sentence boundary heuristic for the substantive gate: a chunk can be a
@@ -144,9 +153,7 @@ _DEFINITION_SECTION_RE = re.compile(
     r"^\s*(?:definitions?|interpretation|glossary)\b[^\n]*$",
     re.IGNORECASE | re.MULTILINE,
 )
-_DEFINITION_LIST_ITEM_RE = re.compile(
-    r"^\s*\d+\.\s*[\"\u201c\u2018']", re.MULTILINE
-)
+_DEFINITION_LIST_ITEM_RE = re.compile(r"^\s*\d+\.\s*[\"\u201c\u2018']", re.MULTILINE)
 
 
 def _is_definitional_or_glossary(text: str) -> bool:
@@ -192,6 +199,7 @@ class _DimensionRunState:
         self.llm_call_count = 0
         self.total_llm_latency = 0.0
 
+
 # Words that never denote an institution when they appear capitalized in a
 # recommendation (used by the Module 2 → Module 3 agency cross-reference).
 # NOTE: "ai" is deliberately ABSENT. It used to be here, which made it
@@ -208,10 +216,38 @@ class _DimensionRunState:
 # while "AI Office" and "AI Board" pass on "office"/"board" — which is the
 # distinction the skip list was reaching for in the first place.
 _MODULE2_AGENCY_SKIP = {
-    "the", "and", "india", "task", "phase", "step", "such", "in",
-    "of", "to", "a", "an", "data", "public", "national", "new", "this",
-    "standard", "standards", "body", "bodies", "each", "for", "with",
-    "across", "government", "all", "high", "risk", "use", "using", "ml",
+    "the",
+    "and",
+    "india",
+    "task",
+    "phase",
+    "step",
+    "such",
+    "in",
+    "of",
+    "to",
+    "a",
+    "an",
+    "data",
+    "public",
+    "national",
+    "new",
+    "this",
+    "standard",
+    "standards",
+    "body",
+    "bodies",
+    "each",
+    "for",
+    "with",
+    "across",
+    "government",
+    "all",
+    "high",
+    "risk",
+    "use",
+    "using",
+    "ml",
 }
 
 # Organizational designators. A multi-word capitalized phrase is only
@@ -222,10 +258,28 @@ _MODULE2_AGENCY_SKIP = {
 # and CamelCase short forms ("MeitY") are handled separately by the
 # capital-heavy pattern and do not need a designator.
 _MODULE2_AGENCY_DESIGNATORS = {
-    "ministry", "department", "bureau", "board", "authority", "commission",
-    "agency", "institute", "council", "office", "foundation", "centre",
-    "center", "directorate", "secretariat", "committee", "division",
-    "cell", "administration", "regulator", "parliament", "cabinet",
+    "ministry",
+    "department",
+    "bureau",
+    "board",
+    "authority",
+    "commission",
+    "agency",
+    "institute",
+    "council",
+    "office",
+    "foundation",
+    "centre",
+    "center",
+    "directorate",
+    "secretariat",
+    "committee",
+    "division",
+    "cell",
+    "administration",
+    "regulator",
+    "parliament",
+    "cabinet",
     "task force",
 }
 
@@ -236,15 +290,46 @@ _MODULE2_AGENCY_DESIGNATORS = {
 # "Delegation of Authority" and "Exercising Authority" use the designator as an
 # ordinary noun. All six appeared as candidates on the Japan corpus.
 _INSTRUMENT_TAIL = {
-    "act", "order", "rules", "rule", "regulation", "regulations", "law",
-    "code", "bill", "plan", "guidelines", "standard", "standards", "policy",
-    "agreement", "treaty", "convention",
+    "act",
+    "order",
+    "rules",
+    "rule",
+    "regulation",
+    "regulations",
+    "law",
+    "code",
+    "bill",
+    "plan",
+    "guidelines",
+    "standard",
+    "standards",
+    "policy",
+    "agreement",
+    "treaty",
+    "convention",
 }
 _ABSTRACT_HEAD = {
-    "term", "terms", "exercising", "exercise", "delegation", "general",
-    "matters", "scope", "establishment", "appointment", "composition",
-    "organization", "organisation", "duties", "functions", "powers",
-    "local", "special", "relevant", "respective", "necessary",
+    "term",
+    "terms",
+    "exercising",
+    "exercise",
+    "delegation",
+    "general",
+    "matters",
+    "scope",
+    "establishment",
+    "appointment",
+    "composition",
+    "organization",
+    "organisation",
+    "duties",
+    "functions",
+    "powers",
+    "local",
+    "special",
+    "relevant",
+    "respective",
+    "necessary",
 }
 
 
@@ -261,10 +346,7 @@ def _is_institution_phrase(phrase: str) -> bool:
     # connective — "Personal Information Protection Commission" has three,
     # "Term of Office" has none once "term" is excluded above.
     connective = {"of", "for", "and", "the", "on", "in"}
-    qualifiers = [
-        t for t in tokens
-        if t not in connective and t not in _MODULE2_AGENCY_DESIGNATORS
-    ]
+    qualifiers = [t for t in tokens if t not in connective and t not in _MODULE2_AGENCY_DESIGNATORS]
     return len(qualifiers) >= 1
 
 
@@ -323,8 +405,7 @@ def document_named_bodies(
                 continue
             phrase = " ".join(tokens)
             if not any(
-                tok.lower().strip(",.") in _MODULE2_AGENCY_DESIGNATORS
-                for tok in phrase.split()
+                tok.lower().strip(",.") in _MODULE2_AGENCY_DESIGNATORS for tok in phrase.split()
             ):
                 continue
             if not _is_institution_phrase(phrase):
@@ -403,10 +484,7 @@ def _extract_document_grounded_institutions(
             # institution if it contains an organizational designator
             # ("Bureau of Indian Standards" ✓, "Generative AI" ✗,
             # "Digital Public Infrastructure" ✗).
-            if not any(
-                tok.lower() in _MODULE2_AGENCY_DESIGNATORS
-                for tok in phrase.split()
-            ):
+            if not any(tok.lower() in _MODULE2_AGENCY_DESIGNATORS for tok in phrase.split()):
                 continue
             if phrase.lower() in doc_lower and phrase not in found:
                 found.append(phrase)
@@ -438,6 +516,7 @@ def _extract_document_grounded_institutions(
             if len(found) >= 2:
                 break
     return found[:2]
+
 
 logger = structlog.get_logger()
 
@@ -608,7 +687,8 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     dashboards, cross-country comparisons, and evaluation reporting.
     """
     assessed = [
-        g for g in gaps
+        g
+        for g in gaps
         if g.coverage in (CoverageLevel.COVERED, CoverageLevel.PARTIAL, CoverageLevel.MISSING)
     ]
 
@@ -616,7 +696,8 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     partial = sum(1 for g in gaps if g.coverage == CoverageLevel.PARTIAL)
     missing = sum(1 for g in gaps if g.coverage == CoverageLevel.MISSING)
     insufficient = sum(
-        1 for g in gaps
+        1
+        for g in gaps
         if g.coverage == CoverageLevel.INSUFFICIENT_EVIDENCE and not g.analysis_error
     )
     failed = sum(1 for g in gaps if g.analysis_error)
@@ -633,9 +714,7 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     # than carried as dead weight.
     assessed_ranks = [MATURITY_RANK.get(g.governance_maturity, 0) for g in assessed]
     if assessed_ranks:
-        stage_scores = [
-            MATURITY_STAGE_SCORE.get(g.governance_maturity, 0.0) for g in assessed
-        ]
+        stage_scores = [MATURITY_STAGE_SCORE.get(g.governance_maturity, 0.0) for g in assessed]
         maturity_index = round(sum(stage_scores) / len(stage_scores), 1)
         # Full stage histogram (pie/histogram-ready).
         maturity_distribution = {
@@ -644,7 +723,7 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
         }
     else:
         maturity_index = 0.0
-        maturity_distribution = {label: 0 for label in RANK_TO_LABEL.values()}
+        maturity_distribution = dict.fromkeys(RANK_TO_LABEL.values(), 0)
 
     # ── Coverage breadth: the SECOND axis ────────────────────────────────
     # How much of what each dimension needs the document addresses AT ALL,
@@ -664,7 +743,8 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     # duty (tier >= 3) rather than merely mentioned. The bridge between the
     # two axes, and the honest answer to "yes, but is any of it binding?"
     mech_binding = sum(
-        1 for g in assessed
+        1
+        for g in assessed
         for tier in (g.mechanisms_present or {}).values()
         if tier >= TIER_OBLIGATORY
     )
@@ -672,7 +752,8 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
 
     # ── Highest priority dimensions (Critical/High, most urgent first) ──
     high_priority = [
-        g for g in gaps
+        g
+        for g in gaps
         if g.module_2 is not None and g.module_2.priority in (Priority.CRITICAL, Priority.HIGH)
     ]
     high_priority.sort(key=lambda g: PRIORITY_RANK.get(g.module_2.priority, 9))
@@ -692,9 +773,7 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     # framework_synthesis used gap-filling language. Consumers (frontend,
     # executive summary, dashboards) should surface these as "review" states,
     # not as ordinary Partial findings.
-    drift_downgraded = [
-        g.dimension for g in gaps if g.synthesis_drift_downgraded
-    ]
+    drift_downgraded = [g.dimension for g in gaps if g.synthesis_drift_downgraded]
 
     # ── Ladder-raise review flags ─────────────────────────────────────
     # Dimensions whose verdict was raised by the deterministic ladder
@@ -702,13 +781,11 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     # explicit gaps yet the raised verdict says Covered/Partial). Consumers
     # should surface these as review states — the ladder's override is held
     # to the same consistency discipline as LLM output.
-    ladder_raise_review = [
-        g.dimension for g in gaps if g.ladder_raise_review_flag
-    ]
+    ladder_raise_review = [g.dimension for g in gaps if g.ladder_raise_review_flag]
 
-    avg_confidence = round(
-        sum(g.confidence_score for g in assessed) / len(assessed), 3
-    ) if assessed else 0.0
+    avg_confidence = (
+        round(sum(g.confidence_score for g in assessed) / len(assessed), 3) if assessed else 0.0
+    )
 
     return {
         "covered": covered,
@@ -749,7 +826,8 @@ def compute_calibrated_confidence(
     cal = CalibratedConfidence()
 
     similarity_scores = [
-        e.similarity_score for e in evidence_list
+        e.similarity_score
+        for e in evidence_list
         if e.similarity_score is not None and 0 <= e.similarity_score <= 1
     ]
     if similarity_scores:
@@ -803,13 +881,11 @@ def compute_calibrated_confidence(
         # retrieval consistently found strongly relevant evidence; a wide
         # or low spread is genuine signal it didn't. Mean-minus-std-dev is
         # the standard "discount for variance" idiom — never a placeholder.
-        sims = [s for s in similarity_scores] if similarity_scores else []
+        sims = list(similarity_scores) if similarity_scores else []
         if len(sims) >= 2:
             mean_sim = sum(sims) / len(sims)
             variance = sum((s - mean_sim) ** 2 for s in sims) / len(sims)
-            cal.retrieval_stability_factor = round(
-                max(0.0, min(1.0, mean_sim - variance ** 0.5)), 3
-            )
+            cal.retrieval_stability_factor = round(max(0.0, min(1.0, mean_sim - variance**0.5)), 3)
         else:
             cal.retrieval_stability_factor = 0.5
 
@@ -834,9 +910,7 @@ def compute_calibrated_confidence(
     if unique_sources <= 0:
         cal.cross_source_agreement = 0.0
     else:
-        cal.cross_source_agreement = round(
-            min(1.0, 0.6 + 0.2 * (unique_sources - 1)), 3
-        )
+        cal.cross_source_agreement = round(min(1.0, 0.6 + 0.2 * (unique_sources - 1)), 3)
 
     if evidence_graph and hasattr(evidence_graph, "coverage_completeness"):
         cal.coverage_completeness_factor = evidence_graph.coverage_completeness
@@ -932,9 +1006,7 @@ def compute_risk(
         cluster = next((c for c in DIMENSION_CLUSTERS if dimension in c), None)
         if cluster:
             any_gap = any(
-                g.dimension in cluster
-                and g.dimension != dimension
-                and _is_assessed_gap(g)
+                g.dimension in cluster and g.dimension != dimension and _is_assessed_gap(g)
                 for g in other_gaps
             )
             if any_gap:
@@ -979,9 +1051,7 @@ def resolve_priority(
         # Same correctness rule as compute_risk: an unanalysed dimension is
         # not evidence of a governance gap. See _is_assessed_gap.
         any_gap = any(
-            g.dimension in cluster
-            and g.dimension != dimension
-            and _is_assessed_gap(g)
+            g.dimension in cluster and g.dimension != dimension and _is_assessed_gap(g)
             for g in other_gaps
         )
         if any_gap:
@@ -1110,7 +1180,9 @@ def build_framework_synthesis(
         fw = fp.framework if not isinstance(fp, dict) else fp.get("framework", "")
         chunk_id = fp.chunk_id if not isinstance(fp, dict) else fp.get("chunk_id", "")
         pos = fp.position if not isinstance(fp, dict) else fp.get("position", "")
-        supporting = fp.supporting_text if not isinstance(fp, dict) else fp.get("supporting_text", "")
+        supporting = (
+            fp.supporting_text if not isinstance(fp, dict) else fp.get("supporting_text", "")
+        )
         if fw in seen_frameworks:
             continue
         has_chunk = any(e.chunk_id == chunk_id for e in evidence_list)
@@ -1213,6 +1285,7 @@ class GapAnalyzer:
         """True when the model emitted the 'no citation' sentinel instead of a
         real chunk id. The prompt allows this when no context line supports a
         claim — it is an honest decline, not a failed lookup."""
+
         def _norm(value: str) -> str:
             return (value or "").strip(" .,;:!?\"'").lower()
 
@@ -1269,7 +1342,9 @@ class GapAnalyzer:
             # the example is silently dropped even though it was grounded.
             if label_map and chunk_id in label_map:
                 chunk_id = label_map[chunk_id]
-            pairs.append((practice, country, {"chunk_id": chunk_id, "quote": quote, "page_number": page}))
+            pairs.append(
+                (practice, country, {"chunk_id": chunk_id, "quote": quote, "page_number": page})
+            )
             citation_dicts.append({"chunk_id": chunk_id, "quote": quote, "page_number": page})
 
         citations = self._verify_module_citations(citation_dicts, source_type="framework")
@@ -1282,12 +1357,14 @@ class GapAnalyzer:
                 continue
             if self.vector_store.get_chunk(citation.chunk_id) is None:
                 continue
-            verified.append(InternationalExample(
-                practice=practice.strip(),
-                country_or_source=country.strip(),
-                reference=citation.source,
-                citation=citation,
-            ))
+            verified.append(
+                InternationalExample(
+                    practice=practice.strip(),
+                    country_or_source=country.strip(),
+                    reference=citation.source,
+                    citation=citation,
+                )
+            )
         dropped = len(examples) - len(verified)
         if dropped:
             logger.warning(
@@ -1311,35 +1388,53 @@ class GapAnalyzer:
             quote = c.get("quote", "") if isinstance(c, dict) else getattr(c, "quote", "")
             page = c.get("page_number") if isinstance(c, dict) else getattr(c, "page_number", None)
             if self._is_no_citation_entry(chunk_id, quote):
-                verified_list.append(ModuleCitation(
-                    quote="", chunk_id="", source=default_source,
-                    source_type=source_type, page_number=None,
-                    no_citation=True,
-                    verification={
-                        "passed": False,
-                        "method": "no_citation_available",
-                        "failure_reason": (
-                            "No supporting passage was found in the retrieved "
-                            "context — no citation was fabricated."
-                        ),
-                    },
-                ))
+                verified_list.append(
+                    ModuleCitation(
+                        quote="",
+                        chunk_id="",
+                        source=default_source,
+                        source_type=source_type,
+                        page_number=None,
+                        no_citation=True,
+                        verification={
+                            "passed": False,
+                            "method": "no_citation_available",
+                            "failure_reason": (
+                                "No supporting passage was found in the retrieved "
+                                "context — no citation was fabricated."
+                            ),
+                        },
+                    )
+                )
                 continue
             if not chunk_id:
-                verified_list.append(ModuleCitation(
-                    quote=quote, chunk_id="", source=default_source,
-                    source_type=source_type, verified=False,
-                    verification={"passed": False, "failure_reason": "No chunk_id provided."},
-                ))
+                verified_list.append(
+                    ModuleCitation(
+                        quote=quote,
+                        chunk_id="",
+                        source=default_source,
+                        source_type=source_type,
+                        verified=False,
+                        verification={"passed": False, "failure_reason": "No chunk_id provided."},
+                    )
+                )
                 continue
 
             chunk = self.vector_store.get_chunk(chunk_id)
             if chunk is None:
-                verified_list.append(ModuleCitation(
-                    quote=quote, chunk_id=chunk_id, source=default_source,
-                    source_type=source_type, verified=False,
-                    verification={"passed": False, "failure_reason": "Chunk does not exist in vector store."},
-                ))
+                verified_list.append(
+                    ModuleCitation(
+                        quote=quote,
+                        chunk_id=chunk_id,
+                        source=default_source,
+                        source_type=source_type,
+                        verified=False,
+                        verification={
+                            "passed": False,
+                            "failure_reason": "Chunk does not exist in vector store.",
+                        },
+                    )
+                )
                 continue
 
             md = chunk.get("metadata", {}) or {}
@@ -1370,16 +1465,18 @@ class GapAnalyzer:
                 document_total_pages=document_total_pages,
                 nli_verifier=self.nli_verifier if self.nli_verifier.is_available else None,
             )
-            verified_list.append(ModuleCitation(
-                quote=quote,
-                chunk_id=chunk_id,
-                source=source,
-                source_type=source_type,
-                document_name=doc_name or None,
-                page_number=page,
-                verified=result.passed,
-                verification=result.to_dict(),
-            ))
+            verified_list.append(
+                ModuleCitation(
+                    quote=quote,
+                    chunk_id=chunk_id,
+                    source=source,
+                    source_type=source_type,
+                    document_name=doc_name or None,
+                    page_number=page,
+                    verified=result.passed,
+                    verification=result.to_dict(),
+                )
+            )
         return verified_list
 
     def _ensure_minimum_citations(
@@ -1482,9 +1579,7 @@ class GapAnalyzer:
                 continue
             # Substantive grounding (anti-false-positive, mirrors the ladder):
             # relevance is recall, substance is precision.
-            if dimension and subst_gate is not None and not subst_gate(
-                full_text, dimension
-            ):
+            if dimension and subst_gate is not None and not subst_gate(full_text, dimension):
                 logger.info(
                     "fallback_not_substantive_skipped",
                     chunk_id=c.get("chunk_id", ""),
@@ -1495,20 +1590,22 @@ class GapAnalyzer:
             # Deterministically attached requirement citation. The quote IS the
             # chunk's own text, so a normal verify would trivially pass and show
             # a misleading green badge — mark it as auto-attached instead.
-            result.append(ModuleCitation(
-                quote=text,
-                chunk_id=c["chunk_id"],
-                source=source,
-                source_type=source_type,
-                page_number=c.get("page_number"),
-                claim=claim_note,
-                verified=False,
-                verification={
-                    "passed": False,
-                    "method": "deterministic_fallback",
-                    "failure_reason": "Auto-attached requirement citation — passage copied from the top retrieved chunk (not LLM-grounded).",
-                },
-            ))
+            result.append(
+                ModuleCitation(
+                    quote=text,
+                    chunk_id=c["chunk_id"],
+                    source=source,
+                    source_type=source_type,
+                    page_number=c.get("page_number"),
+                    claim=claim_note,
+                    verified=False,
+                    verification={
+                        "passed": False,
+                        "method": "deterministic_fallback",
+                        "failure_reason": "Auto-attached requirement citation — passage copied from the top retrieved chunk (not LLM-grounded).",
+                    },
+                )
+            )
             if len(result) >= 2:
                 break
         # Keep the honest no_citation entries only when there is nothing to
@@ -1564,9 +1661,7 @@ class GapAnalyzer:
                         c.document_name = md["document_name"]
                     elif not c.source and md.get("framework"):
                         c.source = md["framework"]
-                    if dimension and text and not _chunk_matches_dimension(
-                        text, dimension
-                    ):
+                    if dimension and text and not _chunk_matches_dimension(text, dimension):
                         logger.info(
                             "module3_citation_off_topic_dropped",
                             chunk_id=c.chunk_id,
@@ -1616,9 +1711,7 @@ class GapAnalyzer:
             # a substantive summary section can carry the dimension's key
             # commitments and is legitimately citable.
             head = full_text[:200].lower()
-            if "table of contents" in head or head.lstrip().startswith(
-                "title page"
-            ):
+            if "table of contents" in head or head.lstrip().startswith("title page"):
                 continue
             # Mechanism requirement: an implementation citation must impose or
             # name a governance mechanism. Principle statements and
@@ -1639,9 +1732,7 @@ class GapAnalyzer:
             # Substantive grounding (same gate as the ladder): the chunk must
             # be substantively about the dimension's operational content, not
             # merely keyword-topical.
-            if dimension and subst_gate is not None and not subst_gate(
-                full_text, dimension
-            ):
+            if dimension and subst_gate is not None and not subst_gate(full_text, dimension):
                 logger.info(
                     "fallback_not_substantive_skipped",
                     chunk_id=cid,
@@ -1659,23 +1750,25 @@ class GapAnalyzer:
             if not source and not doc_name:
                 continue
             used.add(cid)
-            kept.append(ModuleCitation(
-                quote=text,
-                chunk_id=cid,
-                source=source or doc_name,
-                source_type="framework" if source else "document",
-                document_name=doc_name or None,
-                page_number=md.get("page_number") or pool_chunk.get("page_number"),
-                verified=False,
-                verification={
-                    "passed": False,
-                    "method": "deterministic_fallback",
-                    "failure_reason": (
-                        "Auto-attached dimension-grounded citation — passage "
-                        "from the top retrieved chunk (not LLM-grounded)."
-                    ),
-                },
-            ))
+            kept.append(
+                ModuleCitation(
+                    quote=text,
+                    chunk_id=cid,
+                    source=source or doc_name,
+                    source_type="framework" if source else "document",
+                    document_name=doc_name or None,
+                    page_number=md.get("page_number") or pool_chunk.get("page_number"),
+                    verified=False,
+                    verification={
+                        "passed": False,
+                        "method": "deterministic_fallback",
+                        "failure_reason": (
+                            "Auto-attached dimension-grounded citation — passage "
+                            "from the top retrieved chunk (not LLM-grounded)."
+                        ),
+                    },
+                )
+            )
             real_kept += 1
         # A successful top-up supersedes the LLM's honest declines: showing
         # both "No supporting passage found" rows AND real citations would
@@ -1734,21 +1827,21 @@ class GapAnalyzer:
             if cit.chunk_id in seen or not cit.chunk_id:
                 continue
             seen.add(cit.chunk_id)
-            evidence_list.append(RetrievedEvidence(
-                chunk_id=cit.chunk_id,
-                text=cit.quote[:500],
-                page_number=cit.page_number,
-                source_framework=cit.source,
-                document_name=getattr(cit, "document_name", None),
-                similarity_score=similarity_map.get(cit.chunk_id),
-                verified=cit.verified,
-                verification=cit.verification,
-            ))
+            evidence_list.append(
+                RetrievedEvidence(
+                    chunk_id=cit.chunk_id,
+                    text=cit.quote[:500],
+                    page_number=cit.page_number,
+                    source_framework=cit.source,
+                    document_name=getattr(cit, "document_name", None),
+                    similarity_score=similarity_map.get(cit.chunk_id),
+                    verified=cit.verified,
+                    verification=cit.verification,
+                )
+            )
         return evidence_list
 
-    def _compute_evidence_agreement_pairs(
-        self, citations: list[ModuleCitation]
-    ) -> list:
+    def _compute_evidence_agreement_pairs(self, citations: list[ModuleCitation]) -> list:
         """Real evidence-agreement pairs for the confidence calculation —
         replaces the flat 0.5 placeholder confidence used to fall back to
         when no pairs were computed at all. Cheap and local (embeddings
@@ -1761,12 +1854,14 @@ class GapAnalyzer:
             if not cit.chunk_id or cit.chunk_id in seen or not cit.quote:
                 continue
             seen.add(cit.chunk_id)
-            items.append(EvidenceItem(
-                chunk_id=cit.chunk_id,
-                text=cit.quote,
-                source_framework=cit.source,
-                is_document=(cit.source_type == "document"),
-            ))
+            items.append(
+                EvidenceItem(
+                    chunk_id=cit.chunk_id,
+                    text=cit.quote,
+                    source_framework=cit.source,
+                    is_document=(cit.source_type == "document"),
+                )
+            )
         if len(items) < 2:
             return []
         try:
@@ -1802,9 +1897,7 @@ class GapAnalyzer:
             name = (c.get("source_framework") or "").strip()
             if name and name not in fw_names:
                 fw_names.append(name)
-        fw_label = (
-            ", ".join(fw_names) if fw_names else "the international frameworks assessed"
-        )
+        fw_label = ", ".join(fw_names) if fw_names else "the international frameworks assessed"
 
         consensus = (
             f"The frameworks assessed for this dimension ({fw_label}) "
@@ -1873,7 +1966,9 @@ class GapAnalyzer:
             logger.warning("sentence_cache_prewarm_failed", error=str(exc), count=len(todo))
 
     def _build_dimension_relevance_predicate(
-        self, dimension: str, shared_cache: dict[str, list[float]] | None = None,
+        self,
+        dimension: str,
+        shared_cache: dict[str, list[float]] | None = None,
     ) -> Callable[[str, str], bool]:
         """Semantic-or-keyword dimension gate for the deterministic ladder.
 
@@ -1909,7 +2004,8 @@ class GapAnalyzer:
             batch_embed = getattr(self.vector_store.embedding_service, "embed", None)
             try:
                 profile_embs = (
-                    list(batch_embed(profile_texts)) if batch_embed and profile_texts
+                    list(batch_embed(profile_texts))
+                    if batch_embed and profile_texts
                     else [embed_fn(pt) for pt in profile_texts]
                 )
             except Exception:
@@ -1940,7 +2036,9 @@ class GapAnalyzer:
         return match
 
     def _build_dimension_substantive_predicate(
-        self, dimension: str, shared_cache: dict[str, list[float]] | None = None,
+        self,
+        dimension: str,
+        shared_cache: dict[str, list[float]] | None = None,
     ) -> Callable[[str, str], bool] | None:
         """Anti-false-positive gate: is the chunk SUBSTANTIVELY about the
         dimension's operational content, or merely topically related?
@@ -1976,7 +2074,8 @@ class GapAnalyzer:
             batch_embed = getattr(self.vector_store.embedding_service, "embed", None)
             try:
                 profile_embs = (
-                    list(batch_embed(profile_texts)) if batch_embed and profile_texts
+                    list(batch_embed(profile_texts))
+                    if batch_embed and profile_texts
                     else [embed_fn(pt) for pt in profile_texts]
                 )
             except Exception:
@@ -2031,12 +2130,11 @@ class GapAnalyzer:
         except Exception as exc:
             logger.warning(
                 "enforcement_regime_detection_failed",
-                workspace_id=workspace_id, error=str(exc),
+                workspace_id=workspace_id,
+                error=str(exc),
             )
         cache[workspace_id] = result
-        logger.info(
-            "document_enforcement_regime", workspace_id=workspace_id, present=result
-        )
+        logger.info("document_enforcement_regime", workspace_id=workspace_id, present=result)
         return result
 
     def _compute_deterministic_verdict(
@@ -2066,9 +2164,7 @@ class GapAnalyzer:
                 dimension=dimension, workspace_id=workspace_id
             )
         except Exception as exc:
-            logger.warning(
-                "dimension_scoring_pool_failed", dimension=dimension, error=str(exc)
-            )
+            logger.warning("dimension_scoring_pool_failed", dimension=dimension, error=str(exc))
             return None
         if not scoring_pool:
             return None
@@ -2161,9 +2257,7 @@ class GapAnalyzer:
             # only bound further down (after the LLM call), so reading it here
             # raises UnboundLocalError and silently loses the vocabulary.
             _pool = (determined or {}).get("scoring_pool") or retrieval.document_chunks or []
-            _vocab_source = [
-                (c.get("text") or "") for c in _pool if isinstance(c, dict)
-            ]
+            _vocab_source = [(c.get("text") or "") for c in _pool if isinstance(c, dict)]
             division_vocabulary = detect_division_vocabulary(_vocab_source)
         except Exception as exc:
             logger.warning("division_vocabulary_failed", dimension=dimension, error=str(exc))
@@ -2189,7 +2283,9 @@ class GapAnalyzer:
         )
 
         # ── Normalize Module 1 fields ───────────────────────────────────
-        coverage_str = str(getattr(combined, "coverage", "Partial") or "Partial").strip().capitalize()
+        coverage_str = (
+            str(getattr(combined, "coverage", "Partial") or "Partial").strip().capitalize()
+        )
         if coverage_str not in ("Covered", "Partial", "Missing"):
             coverage_str = "Partial"
         coverage = CoverageLevel(coverage_str)
@@ -2249,9 +2345,7 @@ class GapAnalyzer:
         strength_profile = determined["profile"] if determined else None
         scoring_pool = determined["scoring_pool"] if determined else []
         use_profile_verdict = bool(
-            determined
-            and strength_profile is not None
-            and strength_profile.n_scored > 0
+            determined and strength_profile is not None and strength_profile.n_scored > 0
         )
 
         evidence_pool: list[dict[str, Any]] = []
@@ -2293,18 +2387,20 @@ class GapAnalyzer:
                     sentence_embed_cache,
                 )
             except Exception as exc:
-                logger.warning("sentence_cache_prewarm_call_failed", dimension=dimension, error=str(exc))
+                logger.warning(
+                    "sentence_cache_prewarm_call_failed", dimension=dimension, error=str(exc)
+                )
             try:
                 dim_match = self._build_dimension_relevance_predicate(
                     dimension, shared_cache=sentence_embed_cache
                 )
             except Exception:
                 dim_match = None
-        # Anti-false-positive substantive gate: a chunk may fire R1/R2 only
-        # when its mechanism-bearing sentences are substantively about the
-        # dimension (semantic closeness to the profile above
-        # SUBSTANTIVE_RELEVANCE_THRESHOLD) — procedural authority provisions
-        # ("Minister may approve/support AI data centres") stay inert.
+            # Anti-false-positive substantive gate: a chunk may fire R1/R2 only
+            # when its mechanism-bearing sentences are substantively about the
+            # dimension (semantic closeness to the profile above
+            # SUBSTANTIVE_RELEVANCE_THRESHOLD) — procedural authority provisions
+            # ("Minister may approve/support AI data centres") stay inert.
             try:
                 subst_match = self._build_dimension_substantive_predicate(
                     dimension, shared_cache=sentence_embed_cache
@@ -2404,11 +2500,14 @@ class GapAnalyzer:
                 if mech_note:
                     profile_coverage_note = (
                         profile_coverage_note + " " + mech_note
-                        if profile_coverage_note else mech_note
+                        if profile_coverage_note
+                        else mech_note
                     )
                     logger.info(
-                        "mechanism_coverage_computed", dimension=dimension,
-                        present=mech.met, total=mech.total,
+                        "mechanism_coverage_computed",
+                        dimension=dimension,
+                        present=mech.met,
+                        total=mech.total,
                         binding=mech.binding_met,
                         coverage=_cov_label,
                     )
@@ -2506,10 +2605,9 @@ class GapAnalyzer:
                 if text_contains_mechanism(text):
                     passage = " ".join(text.split())[:240]
                     coverage_reasoning = (
-                        coverage_reasoning
-                        + " [Comprehensive evidence check] The uploaded "
+                        coverage_reasoning + " [Comprehensive evidence check] The uploaded "
                         "document contains a dimension-relevant governance "
-                        f"mechanism (passage: \"{passage}...\"); the "
+                        f'mechanism (passage: "{passage}..."); the '
                         "mechanism's operational detail is reflected in the "
                         "maturity assessment."
                     )
@@ -2572,14 +2670,9 @@ class GapAnalyzer:
         # FINAL coverage is Covered with no example produced — a
         # model-Covered card that missed the field gets the same treatment,
         # and an example the model DID produce is always preserved.
-        if (
-            coverage == CoverageLevel.COVERED
-            and not coverage_example.strip()
-            and mechanisms
-        ):
-            coverage_example = (
-                "The document establishes operational mechanisms: "
-                + "; ".join(mechanisms[:3])
+        if coverage == CoverageLevel.COVERED and not coverage_example.strip() and mechanisms:
+            coverage_example = "The document establishes operational mechanisms: " + "; ".join(
+                mechanisms[:3]
             )
             logger.info(
                 "covered_coverage_example_backfilled",
@@ -2621,8 +2714,7 @@ class GapAnalyzer:
                 principle_acknowledged=principle_ack,
                 operational_mechanisms=mechanisms,
                 evidence_texts=[
-                    c.get("text", "") for c in dimension_evidence_chunks
-                    if isinstance(c, dict)
+                    c.get("text", "") for c in dimension_evidence_chunks if isinstance(c, dict)
                 ],
             )
 
@@ -2635,8 +2727,7 @@ class GapAnalyzer:
         _fabricated_citations: list[str] = []
         try:
             _corpus = " ".join(
-                (c.get("text") or "") for c in (scoring_pool or [])
-                if isinstance(c, dict)
+                (c.get("text") or "") for c in (scoring_pool or []) if isinstance(c, dict)
             )
             if _corpus:
                 # Compare against the WHOLE uploaded document as well, not just
@@ -2650,8 +2741,8 @@ class GapAnalyzer:
                 _document_text: list[str] = []
                 try:
                     if workspace_id and getattr(self, "retrieval_pipeline", None):
-                        _document_text = (
-                            self.retrieval_pipeline._workspace_document_texts(workspace_id)
+                        _document_text = self.retrieval_pipeline._workspace_document_texts(
+                            workspace_id
                         )
                 except Exception:
                     # Cached, cheap and optional: losing it costs severity
@@ -2680,7 +2771,8 @@ class GapAnalyzer:
         except Exception as exc:
             logger.warning(
                 "citation_number_validation_failed",
-                dimension=dimension, error=str(exc),
+                dimension=dimension,
+                error=str(exc),
             )
 
         # ── Module 2 fields (raw LLM output) ────────────────────────────
@@ -2715,11 +2807,13 @@ class GapAnalyzer:
         # Composed legacy string — keeps every existing consumer (consistency
         # drift check, advisor, executive summary) working unchanged.
         framework_synthesis = "\n\n".join(
-            p for p in [
+            p
+            for p in [
                 f"Consensus: {fs_consensus}" if fs_consensus else "",
                 f"Differences: {fs_differences}" if fs_differences else "",
                 f"Overall assessment: {fs_overall}" if fs_overall else "",
-            ] if p
+            ]
+            if p
         )
         future_strengthening_opportunities = [
             e for e in (getattr(combined, "future_strengthening_opportunities", []) or []) if e
@@ -2754,8 +2848,11 @@ class GapAnalyzer:
             if not strengthening and llm_recommendations:
                 strengthening = [
                     re.sub(
-                        r'^(should|must|needs? to|is required to|are required to)\s+',
-                        'may further ', r, count=1, flags=re.IGNORECASE,
+                        r"^(should|must|needs? to|is required to|are required to)\s+",
+                        "may further ",
+                        r,
+                        count=1,
+                        flags=re.IGNORECASE,
                     )
                     for r in llm_recommendations[:3]
                 ]
@@ -2842,13 +2939,11 @@ class GapAnalyzer:
         # Runs AFTER the drift check so it only fires when the final coverage
         # really is Covered.
         if coverage == CoverageLevel.COVERED and not fs_overall:
-            fb_consensus, fb_differences, fb_overall = (
-                self._build_covered_synthesis_fallback(
-                    dimension=dimension,
-                    module1_chunks=retrieval.module1_chunks,
-                    coverage_example=coverage_example,
-                    operational_mechanisms=mechanisms,
-                )
+            fb_consensus, fb_differences, fb_overall = self._build_covered_synthesis_fallback(
+                dimension=dimension,
+                module1_chunks=retrieval.module1_chunks,
+                coverage_example=coverage_example,
+                operational_mechanisms=mechanisms,
             )
             was_consensus_empty = not fs_consensus
             was_differences_empty = not fs_differences
@@ -2858,11 +2953,13 @@ class GapAnalyzer:
                 fs_differences = fb_differences
             fs_overall = fb_overall
             framework_synthesis = "\n\n".join(
-                p for p in [
+                p
+                for p in [
                     f"Consensus: {fs_consensus}" if fs_consensus else "",
                     f"Differences: {fs_differences}" if fs_differences else "",
                     f"Overall assessment: {fs_overall}" if fs_overall else "",
-                ] if p
+                ]
+                if p
             )
             logger.info(
                 "covered_synthesis_fallback_generated",
@@ -2874,16 +2971,22 @@ class GapAnalyzer:
 
         # ── Citation verification (both fields) ─────────────────────────
         doc_citations = self._verify_module_citations(
-            self._translate_chunk_ids(getattr(combined, "document_evidence", []) or [], label_to_id),
+            self._translate_chunk_ids(
+                getattr(combined, "document_evidence", []) or [], label_to_id
+            ),
             default_source="Uploaded Document",
             source_type="document",
         )
         fw_citations = self._verify_module_citations(
-            self._translate_chunk_ids(getattr(combined, "framework_evidence", []) or [], label_to_id),
+            self._translate_chunk_ids(
+                getattr(combined, "framework_evidence", []) or [], label_to_id
+            ),
             source_type="framework",
         )
         std_citations = self._verify_module_citations(
-            self._translate_chunk_ids(getattr(combined, "standard_citations", []) or [], label_to_id),
+            self._translate_chunk_ids(
+                getattr(combined, "standard_citations", []) or [], label_to_id
+            ),
             source_type="framework",
         )
 
@@ -2991,19 +3094,31 @@ class GapAnalyzer:
             mechanisms_present=_mech_present,
             mechanisms_absent=_mech_absent,
             gap_analysis="\n\n".join(
-                p for p in [
+                p
+                for p in [
                     f"Coverage: {coverage.value}",
                     f"Reason flagged: {reason_flagged}" if reason_flagged else "",
                     f"Governance Maturity: {maturity.value}",
                     coverage_reasoning,
                     (f"Coverage examples: {coverage_example}" if coverage_example else ""),
                     (f"Best practices:\n{best_practices.opening}" if best_practices else ""),
-                    (f"Future strengthening opportunities:\n" + "\n".join(f"- {e}" for e in best_practices.future_strengthening_opportunities) if best_practices and best_practices.future_strengthening_opportunities else ""),
-                    (f"Recommendations ({priority.value} priority):\n" + "\n".join(
-                        f"- {r}" for r in recommendations
-                    ) if recommendations and priority else ""),
+                    (
+                        "Future strengthening opportunities:\n"
+                        + "\n".join(
+                            f"- {e}" for e in best_practices.future_strengthening_opportunities
+                        )
+                        if best_practices and best_practices.future_strengthening_opportunities
+                        else ""
+                    ),
+                    (
+                        f"Recommendations ({priority.value} priority):\n"
+                        + "\n".join(f"- {r}" for r in recommendations)
+                        if recommendations and priority
+                        else ""
+                    ),
                     f"Framework synthesis: {framework_synthesis}" if framework_synthesis else "",
-                ] if p
+                ]
+                if p
             ),
             governance_maturity=maturity,
             maturity_reasoning=maturity_reasoning,
@@ -3028,7 +3143,9 @@ class GapAnalyzer:
             num_fw_citations=len(fw_citations),
             num_std_citations=len(std_citations),
             num_future_strengthening_opportunities=len(future_strengthening_opportunities),
-            num_international_examples=len(best_practices.international_examples) if best_practices else 0,
+            num_international_examples=len(best_practices.international_examples)
+            if best_practices
+            else 0,
             synthesis_drift_downgraded=synthesis_drift_downgraded,
             verified=sum(1 for c in doc_citations + fw_citations + std_citations if c.verified),
             total=len(doc_citations) + len(fw_citations) + len(std_citations),
@@ -3093,7 +3210,9 @@ class GapAnalyzer:
         if m1 and m1.reason_flagged:
             lines.append(f"Reason flagged: {m1.reason_flagged}")
         if m1 and m1.operational_mechanisms:
-            lines.append(f"Existing operational mechanisms in document: {'; '.join(m1.operational_mechanisms[:6])}")
+            lines.append(
+                f"Existing operational mechanisms in document: {'; '.join(m1.operational_mechanisms[:6])}"
+            )
         if gap.governance_maturity:
             lines.append(f"Governance maturity: {gap.governance_maturity.value}")
         if m2 and m2.recommendations:
@@ -3265,19 +3384,16 @@ class GapAnalyzer:
             if workspace_id and getattr(self, "retrieval_pipeline", None) is not None:
                 pool += [
                     {"text": t}
-                    for _cid, t in self.retrieval_pipeline._workspace_chunk_texts(
-                        workspace_id
-                    )
+                    for _cid, t in self.retrieval_pipeline._workspace_chunk_texts(workspace_id)
                 ]
             candidate_bodies = document_named_bodies(pool, dimension)
         except Exception as exc:
-            logger.warning(
-                "candidate_bodies_failed", dimension=dimension, error=str(exc)
-            )
+            logger.warning("candidate_bodies_failed", dimension=dimension, error=str(exc))
         if candidate_bodies:
             logger.info(
                 "candidate_bodies_offered",
-                dimension=dimension, bodies=candidate_bodies,
+                dimension=dimension,
+                bodies=candidate_bodies,
             )
 
         sys_prompt, prompt = analysis_prompts.build_module3_4_combined_prompt(
@@ -3328,25 +3444,32 @@ class GapAnalyzer:
         for ph in phases_raw[:2]:
             if isinstance(ph, dict):
                 steps = [s for s in (ph.get("steps") or []) if s][:5]
-                phases.append(Module3Phase(
-                    phase=str(ph.get("phase", "") or ""),
-                    timeline=str(ph.get("timeline", "") or ""),
-                    objective=str(ph.get("objective", "") or ""),
-                    steps=steps,
-                ))
+                phases.append(
+                    Module3Phase(
+                        phase=str(ph.get("phase", "") or ""),
+                        timeline=str(ph.get("timeline", "") or ""),
+                        objective=str(ph.get("objective", "") or ""),
+                        steps=steps,
+                    )
+                )
             else:
                 steps = [s for s in (getattr(ph, "steps", []) or []) if s][:5]
-                phases.append(Module3Phase(
-                    phase=str(getattr(ph, "phase", "") or ""),
-                    timeline=str(getattr(ph, "timeline", "") or ""),
-                    objective=str(getattr(ph, "objective", "") or ""),
-                    steps=steps,
-                ))
+                phases.append(
+                    Module3Phase(
+                        phase=str(getattr(ph, "phase", "") or ""),
+                        timeline=str(getattr(ph, "timeline", "") or ""),
+                        objective=str(getattr(ph, "objective", "") or ""),
+                        steps=steps,
+                    )
+                )
 
         raw_agency = str(getattr(combined, "responsible_agency", "") or "")
         raw_grounding = str(getattr(combined, "responsible_agency_grounding", "") or "")
         agency, grounding = self._verify_responsible_agency(
-            raw_agency, raw_grounding, retrieval.document_chunks, dimension,
+            raw_agency,
+            raw_grounding,
+            retrieval.document_chunks,
+            dimension,
         )
         agency, grounding = self._reconcile_responsible_agency_with_module2(
             agency,
@@ -3366,9 +3489,7 @@ class GapAnalyzer:
         step_counts = [len(p.steps) for p in phases]
         timelines = estimate_phase_timelines(
             coverage=gap.coverage,
-            operational_mechanisms=(
-                gap.module_1.operational_mechanisms if gap.module_1 else []
-            ),
+            operational_mechanisms=(gap.module_1.operational_mechanisms if gap.module_1 else []),
             maturity=gap.governance_maturity,
             agency_grounding=grounding,
             step_counts=step_counts,
@@ -3385,7 +3506,9 @@ class GapAnalyzer:
             timelines=[t["timeline"] for t in timelines],
         )
 
-        documentation = [d for d in (getattr(combined, "documentation_requirements", []) or []) if d]
+        documentation = [
+            d for d in (getattr(combined, "documentation_requirements", []) or []) if d
+        ]
         monitoring = [m for m in (getattr(combined, "monitoring_checklist", []) or []) if m]
 
         # Module 3 citations — same verification path as Module 1+2, then the
@@ -3396,7 +3519,8 @@ class GapAnalyzer:
         # dimension-topical chunks in the retrieved implementation-source and
         # uploaded-document buckets.
         impl_citations_raw = self._translate_chunk_ids(
-            getattr(combined, "implementation_citations", []) or [], label_to_id,
+            getattr(combined, "implementation_citations", []) or [],
+            label_to_id,
         )
         impl_citations = self._verify_module_citations(
             impl_citations_raw,
@@ -3474,15 +3598,17 @@ class GapAnalyzer:
                 default_source=src or md.get("framework", "") or "",
                 source_type="framework",
             )[0]
-            grounded_incidents.append(IncidentMatch(
-                incident_name=name,
-                source=src or md.get("framework", "") or "",
-                dimension_relevance=rel,
-                potential_consequence=cons,
-                lessons_learned=less,
-                mitigation=mitig,
-                citation=citation,
-            ))
+            grounded_incidents.append(
+                IncidentMatch(
+                    incident_name=name,
+                    source=src or md.get("framework", "") or "",
+                    dimension_relevance=rel,
+                    potential_consequence=cons,
+                    lessons_learned=less,
+                    mitigation=mitig,
+                    citation=citation,
+                )
+            )
 
         matched = bool(grounded_incidents)
         if matched:
@@ -3501,7 +3627,7 @@ class GapAnalyzer:
                 matched=False,
                 incident_matches=[],
                 summary="No genuinely relevant curated incident found for this dimension — "
-                         "Module 4 omitted rather than force-matching a weak case.",
+                "Module 4 omitted rather than force-matching a weak case.",
             )
 
         module34_json = combined.model_dump_json()
@@ -3585,9 +3711,7 @@ class GapAnalyzer:
                 # (e.g. Singapore Model AI Governance Framework for ASEAN)
                 # gets guaranteed Module 1 budget so it cannot be crowded
                 # out by the always-on core frameworks.
-                module1_regional_frameworks=resolve_regional_frameworks(
-                    country=country
-                ),
+                module1_regional_frameworks=resolve_regional_frameworks(country=country),
                 # Dimension reserve (Module 2): dimension-tagged practical
                 # tools keep a guaranteed Module 2 budget slot for their
                 # dimension (same rationale as the regional reserve).
@@ -3596,9 +3720,7 @@ class GapAnalyzer:
                 ),
             )
             with state.lock:
-                state.doc_chunks_per_dimension[dimension] = len(
-                    retrieval.document_chunks
-                )
+                state.doc_chunks_per_dimension[dimension] = len(retrieval.document_chunks)
                 state.all_retrieved.extend(retrieval.all_chunks_labeled())
 
             # No context at all → don't waste an LLM call or invite fabrication.
@@ -3610,11 +3732,16 @@ class GapAnalyzer:
                     reason="No module/document chunks retrieved for dimension.",
                 )
                 gap = self._build_insufficient_gap(dimension)
-                self._emit_dimension(state, dimension, gap, {
-                    "provider": self.provider.model_name,
-                    "tier": self.provider.tier,
-                    "error": "No chunks retrieved for dimension.",
-                })
+                self._emit_dimension(
+                    state,
+                    dimension,
+                    gap,
+                    {
+                        "provider": self.provider.model_name,
+                        "tier": self.provider.tier,
+                        "error": "No chunks retrieved for dimension.",
+                    },
+                )
                 return gap
 
             dim_start = time.time()
@@ -3671,10 +3798,15 @@ class GapAnalyzer:
                         error=str(exc),
                     )
 
-            self._emit_dimension(state, dimension, gap, {
-                "provider": self.provider.model_name,
-                "tier": self.provider.tier,
-            })
+            self._emit_dimension(
+                state,
+                dimension,
+                gap,
+                {
+                    "provider": self.provider.model_name,
+                    "tier": self.provider.tier,
+                },
+            )
             return gap
         except Exception as exc:
             logger.error(
@@ -3687,11 +3819,16 @@ class GapAnalyzer:
             # genuine no-evidence verdict). The frontend shows a distinct
             # "Analysis failed" state; the summary counts it separately.
             error_gap = self._build_error_gap(dimension, str(exc))
-            self._emit_dimension(state, dimension, error_gap, {
-                "provider": self.provider.model_name,
-                "tier": self.provider.tier,
-                "error": str(exc),
-            })
+            self._emit_dimension(
+                state,
+                dimension,
+                error_gap,
+                {
+                    "provider": self.provider.model_name,
+                    "tier": self.provider.tier,
+                    "error": str(exc),
+                },
+            )
             return error_gap
 
     def analyze(
@@ -3744,7 +3881,11 @@ class GapAnalyzer:
                     futures = {
                         pool.submit(
                             self._analyze_one_dimension,
-                            d, workspace_id, num_frameworks, country, state,
+                            d,
+                            workspace_id,
+                            num_frameworks,
+                            country,
+                            state,
                         ): d
                         for d in pending
                     }
@@ -3762,7 +3903,11 @@ class GapAnalyzer:
             else:
                 for d in pending:
                     dimension_results[d] = self._analyze_one_dimension(
-                        d, workspace_id, num_frameworks, country, state,
+                        d,
+                        workspace_id,
+                        num_frameworks,
+                        country,
+                        state,
                     )
 
         complete_results = [dimension_results[d] for d in GOVERNANCE_DIMENSIONS]
@@ -3800,14 +3945,16 @@ class GapAnalyzer:
         tier_stats: dict[str, dict[str, Any]] = {}
         for g in complete_results:
             tier = g.coverage.value if g.coverage else "Unknown"
-            entry = tier_stats.setdefault(tier, {"count": 0, "module2_chars": 0, "module2_avg_chars": 0.0})
+            entry = tier_stats.setdefault(
+                tier, {"count": 0, "module2_chars": 0, "module2_avg_chars": 0.0}
+            )
             entry["count"] += 1
             if g.module_2 is not None:
                 entry["module2_chars"] += len(g.module_2.model_dump_json())
         for entry in tier_stats.values():
-            entry["module2_avg_chars"] = round(
-                entry["module2_chars"] / entry["count"], 1
-            ) if entry["count"] else 0.0
+            entry["module2_avg_chars"] = (
+                round(entry["module2_chars"] / entry["count"], 1) if entry["count"] else 0.0
+            )
         logger.info("tier_output_stats", tier_stats=tier_stats)
 
         # Executive decision analytics — computed AFTER the priority recompute
@@ -3822,7 +3969,9 @@ class GapAnalyzer:
 
         for violation in consistency_report.violations:
             if violation.severity == "error":
-                gap = next((g for g in complete_results if g.dimension == violation.dimension), None)
+                gap = next(
+                    (g for g in complete_results if g.dimension == violation.dimension), None
+                )
                 if gap:
                     if gap.confidence_score > 0.5:
                         gap.confidence_score = round(gap.confidence_score * 0.8, 3)
@@ -3914,7 +4063,8 @@ class GapAnalyzer:
         missing = sum(1 for g in gaps if g.coverage == CoverageLevel.MISSING)
         errored = [g for g in gaps if g.analysis_error]
         insufficient = sum(
-            1 for g in gaps
+            1
+            for g in gaps
             if g.risk_level == RiskLevel.INSUFFICIENT_EVIDENCE and not g.analysis_error
         )
         high_risk = sum(1 for g in gaps if g.risk_level == RiskLevel.HIGH)

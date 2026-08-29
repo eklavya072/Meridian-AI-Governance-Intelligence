@@ -3,18 +3,22 @@ Unit tests for structure-aware chunking.
 """
 
 import pytest
+
 from src.ingestion import (
-    _deterministic_chunk_id,
-    structure_aware_split,
-    recursive_character_split,
     Chunk,
+    _deterministic_chunk_id,
+    recursive_character_split,
+    structure_aware_split,
 )
 
 
 class TestStructureAwareSplit:
     def test_single_section(self):
         pages = [
-            {"page_number": 1, "text": "Introduction\nThis is the intro content.\nIt continues here."},
+            {
+                "page_number": 1,
+                "text": "Introduction\nThis is the intro content.\nIt continues here.",
+            },
         ]
         sections = structure_aware_split(pages)
         assert len(sections) >= 1
@@ -46,7 +50,7 @@ class TestStructureAwareSplit:
             },
         ]
         sections = structure_aware_split(pages)
-        titles = [s["section_title"] for s in sections if s["section_title"]]
+        [s["section_title"] for s in sections if s["section_title"]]
         assert len(sections) >= 2
 
     def test_no_structure_produces_one_section_per_page(self):
@@ -59,12 +63,14 @@ class TestStructureAwareSplit:
 
     def test_section_by_article_keyword(self):
         pages = [
-            {"page_number": 1, "text": "Article 1\nThis is article one.\nArticle 2\nThis is article two."},
+            {
+                "page_number": 1,
+                "text": "Article 1\nThis is article one.\nArticle 2\nThis is article two.",
+            },
         ]
         sections = structure_aware_split(pages)
         article_sections = [
-            s for s in sections
-            if s["section_title"] and "Article" in s["section_title"]
+            s for s in sections if s["section_title"] and "Article" in s["section_title"]
         ]
         assert len(article_sections) >= 1
 
@@ -111,6 +117,7 @@ class TestRecursiveCharacterSplit:
 
     def test_chunk_id_is_uuid(self):
         import uuid
+
         chunks = recursive_character_split(
             text="Test.",
             metadata_base={"doc_id": "test"},
@@ -191,6 +198,7 @@ class TestWindowAlwaysAdvances:
 
     def _chunks(self, text):
         from src.ingestion import recursive_character_split
+
         return recursive_character_split(text, {"source_file": "t.pdf"}, "Section", None, None)
 
     def test_the_window_does_not_crawl(self):
