@@ -45,6 +45,12 @@ class Workspace(Base):
     policy_title = Column(String(500), nullable=False)
     policy_file_path = Column(String(1000), nullable=True)
     policy_file_name = Column(String(500), nullable=True)
+    # Files uploaded but not yet analysed: [{"file_path": ..., "file_name": ...}].
+    # Uploading and analysing are separate steps so a workspace can collect
+    # several documents (a strategy plus its implementation plan, say) and
+    # have them evaluated together as one body of policy, rather than the
+    # first upload racing straight into the pipeline.
+    pending_documents = Column(JSON, nullable=True, default=list)
     frameworks = Column(JSON, nullable=False, default=list)
     status = Column(SAEnum(WorkspaceStatus), default=WorkspaceStatus.QUEUED, nullable=False)
     status_detail = Column(Text, nullable=True)

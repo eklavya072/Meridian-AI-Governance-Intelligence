@@ -40,12 +40,17 @@ GROQ_TPM_LIMIT = int(os.getenv("GROQ_TPM_LIMIT", "12000"))
 GROQ_TPM_WINDOW = float(os.getenv("GROQ_TPM_WINDOW", "60"))
 
 # ── Gemini free-tier throttle (generalized from the Groq-only throttle) ──
-# Gemini free tier limits per key (confirmed from Google AI Studio docs):
+# Gemini free tier limits PER KEY (confirmed from Google AI Studio docs):
 # flash-tier models are ~10-15 RPM / 250k-1M TPM / 250-1500 RPD per key.
 # The primary provider is Gemini with N rotating keys, so we throttle:
-#   - RPM: rolling 60s request-count window, sized conservatively to the
-#     LOWEST documented flash-tier RPM (10) so it is safe for any flash
-#     model the env may select (gemini-2.x-flash / 2.5-flash).
+#   - RPM: ONE rolling 60s request-count window PER KEY, sized conservatively
+#     to the LOWEST documented flash-tier RPM (10) so it is safe for any flash
+#     model the env may select (gemini-2.x-flash / 2.5-flash). Each key gets
+#     its own throttle and requests round-robin across keys (GeminiProvider.
+#     next_key), so the pool's real headroom is N keys x per-key RPM — a
+#     single shared throttle (the old design) capped the whole pool at ONE
+#     key's RPM even with 4 keys configured, which was the single biggest
+#     wall-clock cost in an analysis run.
 #   - RPD: daily request counter across ALL keys (the binding constraint on
 #     a full 16-call analysis run; Gemini enforces RPD per project/key, and
 #     with 4 keys a full run is well inside the combined budget).
@@ -210,7 +215,32 @@ class RequestThrottle:
             self._timestamps.clear()
 
 
-_gemini_rpm_throttle = RequestThrottle(limit=GEMINI_RPM_LIMIT, window=GEMINI_RPM_WINDOW)
+# One RequestThrottle per configured Gemini key, built lazily once the
+# provider (and therefore the key count) exists. Requests round-robin across
+# the throttles via GeminiProvider.next_key(), and the chosen key is passed
+# into the call itself so the throttle and the actual key can never race.
+_gemini_rpm_throttles: list[RequestThrottle] = []
+
+
+def _gemini_throttles() -> list[RequestThrottle]:
+    """Per-key RPM throttles, sized to the configured key count.
+
+    Each Gemini key has its own free-tier RPM ceiling, so the pool's real
+    headroom is keys x per-key RPM. Falls back to a single throttle when the
+    provider is unknown (pre-init / tests)."""
+    global _gemini_rpm_throttles
+    n = 1
+    provider = _provider
+    if isinstance(provider, GeminiProvider) and provider.api_keys:
+        n = len(provider.api_keys)
+    if len(_gemini_rpm_throttles) != n:
+        _gemini_rpm_throttles = [
+            RequestThrottle(limit=GEMINI_RPM_LIMIT, window=GEMINI_RPM_WINDOW)
+            for _ in range(n)
+        ]
+    return _gemini_rpm_throttles
+
+
 # Initialised from the persisted file (date-keyed), NOT from zero: a server
 # restart mid-day must keep counting today's already-consumed quota.
 _daily_gemini_requests = _load_daily_requests()
@@ -405,24 +435,39 @@ def generate_with_retry(
 
     for attempt in range(1, max_attempts + 1):
         # ── Attempt the primary provider ──────────────────────────────
-        try:
-            if isinstance(provider, GeminiProvider):
-                # Generalized throttle: the Gemini free tier's binding limits
-                # are RPM and RPD (10-15 RPM / 250-1500 RPD per key), not
-                # TPM — so we throttle request-count, not tokens. The RPD
-                # budget is checked once above (before the loop); the RPM
-                # throttle paces each attempt so a full 16-call run (8 Module
-                # 1+2 + up to 8 Module 3+4) stays under the free tier instead
-                # of discovering the limit reactively on a 429.
-                _gemini_rpm_throttle.wait()
-            elif isinstance(provider, GroqProvider):
-                throttle_input = prompt_chars // 4
-                _groq_throttle.wait(estimated_input=throttle_input, output_buffer=500)
+        # Per-key throttle + round-robin key pick BEFORE the call: with N
+        # Gemini keys each call reserves a slot on ONE key's throttle and
+        # passes that key index into the call, so the pool uses all N keys'
+        # RPM headroom (N x 10-15/min) instead of one shared 10/min window.
+        gemini_throttle: RequestThrottle | None = None
+        key_index: int | None = None
+        if isinstance(provider, GeminiProvider):
+            # Generalized throttle: the Gemini free tier's binding limits
+            # are RPM and RPD (10-15 RPM / 250-1500 RPD per key), not
+            # TPM — so we throttle request-count, not tokens. The RPD
+            # budget is checked once above (before the loop); the RPM
+            # throttle paces each attempt so a full 16-call run stays under
+            # the free tier instead of discovering the limit reactively on
+            # a 429.
+            throttles = _gemini_throttles()
+            key_index = provider.next_key()
+            gemini_throttle = throttles[key_index]
+            gemini_throttle.wait()
+        elif isinstance(provider, GroqProvider):
+            throttle_input = prompt_chars // 4
+            _groq_throttle.wait(estimated_input=throttle_input, output_buffer=500)
 
+        try:
             start = time.time()
-            result = provider.generate_structured(
-                prompt=prompt, schema=schema, system_prompt=system_prompt
-            )
+            if isinstance(provider, GeminiProvider):
+                result = provider.generate_structured(
+                    prompt=prompt, schema=schema, system_prompt=system_prompt,
+                    key_index=key_index,
+                )
+            else:
+                result = provider.generate_structured(
+                    prompt=prompt, schema=schema, system_prompt=system_prompt
+                )
             latency = time.time() - start
 
             # Log token usage
@@ -463,7 +508,8 @@ def generate_with_retry(
                 with _rpd_lock:
                     _daily_gemini_requests += 1
                     _persist_daily_requests(_daily_gemini_requests)
-                _gemini_rpm_throttle.record()
+                if gemini_throttle is not None:
+                    gemini_throttle.record()
 
             print(
                 f"[DEBUG] REQ #{req_num} | {operation} | "
@@ -702,12 +748,37 @@ def print_debug_summary() -> None:
     print("=" * 60)
 
 
+# Chat replies are deliberately concise (the prompts cap them at ~120 words),
+# so chat calls don't need the analysis path's 8192-token generation budget.
+# A smaller output cap makes flash-tier calls complete faster (the API has
+# less output headroom to reserve), while remaining far above any real reply.
+CHAT_MAX_OUTPUT_TOKENS = int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", "1024"))
+
+# Wall-clock budget for a single chat turn's LLM work. The retry ladder was
+# written for the analysis pipeline, where a 120-second wait on a 429 is a
+# reasonable trade for not losing a run. On a chat turn it is not: someone is
+# watching a spinner, and a reply that arrives after two minutes is worse than
+# an honest degraded one. Past the budget the call gives up and the caller
+# falls back to its template response, which every chat path already handles.
+CHAT_DEADLINE_SECONDS = float(os.getenv("CHAT_DEADLINE_SECONDS", "24"))
+
+
+# Below this, a fresh attempt cannot plausibly finish, so spending the
+# remaining budget on a backoff sleep just delays the same failure.
+MIN_ATTEMPT_HEADROOM_SECONDS = float(os.getenv("CHAT_MIN_ATTEMPT_HEADROOM", "6"))
+
+
+class ChatDeadlineExceeded(RuntimeError):
+    """The turn's LLM budget ran out — caller should degrade, not retry."""
+
+
 def generate_text_with_retry(
     provider: LLMProvider,
     prompt: str,
     system_prompt: str | None = None,
     operation: str = "chat",
     max_attempts: int | None = None,
+    deadline_seconds: float | None = None,
 ) -> str:
     """Free-text sibling of generate_with_retry for chat calls.
 
@@ -725,28 +796,72 @@ def generate_text_with_retry(
     the budget is exhausted or every provider failed.
     """
     global _daily_gemini_requests
-    attempts = max_attempts or max(MAX_RETRIES, len(getattr(provider, "api_keys", [1])))
+    # Same budget rule as generate_with_retry, INCLUDING the provider guard.
+    # This line previously copied the formula but dropped the
+    # `isinstance(provider, GeminiProvider)` check, so a non-Gemini provider
+    # that happens to expose an api_keys attribute would silently get a
+    # different retry budget here than on the structured path. The two
+    # functions duplicate this logic; where they do, they must at least agree.
+    attempts = max_attempts or max(
+        MAX_RETRIES,
+        len(getattr(provider, "api_keys", [1]))
+        if isinstance(provider, GeminiProvider) else 1,
+    )
     last_error: Exception | None = None
+
+    budget = CHAT_DEADLINE_SECONDS if deadline_seconds is None else deadline_seconds
+    deadline = time.time() + budget if budget > 0 else None
+
+    def _remaining() -> float:
+        return float("inf") if deadline is None else deadline - time.time()
+
+    def _sleep_within_budget(wait: float) -> bool:
+        """Sleep only if the turn can still afford it AND a retry after it."""
+        if deadline is None:
+            time.sleep(wait)
+            return True
+        # A sleep that leaves no room for the retry it precedes is pure delay.
+        if wait + MIN_ATTEMPT_HEADROOM_SECONDS > _remaining():
+            return False
+        time.sleep(wait)
+        return True
 
     if isinstance(provider, GeminiProvider):
         _check_gemini_daily_budget()
 
     for attempt in range(1, attempts + 1):
-        try:
-            if isinstance(provider, GeminiProvider):
-                _gemini_rpm_throttle.wait()
-            elif isinstance(provider, GroqProvider):
-                _groq_throttle.wait(estimated_input=len(prompt) // 4, output_buffer=400)
+        if _remaining() <= 0:
+            raise ChatDeadlineExceeded(
+                f"Chat '{operation}' exceeded its {budget:.0f}s budget "
+                f"after {attempt - 1} attempt(s)."
+            )
+        gemini_throttle: RequestThrottle | None = None
+        key_index: int | None = None
+        if isinstance(provider, GeminiProvider):
+            throttles = _gemini_throttles()
+            key_index = provider.next_key()
+            gemini_throttle = throttles[key_index]
+            gemini_throttle.wait()
+        elif isinstance(provider, GroqProvider):
+            _groq_throttle.wait(estimated_input=len(prompt) // 4, output_buffer=400)
 
+        try:
             start = time.time()
-            text = provider.generate_text(prompt=prompt, system_prompt=system_prompt)
+            if isinstance(provider, GeminiProvider):
+                text = provider.generate_text(
+                    prompt=prompt, system_prompt=system_prompt, key_index=key_index,
+                    max_output_tokens=CHAT_MAX_OUTPUT_TOKENS,
+                )
+            else:
+                text = provider.generate_text(prompt=prompt, system_prompt=system_prompt)
             latency = time.time() - start
 
             if isinstance(provider, GeminiProvider):
                 with _rpd_lock:
                     _daily_gemini_requests += 1
                     _persist_daily_requests(_daily_gemini_requests)
-                _gemini_rpm_throttle.record()
+                if gemini_throttle is not None:
+                    gemini_throttle.record()
                 print(
                     f"[DEBUG] CHAT REQ | {operation} | model={provider.model_name} "
                     f"status=200 latency={latency:.2f}s attempt={attempt}/{attempts} "
@@ -769,7 +884,10 @@ def generate_text_with_retry(
                     f"[DEBUG] Chat rotated to Gemini key #{provider.current_key_index + 1}/"
                     f"{len(provider.api_keys)}, retrying"
                 )
-                time.sleep(_jittered_wait(RETRY_BACKOFF_SECONDS))
+                if not _sleep_within_budget(_jittered_wait(RETRY_BACKOFF_SECONDS)):
+                    raise ChatDeadlineExceeded(
+                        f"Chat '{operation}' out of budget while rotating keys."
+                    ) from exc
                 continue
             try:
                 return _try_groq_fallback_text(prompt, system_prompt, operation)
@@ -780,7 +898,11 @@ def generate_text_with_retry(
                 if retry_delay is not None and retry_delay <= 120.0 and attempt < attempts:
                     wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
                     print(f"[DEBUG] Chat Gemini retry delay {retry_delay:.0f}s — waiting {wait:.0f}s")
-                    time.sleep(wait)
+                    if not _sleep_within_budget(wait):
+                        raise ChatDeadlineExceeded(
+                            f"Chat '{operation}' out of budget: provider asked for "
+                            f"a {retry_delay:.0f}s wait."
+                        ) from exc
                     continue
                 raise RuntimeError(
                     f"Chat '{operation}' failed: all Gemini keys exhausted and "
@@ -792,7 +914,10 @@ def generate_text_with_retry(
             if attempt < attempts:
                 wait = _jittered_wait(RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)))
                 print(f"[DEBUG] CHAT REQ | {operation} | retryable, retrying in {wait:.1f}s")
-                time.sleep(wait)
+                if not _sleep_within_budget(wait):
+                    raise ChatDeadlineExceeded(
+                        f"Chat '{operation}' out of budget after a retryable error."
+                    ) from exc
                 continue
             raise RuntimeError(
                 f"Chat '{operation}' failed after {attempts} attempts: {str(exc)[:200]}"
@@ -827,11 +952,13 @@ def _try_groq_fallback_text(
 
 
 def reset_provider() -> None:
-    global _provider, _original_provider, _daily_gemini_requests
+    global _provider, _original_provider, _daily_gemini_requests, _gemini_rpm_throttles
     _provider = None
     _original_provider = None
     _groq_throttle.reset()
-    _gemini_rpm_throttle.reset()
+    for t in _gemini_rpm_throttles:
+        t.reset()
+    _gemini_rpm_throttles = []
     with _rpd_lock:
         _daily_gemini_requests = 0
         # Explicit dev/test reset — clears the persisted counter too, so a

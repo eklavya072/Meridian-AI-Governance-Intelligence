@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import uuid
@@ -74,7 +75,26 @@ def get_guardrails() -> Guardrails:
     return _guardrails
 
 
-async def get_db() -> AsyncSession:
+@asynccontextmanager
+async def get_db():
+    """DB session as a proper async context manager.
+
+    Every call site uses `async with get_db() as db: ...; return X` (see the
+    handlers below). This used to be a bare async generator consumed via
+    `async for db in get_db(): ...; return X` — returning from inside that
+    loop abandons the generator without ever running its `finally`/`__aexit__`
+    cleanup (Python only closes an async generator eagerly when it's fully
+    exhausted or explicitly `.aclose()`d; an early `return` just drops the
+    reference and leaves cleanup to eventual GC, which asyncio does not
+    guarantee promptly). Under sustained polling (the workspace/analysis
+    pages poll every few seconds) that leaked one pooled connection per
+    request, and once the pool (5 + 10 overflow = 15 connections) was
+    exhausted every subsequent request — including simple GETs with nothing
+    to do with the running analysis pipeline — hung forever waiting for a
+    connection that was never coming back. `@asynccontextmanager` guarantees
+    `__aexit__` (and therefore the session close) runs the moment the `async
+    with` block exits, return statement or not.
+    """
     global _engine, _session_factory
     if _session_factory is None:
         _engine = create_async_engine(DATABASE_URL, echo=False)
@@ -91,55 +111,148 @@ async def lifespan(app: FastAPI):
     _session_factory = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Idempotent migration: chat_sessions.mode is new in Part 3.
-        # create_all does not alter existing tables, so add the column if
-        # the table predates this build. Safe to re-run on every boot.
-        try:
-            await conn.execute(sa_text(
-                "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS "
-                "mode VARCHAR(50) DEFAULT 'advisor' NOT NULL"
-            ))
-            # Mode A (general) sessions have no workspace scope.
-            await conn.execute(sa_text(
-                "ALTER TABLE chat_sessions ALTER COLUMN workspace_id DROP NOT NULL"
-            ))
-        except Exception:
-            logger.warning("chat_sessions_mode_migration_skipped")
-        # Executive brief (Part 3): reports gained content + meta columns so a
-        # generated brief (structured JSON in meta, markdown in content) is
-        # cached and exported without re-running the synthesis LLM call.
-        try:
-            await conn.execute(sa_text(
-                "ALTER TABLE reports ADD COLUMN IF NOT EXISTS content TEXT"
-            ))
-            await conn.execute(sa_text(
-                "ALTER TABLE reports ADD COLUMN IF NOT EXISTS meta JSON"
-            ))
-        except Exception:
-            logger.warning("reports_brief_columns_migration_skipped")
-        # AI Auditor: workspaces used for document chat only get the new
-        # chat_only status (never analysed). Adds the enum value idempotently.
+
+    # Idempotent schema top-ups for databases that predate a given build.
+    # create_all only creates missing TABLES; it never alters existing ones.
+    #
+    # Each statement gets its OWN transaction, and that is the whole point.
+    # Postgres aborts an entire transaction on the first failed statement, and
+    # "ALTER TYPE ... ADD VALUE" cannot run inside a transaction block at all —
+    # so when these all shared one `begin()` block, that single failure poisoned
+    # the connection and the block's commit turned into a rollback, discarding
+    # every migration that had already succeeded. They looked fine in the logs
+    # (each failure was caught and warned individually) while none of them
+    # actually applied.
+    migrations: list[tuple[str, str]] = [
+        # chat_sessions.mode is new in Part 3.
+        (
+            "chat_sessions_mode",
+            "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS "
+            "mode VARCHAR(50) DEFAULT 'advisor' NOT NULL",
+        ),
+        # Mode A (general) sessions have no workspace scope.
+        (
+            "chat_sessions_workspace_nullable",
+            "ALTER TABLE chat_sessions ALTER COLUMN workspace_id DROP NOT NULL",
+        ),
+        # Executive brief (Part 3): a generated brief is cached as structured
+        # JSON in meta plus markdown in content, so exporting it does not
+        # re-run the synthesis LLM call.
+        ("reports_content", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS content TEXT"),
+        ("reports_meta", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS meta JSON"),
+        # Upload and "Run Analysis" are separate actions, so a workspace has
+        # to remember which files are waiting to be analysed between the two.
+        (
+            "workspaces_pending_documents",
+            "ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS pending_documents JSON",
+        ),
+        # AI Auditor: workspaces used for document chat only carry the
+        # chat_only status (ingested for chat, never analysed).
         # NOTE: SQLAlchemy's SAEnum(WorkspaceStatus) serializes the MEMBER NAME
         # (the existing type holds 'QUEUED'/'COMPLETE'/'ERROR'), so the added
-        # value must be 'CHAT_ONLY' — the lowercase 'chat_only' would never
-        # match what SQLAlchemy emits and every chat_only insert would fail.
-        try:
-            await conn.execute(sa_text(
-                "ALTER TYPE workspacestatus ADD VALUE IF NOT EXISTS 'CHAT_ONLY'"
-            ))
-        except Exception:
-            logger.warning("workspacestatus_chat_only_migration_skipped")
-        # Clean up the stray lowercase value added by an earlier migration
-        # attempt (SQLAlchemy emits the NAME, so only 'CHAT_ONLY' is valid).
-        # Harmless if the DROP fails (value unused), but keeps the enum tidy.
-        try:
-            await conn.execute(sa_text(
-                "ALTER TYPE workspacestatus DROP VALUE IF EXISTS 'chat_only'"
-            ))
-        except Exception:
-            logger.warning("workspacestatus_stray_value_cleanup_skipped")
+        # value must be 'CHAT_ONLY' — a lowercase 'chat_only' would never match
+        # what SQLAlchemy emits and every chat_only insert would fail.
+        (
+            "workspacestatus_chat_only",
+            "ALTER TYPE workspacestatus ADD VALUE IF NOT EXISTS 'CHAT_ONLY'",
+        ),
+    ]
+    # AUTOCOMMIT so ALTER TYPE ... ADD VALUE is not wrapped in a transaction
+    # block, which Postgres rejects outright.
+    autocommit = await _engine.connect()
+    autocommit = await autocommit.execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        for name, statement in migrations:
+            try:
+                await autocommit.execute(sa_text(statement))
+            except Exception as exc:
+                # Already-applied migrations are the normal case here; a real
+                # problem shows up as the next query failing on a missing
+                # column, so log loudly enough to connect the two.
+                logger.warning(
+                    "schema_migration_skipped", migration=name, error=str(exc)
+                )
+    finally:
+        await autocommit.close()
+
     logger.info("database_tables_created")
-    get_vector_store()
+
+    # Reclaim workspaces the last process died holding.
+    #
+    # The analysis worker runs in-process, so nothing that was mid-run can
+    # possibly have survived a restart — yet its row still says "processing",
+    # and the run endpoint refuses to start a second analysis for a workspace
+    # already in that state. A crash therefore wedged the workspace forever:
+    # the page polled a job with no worker behind it, and the only way back
+    # was editing the database by hand.
+    #
+    # A row in "processing" at startup is orphaned by definition, so it is
+    # safe to reset here. The two live states resolve differently: a
+    # "processing" workspace lost its analysis and goes back to "queued" so
+    # the user can re-run it, while "generating_report" had already finished
+    # analysing and only lost the brief, so it returns to "complete" rather
+    # than throwing that work away.
+    #
+    # The literals are upper-case because the Postgres enum's labels are the
+    # Python member NAMES, not their lower-case values.
+    reclaim = await _engine.connect()
+    reclaim = await reclaim.execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        for name, statement in (
+            (
+                "processing",
+                "UPDATE workspaces SET status = 'QUEUED', status_detail = "
+                "'Interrupted by a server restart. Run the analysis again.' "
+                "WHERE status = 'PROCESSING'",
+            ),
+            (
+                "generating_report",
+                "UPDATE workspaces SET status = 'COMPLETE', status_detail = "
+                "'Analysis complete. Brief generation was interrupted by a "
+                "server restart.' WHERE status = 'GENERATING_REPORT'",
+            ),
+        ):
+            try:
+                result = await reclaim.execute(sa_text(statement))
+                if result.rowcount:
+                    logger.info(
+                        "orphaned_workspaces_reclaimed",
+                        previous_status=name,
+                        count=result.rowcount,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "orphaned_workspace_reclaim_failed",
+                    previous_status=name,
+                    error=str(exc),
+                )
+    finally:
+        await reclaim.close()
+
+    vs = get_vector_store()
+    # Warm the per-framework chunk counts while the process is already starting
+    # up. Building them costs one sweep of the collection; paying it here means
+    # the first request to /frameworks — which the Analysis page issues on
+    # mount — is served from cache instead of blocking a user for ~5 seconds.
+    #
+    # Skippable, because the try/except below cannot catch the way this
+    # actually fails on a constrained machine. The sweep holds the whole
+    # collection in memory, and when the OS kills the process for it there is
+    # no exception to catch — the worker dies with no traceback while the
+    # reloader keeps holding port 8000, so the API looks up and answers
+    # nothing. Set WARM_FRAMEWORK_COUNTS=0 to trade a slower first
+    # /frameworks call for a start that survives memory pressure.
+    if os.getenv("WARM_FRAMEWORK_COUNTS", "1").strip().lower() not in ("0", "false", "no"):
+        try:
+            from src.framework_library import _framework_chunk_counts
+
+            await asyncio.to_thread(_framework_chunk_counts, vs)
+            logger.info("framework_counts_warmed")
+        except Exception as exc:
+            # Purely an optimisation; a failure here must never stop the app.
+            logger.warning("framework_counts_warm_failed", error=str(exc))
+    else:
+        logger.info("framework_counts_warm_skipped")
     yield
     if _engine:
         await _engine.dispose()
@@ -179,6 +292,9 @@ class WorkspaceResponse(BaseModel):
     frameworks: list[str]
     status: str
     status_detail: str | None = None
+    # Filenames uploaded but not yet analysed. Drives the workspace card's
+    # "Run Analysis" affordance, so it must survive a page reload.
+    pending_documents: list[str] = []
     created_at: str
     updated_at: str
 
@@ -232,7 +348,7 @@ async def sync_frameworks():
 
 @app.post("/api/v1/workspace", response_model=WorkspaceResponse)
 async def create_workspace(body: WorkspaceCreate):
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspace = await ws_service.create_workspace(
             country=body.country,
@@ -246,6 +362,9 @@ async def create_workspace(body: WorkspaceCreate):
             frameworks=workspace.frameworks,
             status=workspace.status.value,
             status_detail=workspace.status_detail,
+            pending_documents=[
+                d.get("file_name", "") for d in (workspace.pending_documents or [])
+            ],
             created_at=workspace.created_at.isoformat() if workspace.created_at else "",
             updated_at=workspace.updated_at.isoformat() if workspace.updated_at else "",
         )
@@ -253,7 +372,7 @@ async def create_workspace(body: WorkspaceCreate):
 
 @app.get("/api/v1/workspace")
 async def list_workspaces():
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspaces = await ws_service.list_workspaces()
         return [
@@ -264,6 +383,9 @@ async def list_workspaces():
                 frameworks=w.frameworks,
                 status=w.status.value,
                 status_detail=w.status_detail,
+                pending_documents=[
+                    d.get("file_name", "") for d in (w.pending_documents or [])
+                ],
                 created_at=w.created_at.isoformat() if w.created_at else "",
                 updated_at=w.updated_at.isoformat() if w.updated_at else "",
             )
@@ -273,7 +395,7 @@ async def list_workspaces():
 
 @app.get("/api/v1/workspace/{workspace_id}")
 async def get_workspace(workspace_id: str):
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
@@ -285,6 +407,9 @@ async def get_workspace(workspace_id: str):
             frameworks=workspace.frameworks,
             status=workspace.status.value,
             status_detail=workspace.status_detail,
+            pending_documents=[
+                d.get("file_name", "") for d in (workspace.pending_documents or [])
+            ],
             created_at=workspace.created_at.isoformat() if workspace.created_at else "",
             updated_at=workspace.updated_at.isoformat() if workspace.updated_at else "",
         )
@@ -342,41 +467,48 @@ async def upload_policy(
         workspace_id=workspace_id,
     )
 
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
             raise HTTPException(404, "Workspace not found")
 
+        # Uploading no longer starts the pipeline. The file is queued on the
+        # workspace and waits for an explicit POST to /analyze/{id}/run, which
+        # is what lets a user attach a second document (a strategy and its
+        # implementation plan, say) and have both evaluated as one body of
+        # policy instead of the first upload racing ahead on its own.
+        pending = list(workspace.pending_documents or [])
+        file_label = file.filename or "document.pdf"
+        # Re-uploading the same filename replaces the earlier copy rather than
+        # queueing it twice — the pipeline would otherwise ingest, then
+        # immediately delete and re-index, the same document.
+        pending = [d for d in pending if d.get("file_name") != file_label]
+        pending.append({"file_path": str(file_path), "file_name": file_label})
+
+        await ws_service.set_pending_documents(workspace_id, pending)
         await ws_service.update_status(
             workspace_id,
-            WorkspaceStatus.PROCESSING,
-            detail="Upload received. Starting analysis pipeline.",
+            WorkspaceStatus.QUEUED,
+            detail=(
+                f"{len(pending)} document(s) ready. Run analysis to start."
+            ),
         )
         await ws_service.log_upload(
-            filename=file.filename or "unknown",
+            filename=file_label,
             file_size=len(file_bytes),
             validation_passed=True,
             workspace_id=workspace_id,
             ocr_warning=validation.ocr_warning,
         )
 
-        from src.tasks import run_full_analysis_pipeline
-
-        background_tasks.add_task(
-            run_full_analysis_pipeline,
-            workspace_id=workspace_id,
-            file_path=str(file_path),
-            file_name=file.filename or "document.pdf",
-            frameworks=workspace.frameworks,
-        )
-
     return {
-        "status": "processing",
-        "message": "Upload accepted. Analysis pipeline started.",
+        "status": "ready",
+        "message": "Upload accepted. Run analysis when your documents are ready.",
         "workspace_id": workspace_id,
-        "file_name": file.filename,
+        "file_name": file_label,
         "file_size": len(file_bytes),
+        "pending_documents": [d["file_name"] for d in pending],
     }
 
 
@@ -415,7 +547,7 @@ async def auditor_upload(file: UploadFile = File(...)):
     file_path = UPLOAD_DIR / f"{uuid.uuid4()}_{file_name}"
     file_path.write_bytes(file_bytes)
 
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         title = file_name.rsplit(".", 1)[0]
         workspace = await ws_service.create_workspace(
@@ -484,9 +616,92 @@ async def auditor_upload(file: UploadFile = File(...)):
         }
 
 
+@app.post("/api/v1/analyze/{workspace_id}/run")
+async def run_analysis(
+    workspace_id: str,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    """Start the pipeline over every document queued on this workspace.
+
+    Separate from upload so the user controls when analysis begins and can
+    attach more than one document first. Every queued file is ingested before
+    any dimension is scored, so a multi-document workspace is evaluated as a
+    single body of policy rather than as whichever file happened to land last.
+    """
+    async with get_db() as db:
+        ws_service = WorkspaceService(db)
+        workspace = await ws_service.get_workspace(workspace_id)
+        if not workspace:
+            raise HTTPException(404, "Workspace not found")
+
+        pending = list(workspace.pending_documents or [])
+        if not pending:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": "no_documents",
+                    "message": "Upload at least one PDF before running the analysis.",
+                },
+            )
+        if workspace.status in (
+            WorkspaceStatus.PROCESSING,
+            WorkspaceStatus.GENERATING_REPORT,
+        ):
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "already_running",
+                    "message": "An analysis is already running for this workspace.",
+                },
+            )
+
+        # Missing files (a wiped uploads dir between restarts) are dropped here
+        # rather than failing mid-pipeline, where the workspace would be left
+        # in PROCESSING with a stack trace and no obvious way back.
+        missing = [d for d in pending if not Path(d.get("file_path", "")).is_file()]
+        usable = [d for d in pending if Path(d.get("file_path", "")).is_file()]
+        if missing:
+            logger.warning(
+                "run_analysis_dropped_missing_files",
+                workspace_id=workspace_id,
+                missing=[d.get("file_name") for d in missing],
+            )
+            await ws_service.set_pending_documents(workspace_id, usable)
+        if not usable:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": "files_unavailable",
+                    "message": "The uploaded files are no longer on disk. Please upload them again.",
+                },
+            )
+
+        await ws_service.update_status(
+            workspace_id,
+            WorkspaceStatus.PROCESSING,
+            detail=f"Starting analysis of {len(usable)} document(s).",
+        )
+
+        from src.tasks import run_full_analysis_pipeline
+
+        background_tasks.add_task(
+            run_full_analysis_pipeline,
+            workspace_id=workspace_id,
+            documents=usable,
+            frameworks=workspace.frameworks,
+        )
+
+    return {
+        "status": "processing",
+        "message": "Analysis started.",
+        "workspace_id": workspace_id,
+        "documents": [d["file_name"] for d in usable],
+    }
+
+
 @app.get("/api/v1/analyze/{workspace_id}")
 async def get_analysis(workspace_id: str):
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
@@ -540,7 +755,7 @@ async def get_analysis(workspace_id: str):
 
 @app.post("/api/v1/brief")
 async def generate_brief(body: BriefRequest):
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         analyses = await ws_service.get_analyses_for_workspace(body.workspace_id)
         if not analyses:
@@ -613,7 +828,7 @@ async def _save_brief(db, workspace_id: str, brief: dict, markdown: str) -> None
 
 @app.post("/api/v1/brief/{workspace_id}/generate")
 async def generate_brief_v2_route(workspace_id: str):
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
@@ -673,7 +888,7 @@ async def generate_brief_v2_route(workspace_id: str):
 @app.get("/api/v1/brief/{workspace_id}")
 async def get_brief(workspace_id: str):
     """Return the cached brief (if any) — never re-runs the synthesis call."""
-    async for db in get_db():
+    async with get_db() as db:
         report = await _load_cached_brief(db, workspace_id)
         if report is None or not report.meta:
             raise HTTPException(404, "No brief generated for this workspace yet.")
@@ -683,7 +898,7 @@ async def get_brief(workspace_id: str):
 @app.get("/api/v1/brief/{workspace_id}/export")
 async def export_brief(workspace_id: str, format: str = "pdf"):
     """Render the CACHED brief into DOCX or PDF — no LLM call on export."""
-    async for db in get_db():
+    async with get_db() as db:
         report = await _load_cached_brief(db, workspace_id)
         if report is None or not report.meta:
             raise HTTPException(
@@ -710,7 +925,7 @@ async def export_brief(workspace_id: str, format: str = "pdf"):
 
 @app.get("/api/v1/workspace/{workspace_id}/analyses")
 async def list_analyses(workspace_id: str):
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
         analyses = await ws_service.get_analyses_for_workspace(workspace_id)
         return [
@@ -736,6 +951,10 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     finding_context: dict[str, Any] | None = None
     mode: str = "advisor"  # "advisor" | "framework_qa" | "document_overview"
+    # Which run the question is about. A workspace holds one run per document
+    # set, and the Rapporteur sits beside a run selector — without this it
+    # answered from the newest run whatever the user was looking at.
+    analysis_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -751,6 +970,10 @@ class ChatResponse(BaseModel):
     dimension: str | None = None
     provider: str = "template"
     mode: str = "advisor"
+    # Article/recital numbers written into the reply that the retrieved
+    # evidence does not support. Same two severities as the gap analysis.
+    unverifiable_citations: list[str] = []
+    fabricated_citations: list[str] = []
 
 
 class ChatSessionResponse(BaseModel):
@@ -770,7 +993,7 @@ async def chat_endpoint(body: ChatRequest):
     vs = get_vector_store()
     gd = get_guardrails()
 
-    async for db in get_db():
+    async with get_db() as db:
         ws_service = WorkspaceService(db)
 
         # Mode A (general educational) has no workspace scope — an empty/null
@@ -817,22 +1040,51 @@ async def chat_endpoint(body: ChatRequest):
             db.add(new_session)
             await db.commit()
 
-        # Load analysis results for contextual awareness
+        # Load analysis results for contextual awareness.
+        #
+        # Two things were wrong here. The run was always analyses[0] — the most
+        # recent — so a question about the run the user had open in the selector
+        # was answered from a different one whenever a workspace held more than
+        # one, which is every two-run country. And only the gaps were passed, so
+        # nothing cross-dimensional (coverage index, binding share, which
+        # dimension came out strongest) had any figures behind it.
         analysis_data = None
         try:
             if workspace_id:
                 analyses = await ws_service.get_analyses_for_workspace(workspace_id)
                 if analyses:
-                    gaps_raw = analyses[0].governance_gaps or []
+                    chosen = analyses[0]
+                    if body.analysis_id:
+                        chosen = next(
+                            (a for a in analyses if str(a.id) == body.analysis_id),
+                            analyses[0],
+                        )
+                    gaps_raw = chosen.governance_gaps or []
                     gaps_dict = {}
                     for g in gaps_raw:
                         if isinstance(g, dict):
                             gaps_dict[g.get("dimension", "")] = g
-                    analysis_data = {"gaps": gaps_dict}
+                    metrics = chosen.ragas_metrics or {}
+                    analysis_data = {
+                        "gaps": gaps_dict,
+                        "decision_analytics": metrics.get("decision_analytics") or {},
+                        "documents": metrics.get("evaluated_documents") or [],
+                        "country": workspace.country if workspace else None,
+                        "policy_title": workspace.policy_title if workspace else None,
+                    }
         except Exception:
             pass
 
-        result = chat_fn(
+        # OFF THE EVENT LOOP. chat_fn is synchronous and spends most of its
+        # time waiting on the LLM — 8 to 75 seconds in measured runs. Called
+        # directly from an async endpoint it blocks the single event loop for
+        # that entire duration, so every other request (the workspace list, the
+        # analysis fetch, the status poller) queues behind whoever is chatting.
+        # That is the same defect already fixed in the analysis pipeline; it
+        # was never applied here, and it is a large part of why the Analysis
+        # page felt slow to load while the Auditor was answering.
+        result = await asyncio.to_thread(
+            chat_fn,
             workspace_id=workspace_id,
             user_message=body.message,
             vector_store=vs,
@@ -882,12 +1134,14 @@ async def chat_endpoint(body: ChatRequest):
             dimension=result.get("dimension"),
             provider=result.get("provider", "template"),
             mode=mode,
+            unverifiable_citations=result.get("unverifiable_citations", []),
+            fabricated_citations=result.get("fabricated_citations", []),
         )
 
 
 @app.get("/api/v1/chat/sessions", response_model=list[ChatSessionResponse])
 async def list_chat_sessions(workspace_id: str = "", mode: str | None = None):
-    async for db in get_db():
+    async with get_db() as db:
         stmt = sa_select(ChatSession)
         # Empty workspace_id lists Mode A sessions (no workspace scope); a
         # non-empty one filters to that workspace's sessions.
@@ -897,7 +1151,11 @@ async def list_chat_sessions(workspace_id: str = "", mode: str | None = None):
         else:
             stmt = stmt.where(ChatSession.workspace_id.is_(None))
         stmt = stmt.order_by(ChatSession.updated_at.desc())
-        if mode in ("advisor", "framework_qa", "document_overview"):
+        # Must match the whitelist the create endpoint accepts (line ~1009) —
+        # "auditor" was missing here, so an Auditor history request silently
+        # dropped its mode filter instead of scoping to auditor sessions,
+        # mixing in every Rapporteur ("advisor") conversation as well.
+        if mode in ("advisor", "framework_qa", "document_overview", "auditor"):
             stmt = stmt.where(ChatSession.mode == mode)
         result = await db.execute(stmt)
         sessions = result.scalars().all()
@@ -917,7 +1175,7 @@ async def list_chat_sessions(workspace_id: str = "", mode: str | None = None):
 
 @app.get("/api/v1/chat/sessions/{session_id}")
 async def get_chat_session(session_id: str):
-    async for db in get_db():
+    async with get_db() as db:
         stmt = (
             sa_select(ChatSession)
             .where(ChatSession.id == uuid.UUID(session_id))
@@ -960,7 +1218,7 @@ async def get_chat_session(session_id: str):
 
 @app.delete("/api/v1/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str):
-    async for db in get_db():
+    async with get_db() as db:
         stmt = (
             sa_select(ChatSession)
             .where(ChatSession.id == uuid.UUID(session_id))
