@@ -47,7 +47,10 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=5)\""]
+      # Liveness, not readiness: compose restarts on this, and a restart
+      # does not fix an unreachable Postgres or a spent provider budget.
+      # Deployment gating reads /readyz instead.
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz', timeout=5)\""]
       interval: 30s
       timeout: 10s
       retries: 5

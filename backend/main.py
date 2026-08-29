@@ -309,8 +309,76 @@ class BriefRequest(BaseModel):
 # --- Routes ---
 
 
+# ── Liveness and readiness are genuinely different questions ─────────────
+#
+# /healthz answers "is this process alive and able to serve a request". It
+# touches nothing external, so an orchestrator restarting on its failure is
+# always restarting something actually broken.
+#
+# /readyz answers "should traffic be sent here right now" — Postgres
+# reachable, the vector store readable, and provider budget left to run an
+# analysis with. These fail for reasons a restart does not fix, which is
+# exactly why they must not share an endpoint with liveness: the previous
+# single /health route called into Chroma, so a slow or torn index would
+# have had a scheduler killing a process that was running perfectly well.
+# That failure mode is not hypothetical here — a torn HNSW segment once
+# took the API down repeatedly (see CLAUDE.md).
+
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness. No dependencies, no I/O — if the process can route, it passes."""
+    return {"status": "ok", "service": "meridian-api", "version": app.version}
+
+
+@app.get("/readyz")
+async def readyz(response: Response):
+    """Readiness. Every dependency an analysis actually needs, checked for real."""
+    checks: dict[str, Any] = {}
+    ready = True
+
+    # Postgres: a real round trip, not just "is the engine object built".
+    try:
+        assert _engine is not None
+        async with _engine.connect() as conn:
+            await conn.execute(sa_text("SELECT 1"))
+        checks["database"] = {"ok": True}
+    except Exception as exc:
+        ready = False
+        checks["database"] = {"ok": False, "error": str(exc)[:200]}
+
+    # Vector store: count_chunks() is the cheapest call that proves the
+    # collection is readable, and it is the call that segfaulted on a torn
+    # index — so it is the right thing to gate traffic on.
+    try:
+        vs = get_vector_store()
+        checks["vector_store"] = {"ok": True, "chunks": await asyncio.to_thread(vs.count_chunks)}
+    except Exception as exc:
+        ready = False
+        checks["vector_store"] = {"ok": False, "error": str(exc)[:200]}
+
+    # Provider budget: with no headroom every analysis would be accepted and
+    # then fail partway through, which is worse than refusing traffic.
+    try:
+        from src.provider_router import quota_status
+
+        quota = quota_status()
+        checks["llm_provider"] = {"ok": quota["has_headroom"], **quota}
+        if not quota["has_headroom"]:
+            ready = False
+    except Exception as exc:
+        ready = False
+        checks["llm_provider"] = {"ok": False, "error": str(exc)[:200]}
+
+    if not ready:
+        response.status_code = 503
+    return {"status": "ready" if ready else "not_ready", "checks": checks}
+
+
 @app.get("/api/v1/health")
 async def health():
+    """Retained for the frontend's status badge, which reads chunk and
+    framework counts. New probes should use /healthz and /readyz."""
     vs = get_vector_store()
     chunk_count = vs.count_chunks()
     frameworks = vs.get_all_frameworks()
