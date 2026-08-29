@@ -1,4 +1,9 @@
-version: "3.9"
+# Meridian — local development stack.
+#
+#   make up      brings all of this up
+#   make ready   blocks until /readyz reports every dependency healthy
+#
+# `version:` is omitted deliberately — Compose v2 ignores it and warns.
 
 services:
   postgres:
@@ -21,15 +26,31 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: prod
     ports:
       - "8000:8000"
+    env_file:
+      # Optional: absent on a first clone, and the defaults below are enough
+      # to boot. GEMINI_API_KEY comes from here.
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://aura:aura@postgres:5432/aura_sdg
       LOG_LEVEL: INFO
       CHROMA_PERSIST_DIR: /app/data/chroma
+      # The startup sweep of the whole collection is an optimisation that has
+      # been OOM-killed on constrained machines; off by default for dev.
+      WARM_FRAMEWORK_COUNTS: "0"
     volumes:
+      # Live code for hot reload. The virtualenv lives at /opt/venv precisely
+      # so this mount cannot shadow it.
       - ./backend:/app
+      # Named volumes, so an uploaded PDF or the index survives `make down`.
+      # Without these a restart loses user data — two instances also cannot
+      # share it, which is what the storage interface addresses next.
       - chroma_data:/app/data/chroma
+      - uploads_data:/app/data/uploads
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,13 +59,18 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
     depends_on:
-      - api
+      api:
+        # Liveness, not readiness: the frontend renders fine while the API is
+        # still warming, and gating the whole stack on readiness would make
+        # `make up` fail whenever the provider budget is spent.
+        condition: service_started
 
 volumes:
   pgdata:
   chroma_data:
+  uploads_data:

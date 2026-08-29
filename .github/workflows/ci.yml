@@ -1,0 +1,234 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Set from the measured suite (59.57% at the time of writing), deliberately
+  # just below it. An aspirational threshold lands red on the first push and
+  # teaches everyone to ignore the badge. See docs/MEASUREMENTS.md.
+  COV_MIN: "58"
+
+jobs:
+  quality:
+    name: lint · types · tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.7"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install the locked dependency set
+        # --frozen fails if uv.lock is out of date with pyproject.toml, so a
+        # dependency added without re-locking cannot reach main.
+        run: uv sync --frozen
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: mypy
+        run: uv run mypy
+
+      # Cached so the suite is not re-downloading ~130MB of model weights on
+      # every push. The suite constructs a real VectorStore, which loads
+      # BAAI/bge-small-en-v1.5.
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-bge-small-en-v1.5
+
+      - name: pytest with coverage gate
+        run: uv run pytest -q --cov --cov-report=term-missing --cov-report=xml
+             --cov-fail-under=${{ env.COV_MIN }}
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: backend/coverage.xml
+          if-no-files-found: warn
+
+  container:
+    name: image · tests inside the artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # A real Postgres, because the app's startup runs create_all and the
+    # idempotent schema top-ups before it serves anything. Smoke-testing the
+    # image without one would only ever prove that it fails to boot.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_sdg
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aura -d aura_sdg"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The test target shares every layer beneath it with prod, so a pass
+      # here is evidence about the artifact that ships rather than about a
+      # separately-built environment that merely resembles it.
+      - name: Build the test image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: test
+          load: true
+          tags: meridian:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run the suite inside the built image
+        run: docker run --rm meridian:test pytest -q
+
+      - name: Build the prod image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: prod
+          load: true
+          tags: meridian:prod
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Cheap assertions that the hardening actually survived the build,
+      # rather than being described in a Dockerfile nobody re-reads.
+      - name: Assert the prod image runs as a non-root user
+        run: |
+          user=$(docker run --rm meridian:prod id -un)
+          echo "prod image runs as: $user"
+          test "$user" = "meridian"
+
+      - name: Assert build tooling is absent from the runtime layer
+        run: |
+          if docker run --rm --entrypoint sh meridian:prod -c 'command -v uv gcc' ; then
+            echo "build tooling leaked into the prod image"; exit 1
+          fi
+          echo "no uv or gcc in the runtime layer"
+
+      - name: Report the prod image size
+        run: |
+          bytes=$(docker image inspect meridian:prod --format '{{.Size}}')
+          awk -v b="$bytes" 'BEGIN { printf "prod image: %.0f MB\n", b/1024/1024 }'
+
+      # --network host so the container reaches the Postgres service on the
+      # runner's mapped port. GEMINI_API_KEY is a placeholder: nothing in
+      # startup or in either probe calls the provider, and CI must never
+      # spend real quota.
+      - name: Start the prod image and wait for /healthz
+        run: |
+          docker run -d --name meridian-smoke --network host \
+            -e DATABASE_URL=postgresql+asyncpg://aura:aura@127.0.0.1:5432/aura_sdg \
+            -e GEMINI_API_KEY=ci-placeholder-not-a-real-key \
+            -e WARM_FRAMEWORK_COUNTS=0 \
+            meridian:prod
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
+              echo "healthz responded after ${i}s"
+              curl -s http://localhost:8000/healthz; echo
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "healthz never responded"; docker logs meridian-smoke; exit 1
+
+      # With Postgres up, an empty Chroma directory and budget remaining,
+      # readiness must be a real 200 — and it must have actually reached
+      # every dependency to say so.
+      - name: Assert /readyz reports ready with its dependencies up
+        run: |
+          code=$(curl -s -o /tmp/readyz.json -w '%{http_code}' http://localhost:8000/readyz)
+          echo "readyz -> $code"; cat /tmp/readyz.json; echo
+          test "$code" = "200"
+          python3 - <<'PY'
+          import json, sys
+          checks = json.load(open("/tmp/readyz.json"))["checks"]
+          for name in ("database", "vector_store", "llm_provider"):
+              assert checks[name]["ok"] is True, f"{name} not ok: {checks[name]}"
+          print("all three dependency checks reported ok")
+          PY
+
+      # And the probe has to be able to say no. Stopping Postgres underneath a
+      # running container is the cheapest honest test that /readyz is reading
+      # live state rather than something cached at startup.
+      - name: Assert /readyz flips to 503 when Postgres goes away
+        run: |
+          docker stop "${{ job.services.postgres.id }}"
+          sleep 3
+          code=$(curl -s -o /tmp/readyz-down.json -w '%{http_code}' http://localhost:8000/readyz)
+          echo "readyz -> $code"; cat /tmp/readyz-down.json; echo
+          test "$code" = "503"
+          # Liveness must be unaffected — that is the entire point of the split.
+          curl -fsS http://localhost:8000/healthz >/dev/null
+          echo "healthz still 200 with the database down"
+
+      - name: Container logs
+        if: always()
+        run: docker logs meridian-smoke || true
+
+      - name: Stop the smoke container
+        if: always()
+        run: docker rm -f meridian-smoke || true
+
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: tsc
+        run: npx tsc --noEmit
+
+      - name: next build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1

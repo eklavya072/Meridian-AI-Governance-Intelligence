@@ -1,3 +1,5 @@
+[![CI](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/workflows/ci.yml)
+
 # Meridian — AI Governance Intelligence Workbench
 
 **Meridian** analyzes national AI policy documents against international governance
@@ -224,44 +226,40 @@ derived from real pipeline state, never an LLM self-assessment.
 
 ### Prerequisites
 
-- Docker and Docker Compose v2 **or** Python 3.12 + Node 18+ for local dev
-- PostgreSQL 16 (Docker image provided in compose)
+- Docker and Docker Compose v2, **or** [uv](https://docs.astral.sh/uv/) + Node 20+ for local dev
 - A **Gemini API key** (free tier works) — set `GEMINI_API_KEY` in `.env`
 
-### Quick start (Docker)
+Everything else, including PostgreSQL and the Python 3.13 interpreter, is
+brought up by the targets below.
+
+### Quick start
 
 ```bash
-cd aura-sdg
 cp .env.example .env          # add your GEMINI_API_KEY
-docker compose up --build
+make up                       # API, Postgres and frontend
+make ready                    # blocks until /readyz reports ready
 ```
 
-- Backend: `http://localhost:8000` (interactive docs at `/docs`)
 - Frontend: `http://localhost:3000`
-- PostgreSQL: `localhost:5432`
+- API: `http://localhost:8000` (interactive docs at `/docs`)
 
-### Without Docker
+### Every instruction is a make target
 
-```bash
-# Backend
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp ../.env.example .env       # add GEMINI_API_KEY, DATABASE_URL
-uvicorn main:app --reload
+| Target | What it does |
+|---|---|
+| `make setup` | Install the locked dependency set and frontend packages |
+| `make up` / `make down` | Bring the stack up / stop it |
+| `make ready` | Poll `/readyz` until every dependency reports healthy |
+| `make test` | Run the suite with the coverage gate |
+| `make test-container` | Run the suite **inside the built image**, as CI does |
+| `make lint` / `make typecheck` | ruff and mypy, the same commands CI runs |
+| `make check` | Everything CI runs, in CI's order |
+| `make build` | Build the production image |
+| `make bench` | Re-measure what `docs/MEASUREMENTS.md` reports (no Gemini calls) |
+| `make deploy` / `make destroy` | Production stack up / torn down with volumes |
+| `make logs` `make ps` `make shell` `make clean` | The usual |
 
-# Frontend
-cd frontend
-npm install
-npm run dev                   # NEXT_PUBLIC_API_URL defaults to localhost:8000/api/v1
-```
-
-Requires PostgreSQL running locally:
-
-```bash
-docker run -d --name meridian-pg -e POSTGRES_USER=aura -e POSTGRES_PASSWORD=aura \
-  -e POSTGRES_DB=aura_sdg -p 5432:5432 postgres:16-alpine
-```
+Run `make` with no arguments for the same list.
 
 ### Environment variables
 
@@ -344,20 +342,33 @@ anywhere (Vercel, Netlify, or behind the same Caddy instance as the API).
 ## Testing
 
 ```bash
-# Unit tests (no external dependencies)
-cd backend && python -m pytest tests/unit/ -v
-
-# Integration tests (requires running services + LLM)
-RUN_INTEGRATION_TESTS=1 python -m pytest tests/integration/ -v
-
-# Evaluation tests (requires indexed frameworks)
-RUN_EVALUATION_TESTS=1 python -m pytest tests/evaluation/ -v
+make test            # the suite with the coverage gate
+make test-container  # the same suite INSIDE the built image, as CI does
+make check           # lint, types and tests, in CI's order
 ```
 
-Coverage: PDF validation failure modes, structure-aware chunking, citation
-verification (including deliberately broken cases), the deterministic coverage
-ladder, guardrails, framework routing and role filtering, brief generation,
-stability, and the full pipeline.
+**721 passed, 9 skipped. Coverage 60%** on `src` (measured 2026-08-30; see
+[docs/MEASUREMENTS.md](docs/MEASUREMENTS.md)). The CI gate is 58% — set just
+below measured, so it catches regression without being aspirational.
+
+The nine skips are deliberate and need external state:
+
+```bash
+RUN_INTEGRATION_TESTS=1 make test   # requires running services
+RUN_EVALUATION_TESTS=1  make test   # requires an indexed framework corpus
+```
+
+What is covered: PDF validation failure modes, structure-aware chunking,
+citation verification (including deliberately broken cases and the NLI
+label-order regression), the deterministic coverage ladder, an AST guard
+against a second verdict computation reappearing, guardrails, framework
+routing and role filtering, brief generation, stability, orphan recovery, and
+the liveness/readiness split.
+
+What is **not** covered, stated plainly: `tasks.py` (the pipeline
+orchestrator) and `workspace.py` are at 0%, `chat.py` at 10%, and
+`provider_router.py` at 26%. Those are the next targets, and the
+provider-failure and hostile-input tests land there.
 
 ---
 
@@ -433,7 +444,8 @@ aura-sdg/
 │   ├── tests/                    # unit / integration / evaluation
 │   ├── main.py                   # FastAPI app
 │   ├── Dockerfile
-│   └── requirements.txt
+│   ├── pyproject.toml           # dependencies, ruff/mypy/pytest config
+│   └── uv.lock                  # fully resolved, committed
 ├── frontend/
 │   ├── app/                      # workspace / analysis / brief / auditor / frameworks / landing
 │   ├── components/               # ModuleStack, CitationAccordion, Gauge, RadarChart, PieChart, ...
