@@ -11,7 +11,7 @@ import httpx
 import yaml
 
 from src.vectorstore import VectorStore
-from src.ingestion import Chunk, ingest_document
+from src.ingestion import _CHUNK_ID_NAMESPACE, Chunk, ingest_document
 
 logger = structlog.get_logger()
 
@@ -135,7 +135,15 @@ class FrameworkSyncService:
                 for role in role_list:
                     for c in chunks:
                         copy = c.model_copy(deep=True)
-                        copy.chunk_id = str(uuid.uuid4())
+                        # Derived from the base chunk's id and the role, not
+                        # minted fresh: a uuid4 here reintroduced exactly the
+                        # drift that deterministic chunk ids were added to
+                        # remove, so every re-sync orphaned the evidence any
+                        # cached dimension had carried over for these
+                        # frameworks.
+                        copy.chunk_id = str(
+                            uuid.uuid5(_CHUNK_ID_NAMESPACE, f"{c.chunk_id}|{role}")
+                        )
                         copy.metadata["roles"] = role
                         expanded.append(copy)
                 chunks = expanded

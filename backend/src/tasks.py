@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import re
 import time
 import structlog
 from pathlib import Path
@@ -30,6 +32,7 @@ _session_factory = None
 def _build_scope_disclaimer(
     vector_store: VectorStore,
     workspace_id: str,
+    country: str = "",
 ) -> dict[str, Any]:
     """Deterministic scope disclaimer for one analysis run.
 
@@ -38,6 +41,14 @@ def _build_scope_disclaimer(
     apparatus. Document names are derived from the actually-ingested chunks
     (metadata document_name), so multi-document workspaces list every input
     and single-document workspaces state the one document evaluated.
+
+    Companion-instrument scope note (deterministic, document-name based —
+    never an LLM judgment): when a country's governance for a dimension
+    lives in a separate statute, an analysis of the uploaded document alone
+    would silently understate that dimension. Korea's personal-data
+    governance is in the Personal Information Protection Act (PIPA), not the
+    AI Basic Act — if PIPA is not among the ingested documents, the Privacy
+    dimension is scope-limited and the disclaimer says so explicitly.
     """
     docs = vector_store.get_workspace_documents(workspace_id) or []
     if len(docs) == 1:
@@ -55,6 +66,21 @@ def _build_scope_disclaimer(
         "outside this evaluation, and coverage verdicts should be read as "
         "relative to the evidence supplied."
     )
+    pipa_absent = not any(
+        re.search(r"pipa|personal information protection", d, re.IGNORECASE)
+        for d in docs
+    )
+    if (
+        (country or "").lower() in ("south korea", "korea", "republic of korea")
+        and pipa_absent
+    ):
+        disclaimer += (
+            " Note: Korea's personal-data governance lives primarily in the "
+            "Personal Information Protection Act (PIPA), which is not among "
+            "the provided documents — the Privacy dimension reflects only the "
+            "uploaded document's own data provisions and is a scope-limited "
+            "assessment, not an evaluation of Korea's privacy regime."
+        )
     return {
         "documents": docs,
         "disclaimer": disclaimer,
@@ -70,18 +96,48 @@ def _get_db_session() -> AsyncSession:
     return _session_factory()
 
 
+# Storage filenames routinely carry one or more uuid4 prefixes from the upload
+# path ("f3e3617d-...-c052cd62d574_Artificial_Intelligence_Policy.pdf").
+# document_name is user-facing — it is what the report lists under "documents
+# evaluated" — so strip the prefixes before they reach the vector store
+# metadata and the analysis output.
+_UPLOAD_UUID_PREFIX_RE = re.compile(
+    r"^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_)+"
+)
+
+
+def _display_name(file_name: str | None) -> str:
+    return _UPLOAD_UUID_PREFIX_RE.sub("", file_name or "") or (
+        file_name or "document.pdf"
+    )
+
+
 async def run_full_analysis_pipeline(
     workspace_id: str,
-    file_path: str,
-    file_name: str,
     frameworks: list[str],
+    documents: list[dict[str, str]] | None = None,
+    file_path: str | None = None,
+    file_name: str | None = None,
 ) -> dict[str, Any]:
+    """Ingest every queued document, then score the workspace as one corpus.
+
+    `documents` is the current shape: [{"file_path": ..., "file_name": ...}].
+    The single file_path/file_name pair is the older one-document call and is
+    still accepted so an in-flight background task queued before a restart
+    does not fail on signature.
+    """
+    if not documents:
+        if not file_path:
+            raise ValueError("run_full_analysis_pipeline needs at least one document")
+        documents = [{"file_path": file_path, "file_name": file_name or "document.pdf"}]
+
     start_time = time.time()
     logger.info(
         "pipeline_orchestration_started",
         workspace_id=workspace_id,
-        file_path=file_path,
-        file_name=file_name,
+        documents=[d.get("file_name") for d in documents],
+        document_count=len(documents),
         frameworks=frameworks,
     )
 
@@ -99,28 +155,72 @@ async def run_full_analysis_pipeline(
             vector_store = VectorStore(persist_dir=CHROMA_PERSIST_DIR)
             analyzer = GapAnalyzer(vector_store=vector_store)
 
-            path = Path(file_path)
             logger.info(
                 "pipeline_orchestration_ingesting",
                 workspace_id=workspace_id,
                 stage="document_ingestion",
+                document_count=len(documents),
             )
-            chunks = ingest_document(
-                path,
-                framework_name=None,
-                workspace_id=workspace_id,
-                # Clean display name for multi-document workspaces: the
-                # UUID-prefixed storage filename would otherwise leak into the
-                # prompt source labels and the evidence chain.
-                document_name=file_name,
-            )
+            # Every queued document is ingested BEFORE any scoring runs, and
+            # their chunks are pooled. Scoring a workspace one file at a time
+            # would let the last upload define the verdict while the earlier
+            # ones only ever showed up as retrieval noise.
+            chunks = []
+            document_names: list[str] = []
+            for doc in documents:
+                doc_name = _display_name(doc.get("file_name"))
+                document_names.append(doc_name)
+                # ingest_document / add_chunks are synchronous, CPU-bound calls
+                # (PDF parsing, chunking, embedding). Calling them directly here
+                # would block this single-threaded event loop for the entire
+                # pipeline's duration — every other request (GET /workspace,
+                # GET /workspace/{id}, chat, etc.) would hang until the pipeline
+                # finished, which is why the workspace list appeared to "vanish"
+                # on reload while an analysis was running. Running them via
+                # to_thread hands the blocking work to a worker thread so the
+                # event loop stays free to serve concurrent requests.
+                doc_chunks = await asyncio.to_thread(
+                    ingest_document,
+                    Path(doc["file_path"]),
+                    framework_name=None,
+                    workspace_id=workspace_id,
+                    # Clean display name for multi-document workspaces: the
+                    # UUID-prefixed storage filename would otherwise leak into
+                    # the prompt source labels and the evidence chain.
+                    document_name=doc_name,
+                )
+                # Replace, don't append. Chunk ids are fresh uuid4s per
+                # ingestion, so re-uploading a document would otherwise stack a
+                # second full copy into the workspace and starve retrieval with
+                # duplicates — see delete_workspace_document for the measured
+                # impact.
+                removed = await asyncio.to_thread(
+                    vector_store.delete_workspace_document, workspace_id, doc_name
+                )
+                if removed:
+                    logger.info(
+                        "pipeline_orchestration_replaced_previous_copy",
+                        workspace_id=workspace_id,
+                        document_name=doc_name,
+                        removed_chunks=removed,
+                    )
+                await asyncio.to_thread(vector_store.add_chunks, doc_chunks)
+                chunks.extend(doc_chunks)
+                logger.info(
+                    "pipeline_orchestration_document_indexed",
+                    workspace_id=workspace_id,
+                    document_name=doc_name,
+                    num_chunks=len(doc_chunks),
+                )
+
+            file_name = " + ".join(document_names) if document_names else "document.pdf"
             logger.info(
                 "pipeline_orchestration_indexing",
                 workspace_id=workspace_id,
                 stage="vector_store_indexing",
                 num_chunks=len(chunks),
+                documents=document_names,
             )
-            vector_store.add_chunks(chunks)
 
             await ws_service.update_status(
                 workspace_id, WorkspaceStatus.PROCESSING,
@@ -161,7 +261,12 @@ async def run_full_analysis_pipeline(
                 workspace_id=workspace_id,
                 country=ws_country,
             )
-            result: GapAnalysisResult = analyzer.analyze(
+            # Same reasoning as above: analyze() is synchronous and runs for
+            # minutes (up to 16 LLM calls across 8 dimensions). Off the event
+            # loop, via to_thread, so the workspace list and status polling
+            # keep working for the whole duration of the run.
+            result: GapAnalysisResult = await asyncio.to_thread(
+                analyzer.analyze,
                 document_text=full_text,
                 document_name=file_name,
                 workspace_id=workspace_id,
@@ -271,7 +376,9 @@ async def run_full_analysis_pipeline(
             # Document names come from the actual ingested chunks, so a
             # multi-document workspace (e.g. NAIS + Model AI Governance
             # Framework) lists every evaluated input.
-            scope_disclaimer = _build_scope_disclaimer(vector_store, workspace_id)
+            scope_disclaimer = _build_scope_disclaimer(
+                vector_store, workspace_id, country=ws_country
+            )
             analysis_dict["ragas_metrics"] = {
                 "llm_call_count": result.llm_call_count,
                 "tier_stats": result.tier_stats,
@@ -301,13 +408,25 @@ async def run_full_analysis_pipeline(
                         "Re-run when quota is available for a full result."
                     ),
                 )
+                # Deliberately NOT clearing dimension_results here. This cache is
+                # what lets a re-upload skip dimensions that already succeeded
+                # (see the existing_dim/existing_gaps load near the top of this
+                # function) and only retry the ones that actually failed.
+                # Clearing it unconditionally (the old behaviour) wiped every
+                # successful dimension's result the moment the run finished —
+                # so the NEXT re-upload re-analyzed all 8 dimensions from
+                # scratch instead of just the failed ones, burning far more
+                # quota than needed and making which dimensions happened to
+                # succeed pure luck-of-the-draw each retry, including ones
+                # that had just succeeded seconds earlier.
             else:
                 await ws_service.update_status(
                     workspace_id, WorkspaceStatus.COMPLETE,
                     detail=f"Analysis complete. {cit_pass}/{len(citation_results)} citations verified."
                 )
-
-            await ws_service.clear_dimension_results(workspace_id)
+                # Only safe to drop the scratch cache once every dimension is
+                # clean — nothing left that a future re-run would need to skip.
+                await ws_service.clear_dimension_results(workspace_id)
 
             logger.info(
                 "pipeline_orchestration_complete",

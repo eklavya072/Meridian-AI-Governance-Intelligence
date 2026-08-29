@@ -4,7 +4,7 @@ Integration test: full pipeline end-to-end with a real small test document.
 This test requires:
 - ChromaDB (persistent, local)
 - sentence-transformers (BAAI/bge-small-en-v1.5)
-- Ollama running with qwen3:8b (or fallback to a mock)
+- A configured LLM provider (Gemini or Groq), or a mock
 """
 
 import pytest

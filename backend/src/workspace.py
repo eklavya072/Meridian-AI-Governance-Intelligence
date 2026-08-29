@@ -74,6 +74,25 @@ class WorkspaceService:
         await self.db.commit()
         return await self.get_workspace(workspace_id)
 
+    async def set_pending_documents(
+        self,
+        workspace_id: str,
+        documents: list[dict[str, Any]],
+    ) -> Workspace | None:
+        """Replace the queue of uploaded-but-not-yet-analysed documents.
+
+        Whole-list replacement rather than append: the caller already holds
+        the current list and decides how a re-uploaded filename is handled, so
+        two concurrent uploads cannot interleave into a half-written queue.
+        """
+        await self.db.execute(
+            update(Workspace)
+            .where(Workspace.id == uuid.UUID(workspace_id))
+            .values(pending_documents=list(documents), updated_at=datetime.utcnow())
+        )
+        await self.db.commit()
+        return await self.get_workspace(workspace_id)
+
     async def delete_workspace(self, workspace_id: str) -> bool:
         result = await self.db.execute(
             delete(Workspace).where(Workspace.id == uuid.UUID(workspace_id))

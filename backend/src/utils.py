@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
@@ -20,6 +21,36 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     if norm(a_np) == 0 or norm(b_np) == 0:
         return 0.0
     return float(np.dot(a_np, b_np) / (norm(a_np) * norm(b_np)))
+
+
+def ocr_flexible_fragment(term: str, min_len_for_flex: int = 5) -> str:
+    """Regex fragment matching `term` despite PDF intra-word space corruption.
+
+    PDF text extraction routinely shatters words with spurious internal
+    spaces (kerning/ligature artifacts). Measured on the EU AI Act corpus in
+    this system, the damage is near-total for exactly the vocabulary that
+    matters most for governance scoring:
+
+        "deployers"   0 intact vs 10,496 space-broken
+        "conformity"  0 intact vs  1,992 space-broken
+        "supervis…"   0 intact vs    816 space-broken
+        "providers"   2,304 intact vs 5,216 space-broken
+        "high-risk"   24 intact vs 11,824 as "high-r isk"
+
+    A literal match therefore silently scored the single most binding
+    instrument in the corpus as though it named no duty-bearer and had no
+    enforcement machinery — a document-quality artifact masquerading as a
+    governance finding. Allowing an optional space between characters
+    recovers every one of those matches.
+
+    Only applied to terms of `min_len_for_flex`+ characters: for a long word
+    the chance of accidentally matching the same letters spread across
+    unrelated words is negligible, while for short words it is not.
+    """
+    compact = term.replace(" ", "")
+    if len(compact) < min_len_for_flex:
+        return re.escape(term)
+    return r"\s?".join(re.escape(ch) for ch in compact)
 
 
 def rrf_score(rank: int, k: int = 60) -> float:
@@ -86,3 +117,30 @@ def batch_fetch_chunk_metadata(
     except Exception:
         pass
     return result
+
+
+# Chunk ids are printed in the evidence headers the model is shown, and the
+# citation rule tells it to cite only numbers that literally appear in those
+# passages. Handed a provision with no division number, the model did exactly
+# that and wrote "Section 3081a297-54ab-4efd-9c8c-492521016736" into India's
+# Human Autonomy narrative. Same family as the closed citation vocabulary: our
+# instruction, not the model's invention. The prompt now forbids it, and this
+# strips any that still get through — a reader must never see a UUID presented
+# as a provision.
+_CHUNK_ID_CITATION_RE = re.compile(
+    r"\s*(?:,\s*)?(?:in|at|under|see|per)?\s*"
+    r"(?:Section|Article|Part|Chapter|Clause|Paragraph|Principle|Rule)\s+"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+
+
+def strip_chunk_id_citations(text: str) -> str:
+    """Remove references that cite a chunk id as though it were a provision."""
+    if not text:
+        return text
+    cleaned = _CHUNK_ID_CITATION_RE.sub("", text)
+    # The removal can leave " and ." or doubled spaces where a list collapsed.
+    cleaned = re.sub(r"\s+(and|,)\s*([.;])", r"\2", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return re.sub(r"\s+([.,;])", r"\1", cleaned).strip()

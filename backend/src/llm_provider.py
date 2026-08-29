@@ -8,10 +8,14 @@ import structlog
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar, Type
 
-import httpx
 from pydantic import BaseModel
 
 logger = structlog.get_logger()
+
+# Gemini 3 "thinking" level for every structured-extraction call this
+# pipeline makes. "low" (not "minimal") — see the call site in
+# GeminiProvider._call_gemini for why. Env-tunable per model/deployment.
+GEMINI_THINKING_LEVEL = os.getenv("GEMINI_THINKING_LEVEL", "low")
 
 
 class QuotaExceededError(Exception):
@@ -102,18 +106,41 @@ class GeminiProvider(LLMProvider):
             print(f"[DEBUG] All {len(self.api_keys)} Gemini API keys exhausted")
             return False
 
+    def next_key(self) -> int:
+        """Round-robin to the next key for the NEXT request.
+
+        Unlike `rotate_key` (which only advances on a 429), this advances on
+        every call, so the concurrent analysis workers spread across ALL
+        configured keys instead of riding key #1 until it rate-limits. The
+        returned index is the key the next generate_* call must use — the
+        caller passes it through to `generate_structured` / `generate_text`
+        so the throttle for that key and the call itself can never race (the
+        global `current_key_index` alone is not safe under concurrency: two
+        workers could both read it and hit the same key).
+        """
+        with self._rotation_lock:
+            self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+            return self.current_key_index
+
     @property
     def keys_remaining(self) -> int:
         return len(self.api_keys) - self.current_key_index - 1
 
     def _call_gemini(
-        self, prompt: str, system_prompt: str | None = None, schema: type[T] | None = None
+        self, prompt: str, system_prompt: str | None = None, schema: type[T] | None = None,
+        key_index: int | None = None, max_output_tokens: int | None = None,
     ) -> tuple[str, Any | None]:
-        """Make a single Gemini API call with the current key."""
+        """Make a single Gemini API call with the current (or explicitly
+        selected) key. `key_index` is set by provider_router's per-key
+        throttle path so the request uses EXACTLY the key its throttle
+        reserved — the shared `current_key_index` is not safe to read here
+        under concurrency. `max_output_tokens` overrides the default 8192
+        (used by the chat path, whose replies are deliberately short)."""
         import google.genai as genai
         from google.genai import types
 
-        client = genai.Client(api_key=self.api_key)
+        key = self.api_keys[key_index] if key_index is not None else self.api_key
+        client = genai.Client(api_key=key)
 
         config_kwargs: dict = {
             "temperature": 0.1,
@@ -121,7 +148,22 @@ class GeminiProvider(LLMProvider):
             # exceeds 4096 tokens — truncation produced invalid JSON that
             # failed schema validation and turned real dimensions into
             # "Insufficient Evidence" gaps.
-            "max_output_tokens": 8192,
+            "max_output_tokens": max_output_tokens or 8192,
+            # Gemini 3 models think-by-default (thinking_level="medium"),
+            # which is real wall-clock latency spent on an internal
+            # reasoning pass BEFORE the visible output starts generating —
+            # the single largest lever on total analysis time, and doesn't
+            # touch the visible answer's content. This pipeline's calls are
+            # structured extraction against an already highly-prescriptive
+            # prompt (read these labeled context chunks, fill this exact
+            # JSON schema) — not open-ended multi-step reasoning — so "low"
+            # (still a real reasoning pass, per Google's own docs, just a
+            # lighter one) is the safe cut: faster without the quality risk
+            # of "minimal", which skips the pass that catches nuance.
+            # Env-tunable if a future model needs recalibrating.
+            "thinking_config": types.ThinkingConfig(
+                thinking_level=GEMINI_THINKING_LEVEL
+            ),
         }
         if system_prompt:
             config_kwargs["system_instruction"] = system_prompt
@@ -139,10 +181,13 @@ class GeminiProvider(LLMProvider):
         return text, None
 
     def generate_structured(
-        self, prompt: str, schema: type[T], system_prompt: str | None = None
+        self, prompt: str, schema: type[T], system_prompt: str | None = None,
+        key_index: int | None = None,
     ) -> T:
         try:
-            text, _ = self._call_gemini(prompt=prompt, system_prompt=system_prompt, schema=schema)
+            text, _ = self._call_gemini(
+                prompt=prompt, system_prompt=system_prompt, schema=schema, key_index=key_index
+            )
             result = schema.model_validate_json(text)
             result._raw_json = text
             return result
@@ -157,10 +202,14 @@ class GeminiProvider(LLMProvider):
             raise
 
     def generate_text(
-        self, prompt: str, system_prompt: str | None = None
+        self, prompt: str, system_prompt: str | None = None,
+        key_index: int | None = None, max_output_tokens: int | None = None,
     ) -> str:
         try:
-            text, _ = self._call_gemini(prompt=prompt, system_prompt=system_prompt)
+            text, _ = self._call_gemini(
+                prompt=prompt, system_prompt=system_prompt, key_index=key_index,
+                max_output_tokens=max_output_tokens,
+            )
             return text
         except Exception as exc:
             error_str = str(exc)
@@ -261,7 +310,18 @@ class GroqProvider(LLMProvider):
                 "GROQ_API_KEY not set. Get one free at https://console.groq.com"
             )
         self.api_key = api_key
-        self.model_name_str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        # "llama-3.3-70b-versatile" was retired from Groq's catalog (confirmed
+        # live 404 "model_not_found" from a real analysis run, and absent
+        # from GET /openai/v1/models for this account) — every Gemini-quota
+        # exhaustion silently fell through to a dead fallback, so a
+        # quota-exhausted analysis returned "Insufficient Evidence" instead
+        # of a real Groq answer. "openai/gpt-oss-120b" is confirmed live
+        # against this account: general-purpose, JSON-mode capable (the
+        # structured-output path this pipeline needs), 120B open-weight
+        # model. It is a reasoning model — thinking tokens count against
+        # max_tokens, so keep the existing 8192 cap generous (already true
+        # in _call_groq below).
+        self.model_name_str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
     @property
     def tier(self) -> str:
@@ -346,55 +406,3 @@ class GroqProvider(LLMProvider):
     ) -> str:
         raw, _usage = self._call_groq(prompt=prompt, system_prompt=system_prompt, temperature=0.3)
         return raw
-
-
-class QwenLocalProvider(LLMProvider):
-    def __init__(self) -> None:
-        self.model_name_str = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
-        self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-
-    @property
-    def tier(self) -> str:
-        return "fallback"
-
-    @property
-    def model_name(self) -> str:
-        return self.model_name_str
-
-    def generate_structured(
-        self, prompt: str, schema: type[T], system_prompt: str | None = None
-    ) -> T:
-        import re
-        raw = self._call_ollama(prompt=prompt, system_prompt=system_prompt, temperature=0.1)
-        cleaned = re.sub(r"^```(?:json)?\s*|```\s*$", "", raw.strip(), flags=re.MULTILINE)
-        try:
-            parsed = json.loads(cleaned)
-            return schema(**parsed)
-        except (json.JSONDecodeError, Exception) as exc:
-            logger.error("qwen_structured_parse_failed", error=str(exc), raw_preview=raw[:200], cleaned_preview=cleaned[:200])
-            raise
-
-    def generate_text(
-        self, prompt: str, system_prompt: str | None = None
-    ) -> str:
-        return self._call_ollama(prompt=prompt, system_prompt=system_prompt, temperature=0.3)
-
-    def _call_ollama(
-        self, prompt: str, system_prompt: str | None = None, temperature: float = 0.1
-    ) -> str:
-        payload: dict[str, Any] = {
-            "model": self.model_name_str,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": temperature, "num_predict": 4096},
-        }
-        if system_prompt:
-            payload["system"] = system_prompt
-
-        response = httpx.post(
-            f"{self.base_url}/api/generate",
-            json=payload,
-            timeout=180.0,
-        )
-        response.raise_for_status()
-        return response.json().get("response", "")
