@@ -29,11 +29,12 @@ services:
       target: prod
     ports:
       - "8000:8000"
+    # `make up` guarantees this exists (copied from .env.example on a first
+    # clone). The short form is used deliberately: the path:/required: form
+    # needs Compose v2.24+, and a stranger's Docker install is not something
+    # this project gets to choose.
     env_file:
-      # Optional: absent on a first clone, and the defaults below are enough
-      # to boot. GEMINI_API_KEY comes from here.
-      - path: .env
-        required: false
+      - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://aura:aura@postgres:5432/aura_sdg
       LOG_LEVEL: INFO

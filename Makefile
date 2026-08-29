@@ -18,8 +18,8 @@ COV_MIN      ?= 58
 UV           := uv
 RUN          := $(UV) run --project $(BACKEND)
 
-.PHONY: help setup up down logs test test-container lint format typecheck \
-        check build build-prod bench deploy destroy clean measure ps shell
+.PHONY: help setup env up down logs ready test test-container lint format \
+        typecheck check build build-prod bench deploy destroy clean measure ps shell
 
 help: ## Show the available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -32,7 +32,11 @@ setup: ## Install the locked dependency set (backend) and frontend packages
 	cd frontend && npm ci
 	@test -f .env || (cp .env.example .env && echo "Created .env — add your GEMINI_API_KEY")
 
-up: ## Bring up the whole stack (API, Postgres, frontend)
+env: ## Create .env from the example if it is missing
+	@test -f .env || (cp .env.example .env && \
+		echo "Created .env from .env.example — add your GEMINI_API_KEY to run an analysis")
+
+up: env ## Bring up the whole stack (API, Postgres, frontend)
 	$(COMPOSE) up --build -d
 	@echo "API      http://localhost:8000  (docs at /docs)"
 	@echo "Frontend http://localhost:3000"

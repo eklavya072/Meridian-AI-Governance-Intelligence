@@ -31,6 +31,9 @@ dependencies = [
     # Vector store + embeddings
     "chromadb>=1.5.9",
     "sentence-transformers>=5.6.0",
+    # Declared explicitly only so [tool.uv.sources] below can pin where it
+    # comes from. Nothing imports torch directly; sentence-transformers does.
+    "torch>=2.9.0",
 
     # LLM providers. google-genai is the primary path; openai is the client
     # for the Groq and Cerebras endpoints (both OpenAI-compatible) and was
@@ -73,10 +76,23 @@ dev = [
 ]
 
 [tool.uv]
-# Torch ships as a very large wheel and is pulled in transitively by
-# sentence-transformers. Nothing here needs CUDA, and the CPU build is what
-# both this machine and the container run.
 package = false
+
+# Torch's default PyPI wheel bundles the NVIDIA CUDA runtime — 43 nvidia-*
+# packages, one of them a single 542MB wheel — and pulled the production
+# image to 5,683MB. Meridian runs bge-small on CPU and has no GPU code path
+# anywhere, so all of it was dead weight in the image and dead surface in the
+# vulnerability scan.
+#
+# Linux resolves from PyTorch's CPU index; macOS stays on PyPI, whose darwin
+# wheels are already CPU-only and have no CUDA variant to choose from.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100
