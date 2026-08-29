@@ -5,7 +5,9 @@ from src.consistency import (
     ConsistencyViolation,
     ConsistencyReport,
     detect_covered_synthesis_drift,
+    detect_ladder_raise_contradiction,
     COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD,
+    LADDER_RAISE_REVIEW_THRESHOLD,
 )
 from src.models import (
     CoverageLevel, RiskLevel, GovernanceGap, RetrievedEvidence, DimensionGraph,
@@ -110,6 +112,32 @@ def test_graph_child_not_covered():
 
 
 def test_risk_coherence():
+    """A Missing dimension rated LOW risk is incoherent and must be flagged.
+
+    This previously asserted that Partial + HIGH was a violation. It is not:
+    compute_risk deliberately escalates a core Partial dimension to HIGH when
+    a related dimension in the same cluster is also a genuine gap, so the old
+    assertion encoded a table that made the pipeline flag its own correct
+    output. Missing + LOW has no such escalation path and is a real mismatch.
+    """
+    validator = ConsistencyValidator()
+    gaps = [
+        GovernanceGap(
+            dimension="Transparency",
+            coverage=CoverageLevel.MISSING,
+            risk_level=RiskLevel.LOW,
+            evidence=[RetrievedEvidence(chunk_id="c1", text="t1", source_framework="fw")],
+            reason_flagged="r",
+            recommendation="rec",
+        ),
+    ]
+    report = validator.validate(gaps)
+    risk_violations = [v for v in report.violations if v.violation_type == "risk_coverage_mismatch"]
+    assert len(risk_violations) > 0
+
+
+def test_escalated_partial_risk_is_not_a_violation():
+    """Partial + HIGH is the documented output of cluster compounding."""
     validator = ConsistencyValidator()
     gaps = [
         GovernanceGap(
@@ -123,7 +151,7 @@ def test_risk_coherence():
     ]
     report = validator.validate(gaps)
     risk_violations = [v for v in report.violations if v.violation_type == "risk_coverage_mismatch"]
-    assert len(risk_violations) > 0
+    assert risk_violations == []
 
 
 def test_missing_evidence():
@@ -259,6 +287,91 @@ def test_drift_detector_does_not_match_recommendation_noun():
     )
     assert score == 0
     assert "recommend" not in phrases
+
+
+# ── Ladder-raise review safeguard ────────────────────────────────────────
+
+
+def test_ladder_raise_detector_clean_reasoning():
+    # A raise whose reasoning describes the concrete mechanisms (no explicit
+    # gap assertions) stays clean — no contradiction to flag.
+    score, phrases = detect_ladder_raise_contradiction(
+        "The Act establishes concrete notification and labeling duties for "
+        "high-impact AI and generative AI services."
+    )
+    assert score == 0
+    assert phrases == []
+
+
+def test_ladder_raise_detector_strong_gap_assertion_flags():
+    # The exact India Transparency case: the model's reasoning lists explicit
+    # gaps ("does not establish ... obligations") while the ladder raised the
+    # verdict to Covered — one strong assertion crosses the review threshold.
+    score, phrases = detect_ladder_raise_contradiction(
+        "The Act requires advance notification for high-impact AI but does "
+        "not establish individual-level explainability obligations, technical "
+        "documentation standards, or system logging mechanisms."
+    )
+    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+    assert "does not establish" in phrases
+
+
+def test_ladder_raise_detector_never_mentions_flags():
+    score, phrases = detect_ladder_raise_contradiction(
+        "Document never mentions transparency."
+    )
+    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+    assert "never mentions" in phrases
+
+
+def test_ladder_raise_detector_lacks_flags():
+    score, phrases = detect_ladder_raise_contradiction(
+        "The policy covers notification but lacks any explainability or "
+        "logging requirements."
+    )
+    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+    assert "lacks" in phrases
+
+
+def test_ladder_raise_detector_empty_reasoning():
+    assert detect_ladder_raise_contradiction("") == (0, [])
+    assert detect_ladder_raise_contradiction(None) == (0, [])
+
+
+def test_ladder_raise_detector_no_double_count_on_substring_phrases():
+    # "does not provide" contains both "does not" and "does not provide" —
+    # the score must count the specific phrase once, not double-inflate.
+    score, phrases = detect_ladder_raise_contradiction(
+        "The document does not provide any enforcement mechanism."
+    )
+    assert "does not provide" in phrases
+    assert phrases.count("does not provide") == 1
+
+
+def test_ladder_raise_detector_provides_no_flags():
+    # The Fairness miss: the model phrased its gap as "provides no concrete
+    # operational mechanisms" — subject-verb-negator order, not caught by
+    # the "does not provide" family. A raised verdict paired with this
+    # explicit-absence construction is the same contradiction and must
+    # flag for review.
+    score, phrases = detect_ladder_raise_contradiction(
+        "The Act provides no concrete operational mechanisms for fairness "
+        "or non-discrimination."
+    )
+    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+    assert "provides no" in phrases
+
+
+def test_ladder_raise_detector_explicit_absence_variants_flag():
+    for reasoning in (
+        "The Act establishes no liability framework for AI harms.",
+        "The policy sets out no redress pathway for affected individuals.",
+        "The framework contains no privacy provisions.",
+        "The Act imposes no monitoring or enforcement duties.",
+    ):
+        score, phrases = detect_ladder_raise_contradiction(reasoning)
+        assert score >= LADDER_RAISE_REVIEW_THRESHOLD, reasoning
+        assert phrases, reasoning
 
 
 def test_covered_synthesis_drift_violation_flagged():

@@ -354,15 +354,45 @@ class TestDeterministicPlausibilityValidator:
 
 
 class TestDetectImplementationCommitment:
-    def test_named_body_mechanism_signal(self):
+    def test_bare_named_body_alone_does_not_raise(self):
+        # Tightened path (a): a named body with no reporting/enforcement
+        # mechanism alongside it is not a concrete implementation
+        # commitment (the same co-occurrence standard the chunk path
+        # applies — a body alone never fires R2).
         assert detect_implementation_commitment(
             ["National AI Ethics Board (named body)"], []
-        ) is True
+        ) is False
 
-    def test_reporting_mechanism_signal(self):
+    def test_lone_reporting_keyword_alone_does_not_raise(self):
+        # The exact India Transparency false positive: a lone reporting
+        # keyword ("disclosure"/"reporting") with NO named body must not
+        # fire R2's mechanism-report path.
         assert detect_implementation_commitment(
             ["Annual transparency reporting"], []
+        ) is False
+        assert detect_implementation_commitment(
+            ["Labeling and disclosure mechanism for AI-generated virtual content"], []
+        ) is False
+
+    def test_named_body_co_occurring_with_reporting_raises(self):
+        # The tightened minimum: a named body AND a reporting mechanism
+        # together are a concrete implementation commitment.
+        assert detect_implementation_commitment(
+            ["The AI Safety Committee publishes an annual transparency report"], []
         ) is True
+
+    def test_named_body_co_occurring_with_enforcement_raises(self):
+        # Enforcement alongside a named body exceeds the minimum bar.
+        assert detect_implementation_commitment(
+            ["The AI Ethics Board imposes penalties for non-compliance"], []
+        ) is True
+
+    def test_enforcement_keyword_alone_does_not_raise(self):
+        # Same discipline as the lone reporting keyword: a single
+        # enforcement keyword with no named body is not co-occurrence.
+        assert detect_implementation_commitment(
+            ["Penalties for non-compliance"], []
+        ) is False
 
     def test_empty_mechanisms_but_commitment_chunk_with_named_body(self):
         # R2's strong-phrase path requires a named-body/institution keyword
@@ -456,6 +486,196 @@ class TestDetectImplementationCommitment:
         assert classify_mechanisms(["liabilities for AI-caused harms"])["has_enforcement"] is True
         assert classify_mechanisms(["annual registry of AI systems"])["has_reporting"] is True
 
+    def test_named_body_stem_recognizes_minister(self):
+        # The Korea Act assigns duties to "the Minister of Science and ICT" —
+        # a named body the literal "ministry" keyword cannot match under
+        # word-boundary matching. The stem form "minister*" must credit it.
+        from src.deterministic import classify_mechanisms, _has_keyword, NAMED_BODY_KEYWORDS
+        out = classify_mechanisms(
+            ["Minister of Science and ICT confirmation procedure for high-impact AI"]
+        )
+        assert out["has_named_body"] is True
+        assert out["has_operational_mechanism"] is True
+        # Inflected forms of the stem match too.
+        assert _has_keyword("the ministers agreed on the plan", NAMED_BODY_KEYWORDS)
+        assert _has_keyword("a ministerial committee", NAMED_BODY_KEYWORDS)
+        # The literal "ministry" entry still works as before.
+        assert _has_keyword("the ministry shall report", NAMED_BODY_KEYWORDS)
+
+    def test_reporting_stem_recognizes_noun_forms(self):
+        # The Korea Act's duties are phrased as noun forms ("advance
+        # notification duty", "labeling and indication requirement") that the
+        # verb keyword "notify" cannot match — the noun stems must credit them.
+        from src.deterministic import classify_mechanisms
+        out = classify_mechanisms(
+            ["Advance user notification duty for high-impact AI and GenAI products"]
+        )
+        assert out["has_reporting"] is True
+        assert out["has_operational_mechanism"] is True
+        out = classify_mechanisms(
+            ["Labeling and indication requirement for AI-generated virtual content"]
+        )
+        assert out["has_reporting"] is True
+
+    def test_stem_keywords_do_not_match_unrelated_words(self):
+        # False-positive spot checks: the stem entries must keep the same
+        # boundary discipline as the earlier program/programming fix.
+        from src.deterministic import _has_keyword, NAMED_BODY_KEYWORDS, REPORTING_KEYWORDS
+        # "minister*" must not reach inside "administration"/"administrative"
+        # (no word boundary before "minist").
+        assert not _has_keyword("administration of the national AI plan", NAMED_BODY_KEYWORDS)
+        assert not _has_keyword("administrative penalties apply", NAMED_BODY_KEYWORDS)
+        # "indicatio*" must not match "indicator"/"indicative"/"indicating"
+        # (stems diverge after "indicat") — a performance-indicator mention is
+        # not a reporting duty.
+        assert not _has_keyword("key performance indicators for AI", REPORTING_KEYWORDS)
+        assert not _has_keyword("the results are indicative of progress", REPORTING_KEYWORDS)
+        assert not _has_keyword("indicating that the system is stable", REPORTING_KEYWORDS)
+        # "notif*" only matches the notification family — "notional" and
+        # "notify" (already a literal) are the closest neighbours.
+        assert not _has_keyword("a notional budget allocation", REPORTING_KEYWORDS)
+
+
+class TestFunctionalEquivalenceGate:
+    """Regression: the evaluator must not mark a dimension Missing when the
+    policy contains a governance mechanism expressed in its OWN terminology.
+    The ladder's dimension gate is pluggable (dimension_match_fn) so the
+    pipeline can admit chunks by semantic equivalence; R1 additionally
+    treats OBLIGATION language ("shall notify", "must ensure") as an actual
+    mechanism — the deterministic principle → mechanism → operationalized
+    distinction. The Korean AI Basic Act is one fixture: its transparency
+    duties (advance notification + synthetic-media labelling) are an
+    explicit mechanism carrying no literal "transparency/disclosure"
+    vocabulary."""
+
+    KOREA_TRANSPARENCY_CHUNK = {
+        "chunk_id": "c-kr",
+        "text": (
+            "AI business operators shall notify users in advance when "
+            "deploying high-impact AI or Generative AI and shall label "
+            "synthetic media such as virtual sounds, images, and videos "
+            "created by AI."
+        ),
+    }
+
+    def test_keyword_gate_alone_misses_equivalent_terminology(self):
+        # Documented miss: the keyword checklist rejects the chunk (no
+        # "transparency/disclosure/explainability" vocabulary) — this is the
+        # exact false-negative the semantic gate fixes.
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[self.KOREA_TRANSPARENCY_CHUNK],
+            dimension="Transparency",
+        )
+        assert cov == CoverageLevel.MISSING
+        assert rules == []
+
+    def test_semantic_equivalence_floors_missing_to_partial(self):
+        # With a semantic-equivalence gate (the chunk means transparency by
+        # substance), the obligation language ("shall notify"/"shall label")
+        # is a mechanism → R1 floors Missing -> Partial. NOT Covered: no
+        # named body, so R2's co-occurrence bar stays unsatisfied — matching
+        # the model's own reasoning on the Korean Act.
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[self.KOREA_TRANSPARENCY_CHUNK],
+            dimension="Transparency",
+            dimension_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert any("R1" in r for r in rules)
+        assert not any("R2" in r for r in rules)
+
+    def test_semantic_gate_still_blocks_off_topic_chunks(self):
+        # A semantic predicate that rejects a chunk keeps the UN advisory-
+        # body paragraph (which contains "will support") from flooring
+        # Accountability — the false-positive protection survives the
+        # pluggable gate.
+        chunk = {
+            "chunk_id": "c-un",
+            "text": (
+                "We participate actively in international discourse on AI "
+                "governance and the UN High-Level Advisory Body on AI will "
+                "support the international community's efforts to govern AI."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Accountability",
+            dimension_match_fn=lambda t, d: False,
+        )
+        assert cov == CoverageLevel.MISSING
+        assert rules == []
+
+    def test_principle_mention_without_mechanism_stays_missing(self):
+        # principle mentioned → still Missing (maturity reflects the
+        # acknowledgment); mechanism exists → Partial. A bare "recognizes
+        # the importance of privacy" carries no obligation and must not
+        # floor.
+        chunk = {
+            "chunk_id": "c-p",
+            "text": (
+                "The policy recognizes the importance of protecting "
+                "citizens' privacy in the digital economy."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Privacy",
+            dimension_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.MISSING
+        assert rules == []
+
+    def test_functionally_equivalent_privacy_mechanism_floors(self):
+        # A confidentiality duty (the policy's own terminology, no "consent"
+        # / "data protection" vocabulary) is a privacy mechanism.
+        chunk = {
+            "chunk_id": "c-conf",
+            "text": (
+                "Financial institutions shall maintain strict confidentiality "
+                "of customers' personal information and are required to "
+                "obtain authorization before any disclosure to third parties."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Privacy",
+            dimension_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert any("R1" in r for r in rules)
+
+    def test_obligation_language_is_a_mechanism_signal(self):
+        assert detect_explicit_commitment(
+            [],
+            ["AI operators shall notify users in advance of high-impact AI deployment."],
+            dimension="Transparency",
+            dimension_match_fn=lambda t, d: True,
+        ) is True
+        # Bare acknowledgment: no obligation → not a mechanism.
+        assert detect_explicit_commitment(
+            [],
+            ["The policy recognizes the importance of transparency."],
+            dimension="Transparency",
+            dimension_match_fn=lambda t, d: True,
+        ) is False
+
+    def test_text_contains_mechanism(self):
+        from src.deterministic import text_contains_mechanism
+        assert text_contains_mechanism(
+            "The Ministry shall publish an annual transparency report"
+        ) is True
+        assert text_contains_mechanism(
+            "AI operators must ensure safe deployment of high-risk systems"
+        ) is True
+        assert text_contains_mechanism(
+            "The policy recognizes the importance of fairness"
+        ) is False
+
 
 class TestValidateCoverageDeterministic:
     DOC = [{"chunk_id": "c1", "text": "policy passage about the dimension"}]
@@ -486,17 +706,20 @@ class TestValidateCoverageDeterministic:
         assert any("R1" in r for r in rules)
         assert not any("R2" in r for r in rules)
 
-    def test_r1_mechanism_report_composes_to_covered(self):
-        # A non-empty operational-mechanism report (named body) is an actual
-        # attempted mechanism — R1 fires. R2 also fires on the mechanism
-        # report, so the final result is Covered (Missing -> Partial -> Covered).
+    def test_r1_named_body_mechanism_report_floors_to_partial_only(self):
+        # A named-body mechanism report is an actual attempted mechanism —
+        # R1 (the floor) fires. But under the tightened R2 bar a bare named
+        # body with no reporting/enforcement mechanism alongside is NOT an
+        # implementation commitment, so the final verdict is Partial, not
+        # Covered (Missing -> Partial; R2 does not fire).
         cov, rules = validate_coverage_deterministic(
             CoverageLevel.MISSING, principle_acknowledged=True,
             operational_mechanisms=["AI Ethics Board (named body)"],
             document_chunks=self.DOC,
         )
-        assert cov == CoverageLevel.COVERED
-        assert any("R1" in r for r in rules) and any("R2" in r for r in rules)
+        assert cov == CoverageLevel.PARTIAL
+        assert any("R1" in r for r in rules)
+        assert not any("R2" in r for r in rules)
 
     def test_r1_not_fired_without_document_evidence(self):
         # Commitment/acknowledgment without any retrieved document evidence
@@ -590,13 +813,35 @@ class TestValidateCoverageDeterministic:
         assert any("R2" in r for r in rules)
 
     def test_r2_via_model_mechanism_report(self):
+        # R2's mechanism-report path requires named-body + reporting /
+        # enforcement co-occurrence (tightened): a body that also reports
+        # is a concrete implementation commitment.
         cov, rules = validate_coverage_deterministic(
             CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=["AI Safety Committee (named body)"],
+            operational_mechanisms=["AI Safety Committee publishes annual transparency reports"],
             document_chunks=self.DOC,
         )
         assert cov == CoverageLevel.COVERED
         assert any("R2" in r for r in rules)
+
+    def test_lone_disclosure_keyword_does_not_raise_partial_to_covered(self):
+        """Regression — India Transparency. R2's path (a) previously raised a
+        Partial verdict to Covered because the mechanism report contained the
+        reporting keyword 'disclosure' (labeling/notification mechanisms)
+        with NO named body. The tightened bar (named body co-occurring with
+        a reporting/enforcement mechanism) must keep the verdict Partial,
+        consistent with the model's own reasoning (explicit gaps listed: no
+        explainability, documentation, or logging standards)."""
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            operational_mechanisms=[
+                "Advance notification requirement for high-impact AI and Generative AI",
+                "Labeling and disclosure mechanism for AI-generated virtual content",
+            ],
+            document_chunks=self.DOC,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert rules == []
 
     def test_r2_not_fired_without_commitment(self):
         cov, rules = validate_coverage_deterministic(
@@ -784,6 +1029,287 @@ class TestDimensionGrounding:
         )
         assert cov == CoverageLevel.COVERED
         assert any("R1" in r for r in rules) and any("R2" in r for r in rules)
+
+
+class TestSubstantiveSpecificityGate:
+    """Anti-false-positive: the broad evidence pool fixed the false-Missing
+    class, but the loose relevance gate (0.42) also admits PROCEDURAL
+    authority provisions — "the Minister may approve/support AI data
+    centres", "shall promote measures to facilitate the production,
+    collection, management, distribution, utilization of learning data" —
+    which contain obligation language + a named body yet impose no
+    dimension-specific governance requirement. These must NOT fire R1/R2:
+    procedural authority ≠ substantive governance mechanism. The pipeline
+    supplies a substantive_match_fn (semantic closeness of the chunk's
+    mechanism sentences to the dimension's profile); when provided, a chunk
+    must pass BOTH gates to fire the ladder."""
+
+    # The exact Korea Env Sustainability pool passage that (incorrectly)
+    # fired R1+R2 in the re-run: a procedural learning-data facilitation
+    # duty, not an environmental governance mechanism.
+    KOREA_ENV_PROCEDURAL = {
+        "chunk_id": "c-kr-env",
+        "text": (
+            "The Minister of Science and ICT shall, in consultation with the "
+            "heads of relevant central administrative agencies, promote "
+            "necessary measures to facilitate the production, collection, "
+            "management, distribution, utilization of Learning Data."
+        ),
+    }
+
+    # The Korea Privacy pool passage: public-institution decision-making
+    # procedures, not a privacy mechanism.
+    KOREA_PRIV_PROCEDURAL = {
+        "chunk_id": "c-kr-priv",
+        "text": (
+            "Decision-making by the national and local governments, and public "
+            "institutions pursuant to Article 4 of the Act on the Operation of "
+            "Public Institutions that use AI shall follow the procedures "
+            "prescribed by Presidential Decree."
+        ),
+    }
+
+    def test_procedural_authority_does_not_floor_missing(self):
+        # Relevance gate passes (topically adjacent to Env Sustainability —
+        # data centres / learning data consume resources), but the
+        # substantive gate rejects the chunk: no environmental governance
+        # requirement. R1 must NOT floor Missing -> Partial.
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[self.KOREA_ENV_PROCEDURAL],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=lambda t, d: False,
+        )
+        assert cov == CoverageLevel.MISSING
+        assert rules == []
+
+    def test_procedural_authority_does_not_raise_partial_to_covered(self):
+        # Same passage on a Partial verdict: R2 must not raise to Covered.
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[self.KOREA_ENV_PROCEDURAL],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=lambda t, d: False,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert rules == []
+
+    def test_procedural_privacy_passage_does_not_fire_ladder(self):
+        # The Korea Privacy pool passage (public-institution decision-making)
+        # must stay inert for Privacy despite obligation language.
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[self.KOREA_PRIV_PROCEDURAL],
+            dimension="Privacy",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=lambda t, d: False,
+        )
+        assert cov == CoverageLevel.MISSING
+        assert rules == []
+
+    def test_substantive_mechanism_floors_missing_to_partial(self):
+        # Positive control (1): a genuinely substantive environmental
+        # mechanism (energy/carbon reporting duty) passes the substantive
+        # gate -> R1 floors Missing -> Partial. No named body + reporting in
+        # the same mechanism sentence here, so R2 does not fire.
+        chunk = {
+            "chunk_id": "c-env",
+            "text": (
+                "AI data centres shall report their annual energy consumption "
+                "and carbon emissions and implement energy efficiency measures."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert any("R1" in r for r in rules)
+        assert not any("R2" in r for r in rules)
+
+    def test_substantive_mechanism_with_named_body_raises_to_covered(self):
+        # Positive control (2): a concrete, dimension-specific governance
+        # requirement with a named body + reporting duty is eligible for
+        # Covered — the substantive gate passes AND R2's implementation-
+        # commitment bar is met.
+        chunk = {
+            "chunk_id": "c-env2",
+            "text": (
+                "The Ministry of Environment shall establish a mandatory "
+                "annual energy and carbon reporting programme for AI data "
+                "centres, with penalties for non-compliance."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.COVERED
+        assert any("R2" in r for r in rules)
+
+    def test_terminology_different_mechanism_still_recognized(self):
+        # Regression (4): a mechanism expressed in the policy's OWN
+        # terminology (no "transparency/disclosure/consent" vocabulary) is
+        # still recognized when the substantive gate admits it by MEANING —
+        # the semantic-equivalence fix survives the new precision gate.
+        chunk = {
+            "chunk_id": "c-conf",
+            "text": (
+                "AI business operators shall notify users in advance when "
+                "deploying high-impact AI and shall label synthetic media "
+                "created by AI."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Transparency",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert any("R1" in r for r in rules)
+
+    def test_substantive_gate_defaults_to_dimension_gate(self):
+        # Backward compatibility: when no substantive gate is supplied, the
+        # dimension gate alone governs (no stricter bar) — existing
+        # behavior is preserved.
+        chunk = {
+            "chunk_id": "c-env",
+            "text": (
+                "AI data centres shall report their annual energy consumption "
+                "and carbon emissions."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert any("R1" in r for r in rules)
+
+    # ── Sentence-level evidence discipline (R2 co-location leak) ─────────
+    # The substantive gate validates ANY mechanism-bearing sentence of a
+    # chunk, so R2 used to be able to fire using a strong phrase / named
+    # body located in a DIFFERENT sentence than the one that passed the
+    # gate — a mixed Article 32/33 chunk promoted Fairness on a safety
+    # provision. R2 must now require the SAME sentence that carries the
+    # strong phrase + named body to itself pass the substantive gate.
+    MIXED_ENV_CHUNK = {
+        "chunk_id": "c-mixed",
+        "text": (
+            "AI data centres shall report their annual energy consumption "
+            "and carbon emissions. "
+            "The Minister of Science and ICT shall establish a national AI "
+            "research institute programme under the Ministry of Science."
+        ),
+    }
+
+    def test_mixed_chunk_unrelated_strong_mechanism_does_not_promote(self):
+        # The energy-reporting sentence is substantive for Env; the
+        # institute sentence carries a strong phrase ("shall establish") +
+        # named body ("Minister") but is NOT an environmental mechanism. The
+        # whole chunk passes the chunk-level gate (it contains "energy"), so
+        # the old code raised Partial -> Covered on the co-located
+        # institute sentence. The sentence-level gate keeps it Partial.
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[self.MIXED_ENV_CHUNK],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=(
+                lambda t, d: "energy" in t.lower() or "carbon" in t.lower()
+            ),
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert rules == []
+
+    def test_mixed_chunk_substantive_sentence_with_strong_mechanism_promotes(self):
+        # Positive control for the same mechanism: when the sentence carrying
+        # the strong phrase + named body IS substantively about the
+        # dimension, R2 may promote. (The institute sentence is dropped and
+        # the reporting duty is given the named body + strong language in
+        # the SAME sentence.)
+        chunk = {
+            "chunk_id": "c-mixed2",
+            "text": (
+                "The Ministry of Environment shall establish a mandatory "
+                "annual energy and carbon reporting programme for AI data "
+                "centres, with penalties for non-compliance. "
+                "Unrelated boilerplate about administrative procedure."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=(
+                lambda t, d: "energy" in t.lower() or "carbon" in t.lower()
+            ),
+        )
+        assert cov == CoverageLevel.COVERED
+        assert any("R2" in r for r in rules)
+
+    def test_substantive_mechanism_without_implementation_stays_partial(self):
+        # A substantive dimension-specific mechanism WITHOUT the strong
+        # phrase + named body co-occurrence bar is Partial, never Covered:
+        # the obligation duty alone ("shall report") cannot raise.
+        chunk = {
+            "chunk_id": "c-env3",
+            "text": (
+                "AI data centres shall report their annual energy consumption "
+                "and carbon emissions and implement energy efficiency "
+                "measures."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=lambda t, d: True,
+        )
+        assert cov == CoverageLevel.PARTIAL
+        assert rules == []
+
+    def test_mixed_chunk_procedural_obligation_sentence_does_not_floor(self):
+        # The same co-location discipline applies to the R1 floor: a chunk
+        # whose substantive sentence carries NO obligation language, but
+        # whose PROCEDURAL sentence does ("the Minister shall promote…"),
+        # must not floor Missing -> Partial on the boilerplate. Only the
+        # sentence bearing the obligation may fire R1.
+        chunk = {
+            "chunk_id": "c-mixed3",
+            "text": (
+                "The policy recognizes the environmental impact of AI data "
+                "centres and their lifecycle footprint. "
+                "The Minister of Science and ICT shall promote measures to "
+                "facilitate the production, collection, management, "
+                "distribution, utilization of Learning Data."
+            ),
+        }
+        cov, rules = validate_coverage_deterministic(
+            CoverageLevel.MISSING, principle_acknowledged=True,
+            operational_mechanisms=[], document_chunks=[chunk],
+            dimension="Environmental Sustainability",
+            dimension_match_fn=lambda t, d: True,
+            substantive_match_fn=(
+                lambda t, d: "environment" in t.lower() or "energy" in t.lower()
+            ),
+        )
+        assert cov == CoverageLevel.MISSING
+        assert rules == []
 
     def test_all_dimensions_have_topic_keywords(self):
         for dim in (

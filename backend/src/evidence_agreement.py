@@ -37,12 +37,24 @@ def _has_contradictory_phrasing(text_a: str, text_b: str) -> bool:
 def analyze_evidence_agreement(
     items: list[EvidenceItem],
     embed_function: Any | None = None,
+    batch_embed_function: Any | None = None,
 ) -> list[EvidencePair]:
     if len(items) < 2:
         return []
 
     embeddings = None
-    if embed_function is not None:
+    # Prefer ONE batched call (batch_embed_function(list[str]) ->
+    # list[vector]) over N individual embed_function(text) calls — each
+    # individual SentenceTransformer .encode() pays its own tokenization/
+    # dispatch overhead, which a single batch amortizes. embed_function
+    # stays supported for callers that only have a single-item embedder.
+    if batch_embed_function is not None:
+        try:
+            raw = batch_embed_function([item.text[:500] for item in items])
+            embeddings = [l2_normalize(e) for e in raw]
+        except Exception:
+            embeddings = None
+    if embeddings is None and embed_function is not None:
         try:
             embeddings = [l2_normalize(embed_function(item.text[:500])) for item in items]
         except Exception:

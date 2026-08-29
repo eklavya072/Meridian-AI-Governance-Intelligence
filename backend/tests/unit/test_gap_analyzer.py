@@ -103,13 +103,13 @@ class TestComputeRisk:
         other = [make_gap("Accountability", "Missing")]
         risk, reason = compute_risk(CoverageLevel.PARTIAL, "Transparency", other_gaps=other)
         assert risk == RiskLevel.HIGH
-        assert "compounded" in reason
+        assert "same cluster" in reason
 
     def test_compounding_isolated_does_not_increase(self):
         other = [make_gap("Privacy", "Missing")]
         risk, reason = compute_risk(CoverageLevel.PARTIAL, "Transparency", other_gaps=other)
         assert risk == RiskLevel.MEDIUM
-        assert "compounded" not in reason
+        assert "same cluster" not in reason
 
     def test_coverage_distinction(self):
         partial_risks = set()
@@ -416,7 +416,7 @@ class TestDecisionAnalytics:
     """Executive decision analytics — deterministic aggregates for dashboards
     and the research paper's evaluation section."""
 
-    def _gap(self, dim, coverage, maturity=GovernanceMaturity.DEFINED,
+    def _gap(self, dim, coverage, maturity=GovernanceMaturity.DEVELOPING,
              priority=None, confidence=0.6, failed=False):
         m2 = None
         if priority is not None:
@@ -441,9 +441,9 @@ class TestDecisionAnalytics:
 
     def test_counts_and_failed_are_separate(self):
         gaps = [
-            self._gap("Transparency", "Covered", GovernanceMaturity.OPTIMIZED, confidence=0.9),
-            self._gap("Privacy", "Partial", GovernanceMaturity.DEFINED, confidence=0.5),
-            self._gap("Fairness", "Missing", GovernanceMaturity.AD_HOC, confidence=0.2),
+            self._gap("Transparency", "Covered", GovernanceMaturity.ESTABLISHED, confidence=0.9),
+            self._gap("Privacy", "Partial", GovernanceMaturity.DEVELOPING, confidence=0.5),
+            self._gap("Fairness", "Missing", GovernanceMaturity.UNADDRESSED, confidence=0.2),
             self._gap("Safety", "Insufficient Evidence"),
             self._gap("Accountability", "Insufficient Evidence", failed=True),
         ]
@@ -454,72 +454,76 @@ class TestDecisionAnalytics:
         assert a["insufficient_evidence"] == 1
         assert a["analysis_failed"] == 1
 
-    def test_overall_maturity_is_weakest_dimension_stage(self):
-        """CMMI-style staged maturity: the overall stage is the LEAST mature
-        assessed dimension, not a mean of ordinal ranks."""
+    def test_maturity_index_is_mean_of_stage_scores(self):
+        """The composite index averages explicit STAGE SCORES, not ordinal
+        ranks — a mean of ranks prices every step between stages the same,
+        which is what made the old linear-rank average indefensible."""
         gaps = [
-            self._gap("Transparency", "Covered", GovernanceMaturity.OPTIMIZED),
-            self._gap("Privacy", "Covered", GovernanceMaturity.MANAGED),
-            self._gap("Fairness", "Partial", GovernanceMaturity.DEFINED),
+            self._gap("Transparency", "Covered", GovernanceMaturity.ESTABLISHED),
+            self._gap("Privacy", "Covered", GovernanceMaturity.ESTABLISHED),
+            self._gap("Fairness", "Partial", GovernanceMaturity.DEVELOPING),
         ]
         a = compute_decision_analytics(gaps)
-        # ranks: 4, 3, 2 → weakest = 2 → Defined
-        assert a["overall_governance_maturity"] == "Defined"
-        # Composite index: 100 * (4+3+2) / (4*3) = 75.0
-        assert a["maturity_index"] == 75.0
+        # (100 + 100 + 78) / 3 = 92.7. The previous linear rank average gave
+        # 88.9, which priced the Unaddressed→Emerging step identically to the
+        # Operationalized→Institutionalized one — see MATURITY_STAGE_SCORE.
+        assert a["maturity_index"] == 92.7
         assert a["assessed_dimensions"] == 3
-        # Full distribution histogram
+        # Full distribution histogram — a single weakest-dimension LABEL used
+        # to be derived from this too, but it was never shown anywhere in the
+        # frontend and duplicated what this histogram already carries, so it
+        # was dropped from the returned dict rather than kept as dead weight.
         assert a["maturity_distribution"] == {
-            "Ad Hoc": 0, "Developing": 0, "Defined": 1,
-            "Managed": 1, "Optimized": 1,
+            "Unaddressed": 0, "Emerging": 0, "Delegated": 0,
+            "Operationalized": 1, "Institutionalized": 2,
         }
 
-    def test_one_weak_dimension_caps_overall_stage(self):
-        """A single Ad Hoc dimension caps the overall stage to Ad Hoc even
-        when the other seven are Optimized — the weakest-link rule."""
+    def test_one_weak_dimension_still_pulls_down_the_index(self):
+        """A single Unaddressed dimension among seven Established ones drags
+        the composite index down proportionally to its stage score, even
+        though it is only one of eight assessed dimensions."""
         gaps = [
-            self._gap("Transparency", "Covered", GovernanceMaturity.OPTIMIZED)
+            self._gap("Transparency", "Covered", GovernanceMaturity.ESTABLISHED)
             for _ in range(7)
-        ] + [self._gap("Privacy", "Missing", GovernanceMaturity.AD_HOC)]
+        ] + [self._gap("Privacy", "Missing", GovernanceMaturity.UNADDRESSED)]
         a = compute_decision_analytics(gaps)
-        assert a["overall_governance_maturity"] == "Ad Hoc"
-        # But the composite index still reflects the gradient (7*4+0)/(4*8) = 87.5
+        # (7*100 + 0) / 8 = 87.5
         assert a["maturity_index"] == 87.5
 
     def test_maturity_index_ranges_0_to_100(self):
-        low = [self._gap("T", "Missing", GovernanceMaturity.AD_HOC) for _ in range(3)]
-        high = [self._gap("T", "Covered", GovernanceMaturity.OPTIMIZED) for _ in range(3)]
+        low = [self._gap("T", "Missing", GovernanceMaturity.UNADDRESSED) for _ in range(3)]
+        high = [self._gap("T", "Covered", GovernanceMaturity.ESTABLISHED) for _ in range(3)]
         assert compute_decision_analytics(low)["maturity_index"] == 0.0
         assert compute_decision_analytics(high)["maturity_index"] == 100.0
 
     def test_distribution_counts_each_stage(self):
         gaps = [
-            self._gap("T", "Covered", GovernanceMaturity.OPTIMIZED),
-            self._gap("P", "Covered", GovernanceMaturity.OPTIMIZED),
-            self._gap("S", "Partial", GovernanceMaturity.DEFINED),
-            self._gap("F", "Missing", GovernanceMaturity.DEVELOPING),
+            self._gap("T", "Covered", GovernanceMaturity.ESTABLISHED),
+            self._gap("P", "Covered", GovernanceMaturity.ESTABLISHED),
+            self._gap("S", "Partial", GovernanceMaturity.DEVELOPING),
+            self._gap("F", "Missing", GovernanceMaturity.EMERGING),
         ]
         a = compute_decision_analytics(gaps)
-        assert a["maturity_distribution"]["Optimized"] == 2
-        assert a["maturity_distribution"]["Defined"] == 1
-        assert a["maturity_distribution"]["Developing"] == 1
+        assert a["maturity_distribution"]["Institutionalized"] == 2
+        assert a["maturity_distribution"]["Operationalized"] == 1
+        assert a["maturity_distribution"]["Emerging"] == 1
         assert sum(a["maturity_distribution"].values()) == 4
 
     def test_highest_priority_sorted_most_urgent_first(self):
         gaps = [
-            self._gap("Privacy", "Missing", GovernanceMaturity.AD_HOC, priority=Priority.CRITICAL),
-            self._gap("Transparency", "Partial", GovernanceMaturity.DEVELOPING, priority=Priority.HIGH),
-            self._gap("Fairness", "Partial", GovernanceMaturity.DEFINED, priority=Priority.MEDIUM),
-            self._gap("Inclusivity", "Covered", GovernanceMaturity.OPTIMIZED, priority=None),
+            self._gap("Privacy", "Missing", GovernanceMaturity.UNADDRESSED, priority=Priority.CRITICAL),
+            self._gap("Transparency", "Partial", GovernanceMaturity.EMERGING, priority=Priority.HIGH),
+            self._gap("Fairness", "Partial", GovernanceMaturity.DEVELOPING, priority=Priority.MEDIUM),
+            self._gap("Inclusivity", "Covered", GovernanceMaturity.ESTABLISHED, priority=None),
         ]
         a = compute_decision_analytics(gaps)
         assert a["highest_priority_dimensions"] == ["Privacy", "Transparency"]
 
     def test_strongest_dimension_by_maturity_then_confidence(self):
         gaps = [
-            self._gap("Transparency", "Covered", GovernanceMaturity.MANAGED, confidence=0.7),
-            self._gap("Privacy", "Covered", GovernanceMaturity.MANAGED, confidence=0.95),
-            self._gap("Fairness", "Partial", GovernanceMaturity.DEFINED, confidence=0.5),
+            self._gap("Transparency", "Covered", GovernanceMaturity.ESTABLISHED, confidence=0.7),
+            self._gap("Privacy", "Covered", GovernanceMaturity.ESTABLISHED, confidence=0.95),
+            self._gap("Fairness", "Partial", GovernanceMaturity.DEVELOPING, confidence=0.5),
         ]
         a = compute_decision_analytics(gaps)
         # Tie on maturity (Managed) → confidence tie-break picks Privacy.
@@ -531,7 +535,6 @@ class TestDecisionAnalytics:
             self._gap("Privacy", "Insufficient Evidence", failed=True),
         ]
         a = compute_decision_analytics(gaps)
-        assert a["overall_governance_maturity"] == "Not Assessed"
         assert a["maturity_index"] == 0.0
         assert a["assessed_dimensions"] == 0
         assert all(v == 0 for v in a["maturity_distribution"].values())
@@ -711,10 +714,12 @@ class TestCoverageTierEnforcement:
         Recommendations, and the rule is visible in the reasoning."""
         gap = self._run(
             monkeypatch, "Partial",
-            mechanisms=["National AI Ethics Board (named body)"],
+            mechanisms=["National AI Ethics Board with quarterly public reporting (named body)"],
         )
         assert gap.module_1.coverage == CoverageLevel.COVERED
-        assert "R2" in gap.module_1.coverage_reasoning
+        # User-facing text, not the internal "R2" rule label — see
+        # plain_language_ladder_note.
+        assert "Raised from Partial to Covered" in gap.module_1.coverage_reasoning
         assert gap.module_2.best_practices is not None
         assert gap.module_2.recommendations == []
         assert gap.module_2.priority is None
@@ -828,10 +833,10 @@ class TestGroundModule3Citations:
         store = self._Store({
             "top1": {
                 "text": (
-                    "AI development efforts should be environmentally "
-                    "responsible and resource-efficient, and the adoption "
-                    "of smaller, resource-efficient models should be "
-                    "encouraged."
+                    "Developers of AI systems shall report annual energy "
+                    "consumption to the Ministry, and the adoption of "
+                    "smaller, resource-efficient models is required to "
+                    "reduce environmental impact."
                 ),
                 "metadata": {
                     "document_name": "AI Governance India",
@@ -1128,7 +1133,7 @@ class TestEstimatePhaseTimelines:
         t = estimate_phase_timelines(
             coverage=CoverageLevel.MISSING,
             operational_mechanisms=[],
-            maturity=GovernanceMaturity.AD_HOC,
+            maturity=GovernanceMaturity.UNADDRESSED,
             agency_grounding="none_identified",
             step_counts=[3, 3],
         )
@@ -1149,7 +1154,7 @@ class TestEstimatePhaseTimelines:
         t = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL,
             operational_mechanisms=["National AI Ethics Board (named body)", "Annual transparency report"],
-            maturity=GovernanceMaturity.MANAGED,
+            maturity=GovernanceMaturity.ESTABLISHED,
             agency_grounding="document_named",
             step_counts=[2, 2],
         )
@@ -1164,7 +1169,7 @@ class TestEstimatePhaseTimelines:
     def test_missing_always_longer_than_partial_ceteris_paribus(self):
         common = dict(
             operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEFINED,
+            maturity=GovernanceMaturity.DEVELOPING,
             agency_grounding="document_implied",
             step_counts=[3, 3],
         )
@@ -1177,12 +1182,12 @@ class TestEstimatePhaseTimelines:
     def test_large_scope_widens_timeline(self):
         small = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEFINED, agency_grounding="document_implied",
+            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
             step_counts=[2, 2],
         )
         large = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEFINED, agency_grounding="document_implied",
+            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
             step_counts=[6, 6],
         )
         assert int(large[0]["timeline"].split("-")[1].split()[0]) > int(
@@ -1193,15 +1198,15 @@ class TestEstimatePhaseTimelines:
     def test_reasoning_mentions_maturity_adjustment(self):
         t = estimate_phase_timelines(
             coverage=CoverageLevel.MISSING, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="none_identified",
+            maturity=GovernanceMaturity.EMERGING, agency_grounding="none_identified",
             step_counts=[4, 4],
         )
-        assert "low maturity (Developing)" in t[0]["reasoning"]
+        assert "low maturity (Emerging)" in t[0]["reasoning"]
 
     def test_returns_one_timeline_per_phase_up_to_two(self):
         t = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEFINED, agency_grounding="document_implied",
+            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
             step_counts=[3],
         )
         # One entry per phase present (single-phase roadmaps stay valid).
@@ -1210,7 +1215,7 @@ class TestEstimatePhaseTimelines:
         assert "Phase 1" in t[0]["reasoning"]
         both = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEFINED, agency_grounding="document_implied",
+            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
             step_counts=[3, 3],
         )
         assert len(both) == 2
@@ -1224,7 +1229,7 @@ class TestEstimatePhaseTimelines:
         # through the chain without being double-counted.
         t = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEFINED, agency_grounding="none_identified",
+            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="none_identified",
             step_counts=[3, 3],
         )
         assert "no responsible agency named" in t[0]["reasoning"]
@@ -1278,13 +1283,13 @@ class TestModule34TimelineOverride:
         monkeypatch.setattr(ga, "generate_with_retry", _fake_generate)
 
         gap = make_gap("Privacy", coverage)
-        gap.governance_maturity = GovernanceMaturity.DEVELOPING
+        gap.governance_maturity = GovernanceMaturity.EMERGING
         gap.module_1 = Module1Evaluation(
             dimension="Privacy",
             coverage=CoverageLevel(coverage),
             gap_detected=True,
             operational_mechanisms=mechanisms or [],
-            governance_maturity=GovernanceMaturity.DEVELOPING,
+            governance_maturity=GovernanceMaturity.EMERGING,
         )
         retrieval = Module34RetrievalResult(
             dimension="Privacy",
@@ -1313,7 +1318,7 @@ class TestModule34TimelineOverride:
         expected = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL,
             operational_mechanisms=["Annual privacy report"],
-            maturity=GovernanceMaturity.DEVELOPING,
+            maturity=GovernanceMaturity.EMERGING,
             agency_grounding="none_identified",
             step_counts=[len(p.steps) for p in gap.module_3.phases],
         )
@@ -1450,3 +1455,124 @@ class TestCoveredSynthesisFallback:
         assert "give the Accountability principle" not in overall
         assert "National AI Ethics Board" in overall
         assert overall.strip().endswith("requirement.")
+
+
+class TestClusterCompoundingExcludesUnanalysedDimensions:
+    """An unanalysed dimension must not masquerade as a governance gap.
+
+    compute_risk / resolve_priority escalate when a related dimension is also
+    weak. The test was `coverage != COVERED`, which is true for
+    INSUFFICIENT_EVIDENCE — the value set when a dimension fails on quota or
+    provider error. Partial-failure runs therefore inflated the risk and
+    priority of every surviving dimension in the cluster, reporting a policy
+    as higher-risk because the pipeline broke.
+    """
+
+    @staticmethod
+    def _gap(dimension, coverage, error=None):
+        from src.models import GovernanceGap
+
+        return GovernanceGap(
+            dimension=dimension,
+            coverage=coverage,
+            reason_flagged="",
+            recommendation="",
+            analysis_error=error,
+        )
+
+    def test_failed_neighbour_does_not_escalate_risk(self):
+        from src.gap_analyzer import compute_risk
+        from src.models import CoverageLevel
+
+        others = [self._gap("Accountability", CoverageLevel.INSUFFICIENT_EVIDENCE,
+                            error="LLM quota exhausted")]
+        risk, reason = compute_risk(CoverageLevel.PARTIAL, "Transparency", others)
+        assert "same cluster" not in reason.lower()
+
+    def test_real_gap_neighbour_still_escalates_risk(self):
+        from src.gap_analyzer import compute_risk
+        from src.models import CoverageLevel
+
+        others = [self._gap("Accountability", CoverageLevel.MISSING)]
+        risk, reason = compute_risk(CoverageLevel.PARTIAL, "Transparency", others)
+        assert "same cluster" in reason.lower()
+
+    def test_failed_neighbour_does_not_escalate_priority(self):
+        from src.gap_analyzer import resolve_priority
+        from src.models import CoverageLevel, Priority
+
+        others = [self._gap("Accountability", CoverageLevel.INSUFFICIENT_EVIDENCE,
+                            error="LLM quota exhausted")]
+        assert resolve_priority(CoverageLevel.PARTIAL, "Transparency", others) == Priority.MEDIUM
+
+    def test_real_gap_neighbour_still_escalates_priority(self):
+        from src.gap_analyzer import resolve_priority
+        from src.models import CoverageLevel, Priority
+
+        others = [self._gap("Accountability", CoverageLevel.MISSING)]
+        assert resolve_priority(CoverageLevel.PARTIAL, "Transparency", others) == Priority.HIGH
+
+
+class TestMaturityIndexCalibration:
+    """The composite index scores STAGES, not ordinal ranks.
+
+    `100 * sum(ranks) / (3 * n)` treats the four stages as an interval scale,
+    which asserts that moving from Unaddressed to Emerging is worth exactly as
+    much as moving from Operationalized to Institutionalized. MATURITY_RANK's
+    own comment forbids averaging the ranks; the index did it anyway.
+    """
+
+    @staticmethod
+    def _stages(*labels):
+        from src.gap_analyzer import MATURITY_STAGE_SCORE
+        from src.models import GovernanceMaturity
+        by_name = {
+            "U": GovernanceMaturity.UNADDRESSED,
+            "E": GovernanceMaturity.EMERGING,
+            "O": GovernanceMaturity.DEVELOPING,
+            "I": GovernanceMaturity.ESTABLISHED,
+        }
+        stages = [by_name[x] for x in labels]
+        return round(sum(MATURITY_STAGE_SCORE[s] for s in stages) / len(stages), 1)
+
+    def test_scores_are_monotonic_across_stages(self):
+        from src.gap_analyzer import MATURITY_STAGE_SCORE, MATURITY_RANK
+        ordered = sorted(MATURITY_RANK, key=lambda s: MATURITY_RANK[s])
+        scores = [MATURITY_STAGE_SCORE[s] for s in ordered]
+        assert scores == sorted(scores)
+        assert scores[0] == 0.0
+        assert scores[-1] == 100.0
+
+    def test_creating_a_binding_duty_is_the_largest_step(self):
+        """Emerging→Operationalized is the tier ladder's central claim, so it
+        must not be priced below the step above it."""
+        from src.gap_analyzer import MATURITY_STAGE_SCORE as S
+        from src.models import GovernanceMaturity as G
+        duty_step = S[G.DEVELOPING] - S[G.EMERGING]
+        enforcement_step = S[G.ESTABLISHED] - S[G.DEVELOPING]
+        assert duty_step > enforcement_step
+
+    def test_recognition_without_obligation_scores_exactly_half(self):
+        """A document that names every dimension and binds nobody."""
+        assert self._stages(*(["E"] * 8)) == 50.0
+
+    def test_an_absent_dimension_contributes_nothing(self):
+        assert self._stages(*(["U"] * 8)) == 0.0
+
+    def test_live_corpus_calibration(self):
+        """Measured stage profiles from the real runs. These pin the scale to
+        documents rather than to intuition, so a future tweak has to justify
+        moving a known instrument."""
+        # EU AI Act: six Institutionalized, one Operationalized, one Emerging.
+        assert self._stages("I", "I", "I", "I", "I", "O", "I", "E") == 91.0
+        # Japan, all three instruments read together.
+        assert self._stages("O", "I", "I", "O", "E", "E", "I", "E") == 75.8
+        # Japan's voluntary guidelines alone.
+        assert self._stages("E", "E", "O", "O", "E", "E", "E", "E") == 57.0
+
+    def test_binding_regulation_clearly_outscores_soft_law(self):
+        """Differentiation is the point of the whole scoring system; the
+        gentler scale must not compress it away."""
+        eu = self._stages("I", "I", "I", "I", "I", "O", "I", "E")
+        soft = self._stages("E", "E", "O", "O", "E", "E", "E", "E")
+        assert eu - soft > 30

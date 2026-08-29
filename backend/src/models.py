@@ -47,16 +47,38 @@ class Priority(str, Enum):
 class GovernanceMaturity(str, Enum):
     """Module 1 governance maturity scale — distinct from Coverage.
 
-    Computed deterministically from (a) Coverage level and (b) whether the
-    document specifies operational mechanisms (named body, reporting
-    requirement, enforcement/redress) versus merely acknowledging a principle.
+    Five-stage Institutionalization Scale, each stage a strictly stronger,
+    unambiguous claim than the last:
+
+      Unaddressed      → the dimension is not meaningfully mentioned at all.
+      Emerging         → dimension-relevant terms appear AND the document
+                         signals intent — something is going to be
+                         established/done — but nobody owns it and no duty
+                         has been created.
+      Delegated        → the dimension has an owner or a duty, but not a
+                         working regime: either a named institution carries
+                         it (Assigned, T2) or a single binding duty exists
+                         with nothing enforcing it (Obligatory, T3).
+      Operationalized  → a concrete mechanism exists (a named body/authority
+                         is assigned, or a documented reporting/process
+                         obligation is imposed) but no enforcement,
+                         monitoring, audit, or redress evidence backs it.
+      Institutionalized → a concrete mechanism AND real teeth — enforcement,
+                         monitoring, audit, or redress evidence — are both
+                         present.
+
+    Computed deterministically in compute_governance_maturity() from (a)
+    Coverage level and (b) the operational-mechanism/enforcement signals
+    found in the SAME evidence that grounds the Coverage verdict (never a
+    free LLM judgment call, and never scored from a different evidence pool
+    than the one that justified Coverage — see gap_analyzer.py).
     """
 
-    AD_HOC = "Ad Hoc"
-    DEVELOPING = "Developing"
-    DEFINED = "Defined"
-    MANAGED = "Managed"
-    OPTIMIZED = "Optimized"
+    UNADDRESSED = "Unaddressed"
+    EMERGING = "Emerging"
+    DELEGATED = "Delegated"
+    DEVELOPING = "Operationalized"
+    ESTABLISHED = "Institutionalized"
 
 
 class ModuleCitation(BaseModel):
@@ -95,7 +117,7 @@ class Module1Evaluation(BaseModel):
     # the explainability layer can show WHY a coverage label was validated.
     principle_acknowledged: bool = True
     operational_mechanisms: list[str] = []
-    governance_maturity: GovernanceMaturity = GovernanceMaturity.AD_HOC
+    governance_maturity: GovernanceMaturity = GovernanceMaturity.UNADDRESSED
     maturity_reasoning: str = ""
     document_evidence: list[ModuleCitation] = []
     framework_evidence: list[ModuleCitation] = []
@@ -311,6 +333,11 @@ class GovernanceGap(BaseModel):
     recommendation: str
     risk_level: RiskLevel = RiskLevel.INSUFFICIENT_EVIDENCE
     risk_reason: str = ""
+    # Deterministic description of WHY this dimension carries risk, derived
+    # from the evidence profile. Kept on the gap so the final cross-dimension
+    # risk pass re-applies it instead of falling back to the generic
+    # "Core/Supporting dimension X is partially addressed" sentence.
+    risk_basis: str = ""
     potential_consequence: str = ""
     un_recommendation: str = ""
     framework_synthesis: str = ""
@@ -322,8 +349,18 @@ class GovernanceGap(BaseModel):
     aspects_addressed: list[str] = []
     aspects_missing: list[str] = []
     gap_analysis: str = ""
+    # ── Mechanism breadth: the COVERAGE axis ──
+    # Which framework-required mechanisms this dimension actually provides,
+    # mapped to the normative tier (0-4) of the strongest provision supplying
+    # each, plus the ones nothing supplies. Deliberately independent of the
+    # force verdict: breadth answers "how much of what this dimension needs is
+    # addressed at all", force answers "with what authority". Keeping them
+    # apart is what lets a reader see a document that addresses nearly
+    # everything and binds almost none of it.
+    mechanisms_present: dict[str, int] = {}
+    mechanisms_absent: list[str] = []
     # ── Module 1 + Module 2 (expanded analysis) ──
-    governance_maturity: GovernanceMaturity = GovernanceMaturity.AD_HOC
+    governance_maturity: GovernanceMaturity = GovernanceMaturity.UNADDRESSED
     maturity_reasoning: str = ""
     module_1: Module1Evaluation | None = None
     module_2: Module2Recommendation | None = None
@@ -345,6 +382,27 @@ class GovernanceGap(BaseModel):
     # state, NOT a normal Partial finding — it signals the Coverage label and
     # the generated content drifted apart.
     synthesis_drift_downgraded: bool = False
+    # Ladder-raise review flag: True when the deterministic coverage ladder
+    # (R1/R2) raised the LLM's raw verdict to a level its own
+    # coverage_reasoning contradicts (the reasoning lists explicit gaps —
+    # "does not establish", "no provisions", "lacks" — yet the raised
+    # verdict says Covered/Partial). A review state, not an ordinary finding:
+    # the ladder's own override is held to the same consistency discipline
+    # as LLM output (mirror of synthesis_drift_downgraded).
+    ladder_raise_review_flag: bool = False
+    # Article/recital/section numbers the narrative cited that could NOT be
+    # located in the retrieved source text. Measured on real runs as the
+    # weakest link in the output: article numbers were reliable, but recital
+    # and section numbers were confabulated — a plausible number within a
+    # couple of the correct one, attached to a real obligation the model knew
+    # existed. Surfaced rather than silently dropped so a reader knows which
+    # specific numbers not to rely on.
+    # Real provisions the model recalled from memory: present in the uploaded
+    # document but absent from the evidence retrieved for this dimension.
+    unverifiable_citations: list[str] = []
+    # Numbers that appear NOWHERE in the uploaded document — invented outright.
+    # Separate from the above because the two need different reader responses.
+    fabricated_citations: list[str] = []
 
 
 class EvidenceItem(BaseModel):
