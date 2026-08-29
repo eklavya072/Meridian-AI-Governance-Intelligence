@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 import structlog
 from typing import Any
@@ -9,9 +10,42 @@ import numpy as np
 
 from pydantic import BaseModel, Field
 
+import re as _re
+
 from src.models import DimensionProfile, RetrievalResult
 from src.utils import l2_normalize, reciprocal_rank_fusion, batch_fetch_chunk_metadata
-from src.deterministic import is_low_information_fragment
+from src.deterministic import is_low_information_fragment, _chunk_matches_dimension
+
+
+def _dedup_key(text: str) -> str:
+    """Normalized alphanumeric signature used for near-duplicate detection."""
+    return _re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+
+def _is_near_duplicate(key: str, accepted_keys: list[str]) -> bool:
+    """True when `key` is a containment near-duplicate of something accepted.
+
+    Exact-text dedup is not enough. Chunk boundaries drift between ingestions
+    and overlapping windows re-emit the same passage shifted by a few
+    characters, so the same provision reappears as many textually DISTINCT
+    chunks ("...fostering sustainable growth" vs "...sustainable growth").
+    Measured on the live store after exact-duplicate cleanup: Kenya still held
+    4,973 distinct chunk texts that collapse to just 88 genuinely distinct
+    passages, and the EU AI Act 1,450 that collapse to 359.
+
+    The practical cost is retrieval recall. A fixed candidate budget spent on
+    a corpus that is ~98% near-duplicates surfaces only a few dozen real
+    passages, so the scorer never sees most of the document and reports
+    dimensions as thin when the text is simply never retrieved. Containment
+    catches truncation at either end, which is exactly the shape this
+    artifact takes.
+    """
+    if not key:
+        return True
+    for k in accepted_keys:
+        if key in k or k in key:
+            return True
+    return False
 
 logger = structlog.get_logger()
 
@@ -47,17 +81,40 @@ MODULE3_DIMENSION_RESERVE = int(os.getenv("MODULE3_DIMENSION_RESERVE", "1"))
 # Module 1 — the LLM judges THE DOCUMENT, not the frameworks. 4 chunks
 # (each truncated to ~800 chars) is the minimum that lets a substantive
 # national strategy show its commitments; 3 was starving it to 1-2 chunks.
-DOC_TOP_K = int(os.getenv("MODULE_DOC_TOP_K", "4"))
+# Raised 4 -> 6: confirmed live miss on a long, dense legal text (EU AI
+# Act) where Article 99 (penalties) and Article 50 (disclosure duty) never
+# reached the Accountability/Transparency prompts at 4 — the LLM saw only
+# recital paraphrases and honestly under-reported. This costs LLM PROMPT
+# TOKENS, not extra API REQUESTS (same one call per dimension), so it does
+# not touch the Gemini free-tier request quota.
+DOC_TOP_K = int(os.getenv("MODULE_DOC_TOP_K", "6"))
 MODULE_CHUNK_MAX_CHARS = int(os.getenv("MODULE_CHUNK_MAX_CHARS", "800"))
 
 # Module 3+4 budget (the conditional second call per dimension). Deliberately
 # tight — this call's context stays near the ~10-chunk Module 1+2 budget:
-#   3 implementation chunks + 3 incident chunks + 2 document chunks
+#   3 implementation chunks + 4 incident chunks + 2 document chunks
 # (document chunks are for responsible-agency grounding, per the no-fabrication
 # rule). The carried-forward Module 1+2 gap reasoning travels as TEXT, not
 # re-retrieved chunks, so this call does not balloon in size.
 MODULE3_TOP_K = int(os.getenv("MODULE3_TOP_K", "3"))
-MODULE4_TOP_K = int(os.getenv("MODULE4_TOP_K", "3"))
+MODULE4_TOP_K = int(os.getenv("MODULE4_TOP_K", "4"))
+
+# Module 4 is CASE intelligence — the plural matters. Two knobs keep it that
+# way, and both exist because the raw similarity ranking does not.
+#
+# MODULE4_CANDIDATE_POOL: the incident corpus is wildly uneven (one royal
+# commission report is ~2000 chunks; a court ruling is 4). A generalist harm
+# taxonomy therefore ranks in the top-60 for EVERY dimension and buries the
+# specific case that actually speaks to it. Pulling a wide pool and selecting
+# from it — instead of trusting the first handful — is what gives the smaller,
+# sharper source a chance to be seen.
+#
+# MODULE4_MAX_PER_DOCUMENT: without a cap, one document routinely takes every
+# slot (Accountability, Safety and Fairness each returned the same report 3x
+# before this). Two slots lets a genuinely dominant source stay dominant while
+# still guaranteeing a second, independent case reaches the prompt.
+MODULE4_CANDIDATE_POOL = int(os.getenv("MODULE4_CANDIDATE_POOL", "60"))
+MODULE4_MAX_PER_DOCUMENT = int(os.getenv("MODULE4_MAX_PER_DOCUMENT", "2"))
 MODULE34_DOC_TOP_K = int(os.getenv("MODULE34_DOC_TOP_K", "2"))
 
 # Module buckets are de-duplicated on normalized text (same as the document
@@ -65,6 +122,27 @@ MODULE34_DOC_TOP_K = int(os.getenv("MODULE34_DOC_TOP_K", "2"))
 # the small per-bucket budget. Headroom multiplier: pull extra candidates so
 # dedup can drop redundant text and still fill the budget with DISTINCT content.
 MODULE_DEDUP_HEADROOM = int(os.getenv("MODULE_DEDUP_HEADROOM", "3"))
+
+# Comprehensive-evidence pool: a broad semantic sweep of the workspace
+# document BEYOND the prompt-budget bucket. The LLM judges the document on
+# the small DOC_TOP_K budget; a governance mechanism expressed in the
+# policy's own terminology can rank outside it and be missed. The pool feeds
+# the deterministic ladder's R1/R2 evidence check so a mechanism the prompt
+# never showed can still floor Missing -> Partial instead of being erased.
+# Local, embedding-only operation — no LLM/API cost — so a wider sweep is
+# cheap. Raised (40->60 / 18->24) alongside the hybrid lexical fusion in
+# _retrieve_doc_bucket_multi_query, so the ladder's R1/R2 evidence check
+# sees a genuinely wider net, not just a wider dense-only one.
+EVIDENCE_POOL_CANDIDATES = int(os.getenv("EVIDENCE_POOL_CANDIDATES", "60"))
+EVIDENCE_POOL_MAX = int(os.getenv("EVIDENCE_POOL_MAX", "24"))
+
+# Scoring pool — feeds deterministic pattern scoring, NOT an LLM prompt, so it
+# is sized for document coverage rather than token budget (see
+# retrieve_scoring_pool). Large instruments were being scored from as few as
+# four chunks under the prompt-sized pool, which penalised long statutes
+# purely for being long.
+SCORING_POOL_CANDIDATES = int(os.getenv("SCORING_POOL_CANDIDATES", "300"))
+SCORING_POOL_MAX = int(os.getenv("SCORING_POOL_MAX", "160"))
 
 DIMENSION_PROFILES: dict[str, DimensionProfile] = {}
 
@@ -177,11 +255,86 @@ class RetrievalPipeline:
     def __init__(self, vectorstore):
         self.vectorstore = vectorstore
         self._reranker = None
+        # Per-instance cache (NOT class-level — a class-level dict would
+        # leak every workspace's full chunk text across every analysis run
+        # for the process lifetime). See _workspace_chunk_texts.
+        self._lexical_cache: dict[str, list[tuple[str, str]]] = {}
+        # Per-workspace lock so the 8 concurrent dimension workers (the
+        # analysis loop's bounded-parallel ThreadPoolExecutor) COALESCE into
+        # one real fetch instead of racing: without this, all 8 workers can
+        # hit _workspace_chunk_texts in the same first second, before any of
+        # them has populated the cache, each independently re-fetching the
+        # entire workspace document from Chroma. On a large document (the EU
+        # AI Act runs ~1000+ chunks) that is 7 wasted full-collection fetches
+        # stacking up as real wall-clock time — a self-inflicted latency
+        # regression from the lexical-hybrid fix, not the intended cost of
+        # having it. Locking makes it "fetch once, every worker reads the
+        # same cached list" as originally intended.
+        self._lexical_cache_locks: dict[str, threading.Lock] = {}
+        self._lexical_cache_locks_guard = threading.Lock()
 
     def _get_reranker(self) -> CrossEncoderReranker:
         if self._reranker is None:
             self._reranker = CrossEncoderReranker()
         return self._reranker
+
+    @staticmethod
+    def _select_incident_pool(
+        candidates: list[dict[str, Any]],
+        dimension: str,
+        limit: int,
+        max_per_document: int = MODULE4_MAX_PER_DOCUMENT,
+    ) -> list[dict[str, Any]]:
+        """Pick incident chunks that are on-topic AND from more than one case.
+
+        Two passes over the ranked candidates, both preserving rank order:
+        drop anything the dimension-grounding gate would reject downstream,
+        then allow each source document at most `max_per_document` slots.
+
+        If grounding leaves too few chunks to fill `limit`, the ungrounded
+        remainder backfills in rank order. That is deliberate: gap_analyzer
+        re-checks grounding and drops them anyway, so backfilling cannot put a
+        bad case in the output — but it does keep the LLM's context from
+        collapsing to one or two chunks on a dimension where the corpus is
+        genuinely thin, which reads as "no evidence" rather than "no match".
+        """
+        if not candidates:
+            return []
+
+        grounded: list[dict[str, Any]] = []
+        rest: list[dict[str, Any]] = []
+        for c in candidates:
+            text = c.get("text") or c.get("chunk_text") or ""
+            (grounded if _chunk_matches_dimension(text, dimension) else rest).append(c)
+
+        selected: list[dict[str, Any]] = []
+        overflow: list[dict[str, Any]] = []
+        per_doc: dict[str, int] = {}
+        for c in grounded:
+            md = c.get("metadata") or {}
+            # Fall back to doc_id, then chunk_id: a chunk with no
+            # document_name must not share a cap bucket with every OTHER
+            # unnamed chunk, which would silently cap them collectively at 2.
+            key = str(
+                md.get("document_name")
+                or md.get("doc_id")
+                or c.get("chunk_id")
+                or id(c)
+            )
+            if per_doc.get(key, 0) >= max_per_document:
+                overflow.append(c)
+                continue
+            per_doc[key] = per_doc.get(key, 0) + 1
+            selected.append(c)
+
+        # Overflow before ungrounded: a 3rd chunk of a well-matched case still
+        # beats an off-topic one.
+        for pool in (overflow, rest):
+            if len(selected) >= limit:
+                break
+            selected.extend(pool[: limit - len(selected)])
+
+        return selected[:limit]
 
     def get_or_build_profiles(self) -> dict[str, DimensionProfile]:
         if DIMENSION_PROFILES:
@@ -604,6 +757,155 @@ class RetrievalPipeline:
             key=lambda c: is_low_information_fragment(c.get("text") or ""),
         )
 
+    def _workspace_chunk_texts(self, workspace_id: str) -> list[tuple[str, str]]:
+        """All (chunk_id, text) pairs for one workspace document — a single
+        cheap metadata-only fetch (no vector search), cached per workspace
+        for the life of this pipeline instance so repeated dimension calls
+        don't refetch. A national policy PDF is at most a few hundred
+        chunks, so scoring all of them lexically in Python is trivial."""
+        # Lazy-init: some tests construct RetrievalPipeline via __new__
+        # (bypassing __init__), and this cache is a pure optimization, not
+        # a required piece of state — getattr keeps both paths working.
+        cache = getattr(self, "_lexical_cache", None)
+        if cache is None:
+            cache = {}
+            self._lexical_cache = cache
+        cached = cache.get(workspace_id)
+        if cached is not None:
+            return cached
+
+        # Coalesce concurrent callers onto ONE fetch. The 8-worker analysis
+        # loop can have every dimension call this within the same instant,
+        # before the cache is warm — without a lock, each would independently
+        # re-fetch the entire workspace document from Chroma (real wall-clock
+        # cost on a large document). Per-workspace (not a single global lock)
+        # so unrelated workspaces never block each other.
+        locks_guard = getattr(self, "_lexical_cache_locks_guard", None)
+        if locks_guard is None:
+            # Same defensive fallback as the cache itself (tests via __new__).
+            self._lexical_cache_locks_guard = threading.Lock()
+            self._lexical_cache_locks = {}
+            locks_guard = self._lexical_cache_locks_guard
+        with locks_guard:
+            lock = self._lexical_cache_locks.setdefault(workspace_id, threading.Lock())
+
+        with lock:
+            # Re-check: another thread may have populated the cache while
+            # this one waited for the lock.
+            cached = cache.get(workspace_id)
+            if cached is not None:
+                return cached
+            out: list[tuple[str, str]] = []
+            try:
+                data = self.vectorstore.collection.get(
+                    where={"workspace_id": {"$in": [workspace_id]}},
+                    include=["documents"],
+                )
+                ids = data.get("ids") or []
+                docs = data.get("documents") or []
+                out = [(cid, txt or "") for cid, txt in zip(ids, docs)]
+            except Exception as exc:
+                logger.warning("workspace_chunk_fetch_failed", workspace_id=workspace_id, error=str(exc))
+            self._lexical_cache[workspace_id] = out
+            return out
+
+    def _workspace_document_texts(self, workspace_id: str) -> list[str]:
+        """The workspace's text grouped BY DOCUMENT, one string per file.
+
+        Citation checking needs the division numbering of each instrument kept
+        apart: the India Guidelines enumerate 1-7 and the DPDP Act 1-44, so a
+        single joined string would lend the Guidelines an ordinal they do not
+        have and clear a citation to a "Principle 8" that does not exist.
+        """
+        by_document: dict[str, list[str]] = {}
+        try:
+            data = self.vectorstore.collection.get(
+                where={"workspace_id": {"$in": [workspace_id]}},
+                include=["documents", "metadatas"],
+            )
+            docs = data.get("documents") or []
+            metas = data.get("metadatas") or []
+            for txt, meta in zip(docs, metas):
+                meta = meta or {}
+                key = meta.get("document_name") or meta.get("source_file") or ""
+                by_document.setdefault(key, []).append(txt or "")
+        except Exception as exc:
+            logger.warning(
+                "workspace_document_text_fetch_failed",
+                workspace_id=workspace_id,
+                error=str(exc),
+            )
+            return []
+        return [" ".join(parts) for parts in by_document.values()]
+
+    def _lexical_candidates(
+        self,
+        workspace_id: str,
+        dimension: str,
+        query_texts: list[str],
+        limit: int,
+    ) -> list[tuple[str, float]]:
+        """Keyword/lexical ranking over the FULL workspace document — the
+        hybrid half of retrieval that dense-embedding search (which caps at
+        a candidate window) can silently miss entirely.
+
+        Fixes a confirmed live gap: the EU AI Act's Article 99 penalty
+        regime and Article 50 disclosure duty never reached the Accountability
+        / Transparency dimension prompts because embedding similarity ranked
+        recital/preamble paraphrases above the operative articles within the
+        small candidate window. A term-overlap score against the dimension's
+        own high-precision vocabulary (DIMENSION_CORE_TERMS) plus the query
+        text catches exact statutory language ("penalties", "Article 99",
+        "shall notify") that a paraphrase-trained embedding can under-rank,
+        and — because it scores every chunk in the document, not just the
+        embedding model's top-N — it can surface a chunk dense search never
+        returned as a candidate at all.
+        """
+        from src.deterministic import DIMENSION_CORE_TERMS
+
+        # Core terms (curated, high-precision governance vocabulary — "data
+        # protection", "grievance", "carbon footprint") are kept SEPARATE
+        # from the incidental words in query_texts. query_texts is usually
+        # the dimension's full definition + aspect prose (several sentences,
+        # not a short keyword list), so pooling every >3-char word from it
+        # into one undifferentiated term set let generic overlap with that
+        # prose (articles, connectives, topic-adjacent words) outscore a
+        # chunk that only matches the curated core terms — exactly the
+        # exact-statutory-language signal this hybrid pass exists to protect.
+        # Confirmed live: a chunk containing "Enforce the Data Protection &
+        # Privacy law" (2 core-term hits) ranked below dozens of chunks that
+        # merely shared incidental words with a six-sentence Privacy
+        # definition, so it never reached the lexical top-K at all.
+        core_terms = {t.lower() for t in DIMENSION_CORE_TERMS.get(dimension, ())}
+        query_terms: set[str] = set()
+        for qt in query_texts:
+            query_terms.update(w.lower() for w in qt.split() if len(w) > 3)
+        query_terms -= core_terms
+        if not core_terms and not query_terms:
+            return []
+
+        scored: list[tuple[str, float]] = []
+        for cid, text in self._workspace_chunk_texts(workspace_id):
+            if not text:
+                continue
+            lower = text.lower()
+            core_hits = sum(1 for t in core_terms if t in lower)
+            query_hits = sum(1 for t in query_terms if t in lower)
+            if core_hits == 0 and query_hits == 0:
+                continue
+            # Core-term hits are weighted well above incidental query-prose
+            # overlap — a curated term match is a much stronger signal of
+            # dimension relevance than sharing a handful of common words with
+            # a long definition sentence.
+            weighted_hits = core_hits * 4 + query_hits
+            # Normalize by length so a short, dense hit (a single operative
+            # sentence) isn't buried under a long chunk that merely contains
+            # the term once among unrelated content.
+            score = weighted_hits / (len(lower.split()) + 1) ** 0.5
+            scored.append((cid, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:limit]
+
     def _retrieve_doc_bucket_multi_query(
         self,
         dimension: str,
@@ -626,6 +928,11 @@ class RetrievalPipeline:
         honestly reported Partial/Missing). This restores multi-query recall
         for the document bucket only; module buckets keep their single query
         (they are small, role-tagged framework sets).
+
+        HYBRID: a lexical/keyword rank list (see _lexical_candidates) is
+        RRF-fused alongside the dense rank lists, so exact statutory
+        vocabulary a paraphrase embedding under-ranks — or never returns as
+        a candidate at all — still gets a fair shot at the budget.
         """
         profiles = self.get_or_build_profiles()
         profile = profiles.get(dimension)
@@ -654,13 +961,45 @@ class RetrievalPipeline:
         # Best dense similarity per chunk (max across the query variants) so
         # downstream confidence scoring gets a real 0-1 score instead of 0.0.
         best_sim: dict[str, float] = {}
-        for text in query_texts:
-            emb = self.vectorstore.embed_query(text)
+        # One batched embed call for all query variants (definition +
+        # aspects, typically 4-6 texts) instead of one individual call per
+        # variant — same embeddings, less per-call model overhead. This
+        # function runs twice per dimension (document bucket + evidence
+        # pool), so the saving compounds across the 8-dimension pipeline.
+        try:
+            query_embs = list(self.vectorstore.embedding_service.embed(query_texts))
+            if len(query_embs) != len(query_texts):
+                raise ValueError("batch embed returned mismatched length")
+        except Exception:
+            query_embs = [self.vectorstore.embed_query(t) for t in query_texts]
+        for text, emb in zip(query_texts, query_embs):
             scored = self._query_by_embedding(emb, candidates, where=where)
             if scored:
                 rank_lists.append(scored)
             for cid, sim in scored:
                 best_sim[cid] = max(best_sim.get(cid, 0.0), sim)
+
+        # HYBRID: fuse in a lexical/keyword rank list scored over the WHOLE
+        # workspace document (not just the dense candidate window) — see
+        # _lexical_candidates. This is what lets exact statutory language a
+        # paraphrase embedding under-ranks (or never surfaces as a dense
+        # candidate at all) still win a budget slot.
+        #
+        # Weighted 3x in the fusion, not 1x. A confirmed live miss (Rwanda's
+        # "Enforce the Data Protection & Privacy law" — one line inside an
+        # otherwise-unrelated 2787-char implementation-plan table) ranked #1
+        # on the lexical pass across the ENTIRE workspace corpus, yet still
+        # lost every fused-list slot: with `query_texts` typically expanding
+        # to 4-7 dense variants (definition + aspects), a chunk that merely
+        # ranks decently across several of them accumulates more combined RRF
+        # score than a single rank-0 lexical vote can offset (1/(k+0) from
+        # one list vs. several 1/(k+rank) contributions from many). Appending
+        # the lexical list multiple times gives its exact-term signal real
+        # weight against that dilution without touching the shared, generic
+        # reciprocal_rank_fusion() utility used elsewhere.
+        lexical = self._lexical_candidates(workspace_id, dimension, query_texts, candidates)
+        if lexical:
+            rank_lists.extend([lexical] * 3)
 
         if not rank_lists:
             return []
@@ -685,6 +1024,133 @@ class RetrievalPipeline:
                 },
                 "similarity_score": round(best_sim.get(cid, 0.0), 4),
             })
+        return out
+
+    def retrieve_document_evidence_pool(
+        self,
+        dimension: str,
+        workspace_id: str | None = None,
+        candidates: int = EVIDENCE_POOL_CANDIDATES,
+        max_chunks: int = EVIDENCE_POOL_MAX,
+    ) -> list[dict[str, Any]]:
+        """Broad semantic sweep of the workspace document for a dimension.
+
+        Anti-false-negative net for the Module 1 verdict: the prompt-budget
+        document bucket (DOC_TOP_K) is what the LLM sees, and a governance
+        mechanism expressed in the policy's own terminology can rank outside
+        it. This pool pulls a wider candidate set with the same multi-query
+        RRF (dimension definition + aspects — semantic similarity, NOT a
+        keyword checklist), filters preamble / low-information fragments, and
+        returns the surviving dimension-relevant chunks for the deterministic
+        ladder's R1/R2 comprehensive-evidence check. The ladder only ever
+        reads real chunks (real chunk_ids, real text), so a mechanism the
+        prompt missed can still floor Missing -> Partial instead of being
+        erased into a false Missing.
+        """
+        if not workspace_id:
+            return []
+        raw = self._retrieve_doc_bucket_multi_query(
+            dimension=dimension,
+            dim_query=dimension,
+            workspace_id=workspace_id,
+            candidates=candidates,
+        )
+        filtered = [c for c in raw if not self._is_preamble_chunk(c)]
+        out: list[dict[str, Any]] = []
+        accepted_keys: list[str] = []
+        for c in filtered:
+            text = (c.get("text") or "").strip()
+            if not text:
+                continue
+            if is_low_information_fragment(text):
+                continue
+            # Containment dedup (see _is_near_duplicate). This pool feeds the
+            # LLM prompt, where a duplicate costs tokens AND crowds out a
+            # distinct passage the model would otherwise have seen.
+            key = _dedup_key(text)
+            if _is_near_duplicate(key, accepted_keys):
+                continue
+            accepted_keys.append(key)
+            out.append(c)
+            if len(out) >= max_chunks:
+                break
+        if out:
+            logger.info(
+                "document_evidence_pool_retrieved",
+                dimension=dimension,
+                workspace_id=workspace_id,
+                raw_candidates=len(raw),
+                after_preamble_filter=len(filtered),
+                pool_size=len(out),
+            )
+        return out
+
+    def retrieve_scoring_pool(
+        self,
+        dimension: str,
+        workspace_id: str | None = None,
+        candidates: int = SCORING_POOL_CANDIDATES,
+        max_chunks: int = SCORING_POOL_MAX,
+    ) -> list[dict[str, Any]]:
+        """Wide sweep of the workspace document for DETERMINISTIC scoring.
+
+        Separate from retrieve_document_evidence_pool because the two serve
+        different consumers with opposite constraints:
+
+          - the evidence pool feeds an LLM prompt, so it is deliberately small
+            and aggressively trimmed (preamble filter, 24-chunk cap) to protect
+            the token budget;
+          - this pool feeds regex/pattern scoring in evidence_strength.py,
+            which costs nothing per chunk, so it should see as much of the
+            document as possible.
+
+        Reusing the small prompt-budget pool for scoring was starving the
+        scorer on large instruments: a 144-page regulation returned as few as
+        FOUR chunks for a dimension, and every strength signal was computed
+        from that sliver — so long, dense statutes scored LOWER than short
+        strategies purely because retrieval showed the scorer less of them.
+        That is a document-length artifact, not a governance finding.
+
+        The preamble filter is also deliberately NOT applied here. Recitals and
+        preambles are exactly where a statute states purpose in soft language
+        ("should", "is appropriate to") — the tier system already grades that
+        as weak, so including them adds real signal instead of discarding a
+        large share of the document unscored.
+        """
+        if not workspace_id:
+            return []
+        raw = self._retrieve_doc_bucket_multi_query(
+            dimension=dimension,
+            dim_query=dimension,
+            workspace_id=workspace_id,
+            candidates=candidates,
+        )
+        out: list[dict[str, Any]] = []
+        accepted_keys: list[str] = []
+        for c in raw:
+            text = (c.get("text") or "").strip()
+            if not text:
+                continue
+            if is_low_information_fragment(text):
+                continue
+            # Containment dedup, not exact-match — see _is_near_duplicate for
+            # why exact matching leaves the budget almost entirely full of
+            # re-emitted copies of the same passage.
+            key = _dedup_key(text)
+            if _is_near_duplicate(key, accepted_keys):
+                continue
+            accepted_keys.append(key)
+            out.append(c)
+            if len(out) >= max_chunks:
+                break
+        if out:
+            logger.info(
+                "scoring_pool_retrieved",
+                dimension=dimension,
+                workspace_id=workspace_id,
+                raw_candidates=len(raw),
+                pool_size=len(out),
+            )
         return out
 
     def _enforce_reserve(
@@ -1066,10 +1532,22 @@ class RetrievalPipeline:
                 role_filter=["module_3_implementation"],
                 framework_filter=module3_dimension_frameworks,
             )
-        module4_raw = self.vectorstore.retrieve(
-            query=combined_query,
-            top_k=module4_top_k * 2,
-            role_filter=["module_4_incident"],
+        # Grounding is applied HERE, not only downstream. gap_analyzer re-checks
+        # every incident with the same _chunk_matches_dimension gate before it
+        # writes a Module 4 entry, so an ungrounded chunk retrieved into this
+        # bucket is not merely useless — it silently consumes one of the few
+        # slots and the dimension ends up reporting fewer cases than it paid
+        # for. Privacy was shipping 1 usable case out of 3 for exactly this
+        # reason. Filtering first costs nothing and spends every slot on a
+        # chunk that can actually survive to the output.
+        module4_raw = self._select_incident_pool(
+            self.vectorstore.retrieve(
+                query=combined_query,
+                top_k=max(MODULE4_CANDIDATE_POOL, module4_top_k * 2),
+                role_filter=["module_4_incident"],
+            ),
+            dimension=dimension,
+            limit=module4_top_k * 2,
         )
 
         doc_raw: list[dict[str, Any]] = []

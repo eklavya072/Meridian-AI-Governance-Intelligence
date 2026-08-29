@@ -92,6 +92,104 @@ def test_search_vectorstore_empty():
     assert result == []
 
 
+class _FakePoolCollection:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def query(self, query_embeddings=None, n_results=10, where=None, include=None):
+        ids = [c["chunk_id"] for c in self._chunks]
+        distances = [[1.0 - c.get("score", 0.5) for c in self._chunks]]
+        return {"ids": [ids], "distances": distances}
+
+    def get(self, ids=None, include=None, limit=None, offset=None):
+        out_ids, out_docs, out_mds = [], [], []
+        for c in self._chunks:
+            if ids is None or c["chunk_id"] in ids:
+                out_ids.append(c["chunk_id"])
+                out_docs.append(c["text"])
+                out_mds.append(c["metadata"])
+        return {"ids": out_ids, "documents": out_docs, "metadatas": out_mds}
+
+
+class _FakePoolStore:
+    def __init__(self, chunks):
+        self._chunks = chunks
+        self.collection = _FakePoolCollection(chunks)
+
+    def embed_query(self, text):
+        return [0.0, 1.0]
+
+    def get_chunk(self, chunk_id):
+        for c in self._chunks:
+            if c["chunk_id"] == chunk_id:
+                return c
+        return None
+
+
+LONG_SAFETY_PASSAGE = (
+    "The Authority shall publish an annual report on the safety and "
+    "reliability of high-impact AI systems, including incident records, "
+    "risk assessments, and compliance with the national certification "
+    "scheme, so that the public can independently verify that operators "
+    "meet their obligations under this Act and that oversight remains "
+    "effective and transparent over time."
+)
+
+
+def test_document_evidence_pool_filters_and_dedups():
+    """The comprehensive-evidence pool returns dimension-relevant document
+    chunks while dropping preamble fragments, low-information glossary
+    fragments, and text duplicates — the ladder must never see boilerplate."""
+    chunks = [
+        {"chunk_id": "a1", "text": LONG_SAFETY_PASSAGE,
+         "metadata": {"page_number": 5, "section": "Oversight"},
+         "score": 0.7},
+        # Text duplicate of a1 (recursive split overlap) — must dedup.
+        {"chunk_id": "a1dup", "text": LONG_SAFETY_PASSAGE,
+         "metadata": {"page_number": 6, "section": "Oversight"},
+         "score": 0.6},
+        # Preamble: cover page fragment — must be dropped.
+        {"chunk_id": "toc", "text": "Table of Contents 1 2 3",
+         "metadata": {"page_number": 1, "section": "Front"},
+         "score": 0.9},
+        # Low-information glossary fragment — must be dropped.
+        {"chunk_id": "frag", "text": "Explainability15",
+         "metadata": {"page_number": 12, "section": "Glossary"},
+         "score": 0.8},
+        {"chunk_id": "a2",
+         "text": (
+             "Operators must report serious incidents to the regulator "
+             "without delay, including near-misses and unexpected system "
+             "behaviour, so that emerging risks in high-impact AI "
+             "deployments are logged, investigated, and remediated as "
+             "required by the incident notification obligations of this Act."
+         ),
+         "metadata": {"page_number": 7, "section": "Incidents"},
+         "score": 0.5},
+    ]
+    pipe = RetrievalPipeline.__new__(RetrievalPipeline)
+    pipe.vectorstore = _FakePoolStore(chunks)
+    pipe._reranker = None
+
+    pool = pipe.retrieve_document_evidence_pool(
+        "Safety", "ws-1", candidates=10, max_chunks=10,
+    )
+    ids = [c["chunk_id"] for c in pool]
+    assert "a1" in ids
+    assert "a1dup" not in ids
+    assert "toc" not in ids
+    assert "frag" not in ids
+    assert "a2" in ids
+
+
+def test_document_evidence_pool_empty_without_workspace():
+    pipe = RetrievalPipeline.__new__(RetrievalPipeline)
+    pipe.vectorstore = _FakePoolStore([])
+    pipe._reranker = None
+    assert pipe.retrieve_document_evidence_pool("Safety", None) == []
+    assert pipe.retrieve_document_evidence_pool("Safety", "") == []
+
+
 def test_is_preamble_chunk_uses_metadata_page_number():
     """Regression: page_number lives in metadata (vectorstore.retrieve and
     _retrieve_doc_bucket_multi_query never set it at the top level). Reading
@@ -203,3 +301,83 @@ def test_retrieve_doc_bucket_multi_query_shapes_entries():
         assert entry["metadata"]["framework"] == ""
         # similarity_score must be a real 0-1 value, not None/0 deflation.
         assert 0.0 <= (entry["similarity_score"] or 0.0) <= 1.0
+
+
+def _incident(doc, text, cid=None):
+    return {
+        "chunk_id": cid or f"{doc}-{abs(hash(text)) % 10000}",
+        "text": text,
+        "metadata": {"document_name": doc, "roles": "module_4_incident"},
+    }
+
+
+# Wording that _chunk_matches_dimension accepts for Privacy, and wording it
+# rejects — the tests below depend on the real gate, not a stub, so a change
+# to the dimension vocabulary surfaces here instead of silently in production.
+_PRIVACY = "The agency unlawfully processed personal data and breached data protection law."
+_OFFTOPIC = "The turbine generated additional megawatt hours during the reporting period."
+
+
+def test_incident_pool_drops_chunks_the_grounding_gate_would_reject():
+    from src.deterministic import _chunk_matches_dimension
+    assert _chunk_matches_dimension(_PRIVACY, "Privacy")
+    assert not _chunk_matches_dimension(_OFFTOPIC, "Privacy")
+
+    candidates = [
+        _incident("Off", _OFFTOPIC),
+        _incident("CaseA", _PRIVACY),
+    ]
+    picked = RetrievalPipeline._select_incident_pool(candidates, "Privacy", limit=1)
+    assert [c["metadata"]["document_name"] for c in picked] == ["CaseA"]
+
+
+def test_incident_pool_caps_slots_per_document():
+    candidates = [_incident("CaseA", f"{_PRIVACY} Paragraph {i}.") for i in range(5)]
+    candidates += [_incident("CaseB", f"{_PRIVACY} Separate matter.")]
+    picked = RetrievalPipeline._select_incident_pool(
+        candidates, "Privacy", limit=3, max_per_document=2
+    )
+    names = [c["metadata"]["document_name"] for c in picked]
+    assert names.count("CaseA") == 2
+    assert "CaseB" in names
+
+
+def test_incident_pool_backfills_rather_than_returning_short():
+    # Only one grounded chunk exists, but the caller asked for three. The
+    # ungrounded remainder fills the gap (gap_analyzer re-checks and drops
+    # them) so the prompt does not collapse to a single chunk.
+    candidates = [
+        _incident("CaseA", _PRIVACY),
+        _incident("Off", _OFFTOPIC + " One."),
+        _incident("Off", _OFFTOPIC + " Two."),
+    ]
+    picked = RetrievalPipeline._select_incident_pool(candidates, "Privacy", limit=3)
+    assert len(picked) == 3
+    assert picked[0]["metadata"]["document_name"] == "CaseA"
+
+
+def test_incident_pool_overflow_outranks_ungrounded():
+    candidates = [_incident("CaseA", f"{_PRIVACY} Para {i}.") for i in range(3)]
+    candidates.append(_incident("Off", _OFFTOPIC))
+    picked = RetrievalPipeline._select_incident_pool(
+        candidates, "Privacy", limit=3, max_per_document=2
+    )
+    assert [c["metadata"]["document_name"] for c in picked] == ["CaseA"] * 3
+
+
+def test_incident_pool_does_not_share_a_cap_bucket_across_unnamed_chunks():
+    # Three chunks with no document_name are three different sources as far as
+    # the cap is concerned; bucketing them together would cap them at 2.
+    candidates = []
+    for i in range(3):
+        c = _incident("", f"{_PRIVACY} Item {i}.", cid=f"loose-{i}")
+        c["metadata"]["document_name"] = ""
+        candidates.append(c)
+    picked = RetrievalPipeline._select_incident_pool(
+        candidates, "Privacy", limit=3, max_per_document=2
+    )
+    assert len(picked) == 3
+
+
+def test_incident_pool_handles_no_candidates():
+    assert RetrievalPipeline._select_incident_pool([], "Privacy", limit=4) == []

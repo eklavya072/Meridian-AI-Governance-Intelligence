@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 import structlog
@@ -283,7 +284,17 @@ def recursive_character_split(
         # 21,744 live chunks) — each 2800-char window re-emitted 1400 chars of
         # the previous one. 700 chars of overlap keeps cross-boundary context
         # while roughly halving redundant index weight and duplicate chunks.
-        overlap_chars = MAX_CHUNK_CHARS // 4
+        # Measured against the chunk actually emitted, not the maximum. A
+        # sentence boundary can land as little as 101 chars past `start`, and
+        # a flat 700-char overlap then put `end - overlap_chars` BEHIND
+        # `start`: the `start + 1` floor took over and the window crawled
+        # forward one character at a time, re-emitting the same passage on
+        # every pass. The EU AI Act carried runs of chunks 695, 692, 689 chars
+        # long — each a three-character shift of the last — and 514 of its
+        # 1,707 chunks sat in a duplicate set. Taking the quarter from
+        # `end - start` keeps the stride at 75% of whatever was emitted, so
+        # progress is always proportional to the chunk.
+        overlap_chars = min(MAX_CHUNK_CHARS // 4, (end - start) // 4)
         carry_start = max(end - overlap_chars, start + 1)
         next_para = text.find("\n\n", carry_start)
         if next_para != -1 and next_para < end + MAX_CHUNK_CHARS:
@@ -292,6 +303,24 @@ def recursive_character_split(
             start = carry_start
 
     return chunks
+
+
+# Chunk ids are derived from the document plus the chunk's own text rather than
+# minted fresh on every ingestion. Re-running an analysis re-ingests every
+# document in the workspace, and a uuid4 per chunk meant an unchanged file came
+# back under an entirely new set of ids: evidence carried over from a cached
+# dimension then pointed at chunks that no longer existed, and every one of its
+# citations failed the identity check while the dimension itself was fine. Same
+# bytes in, same ids out.
+_CHUNK_ID_NAMESPACE = uuid.UUID("b8f2c1a4-6d3e-4f27-9a5b-0c7e1d8a3f64")
+
+
+def _deterministic_chunk_id(doc_key: str, ordinal: int, text: str) -> str:
+    # Ordinal alone is not enough (re-chunking can shift boundaries) and text
+    # alone is not enough (statutes repeat identical sentences); together they
+    # are stable for an unchanged file and distinct for a changed one.
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    return str(uuid.uuid5(_CHUNK_ID_NAMESPACE, f"{doc_key}|{ordinal}|{digest}"))
 
 
 def ingest_document(
@@ -353,6 +382,12 @@ def ingest_document(
             else:
                 chunk_lengths.append(len(c.text))
         all_chunks.extend(chunks)
+
+    # Assigned before the non-English filter below, so dropping a chunk never
+    # renumbers the ones that survive.
+    doc_key = "|".join((workspace_id or "", framework_name or "", file_path.name))
+    for ordinal, chunk in enumerate(all_chunks):
+        chunk.chunk_id = _deterministic_chunk_id(doc_key, ordinal, chunk.text)
 
     if framework_name is not None:
         kept: list[Chunk] = []

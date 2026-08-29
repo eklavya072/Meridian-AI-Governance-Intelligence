@@ -4,6 +4,7 @@ Unit tests for structure-aware chunking.
 
 import pytest
 from src.ingestion import (
+    _deterministic_chunk_id,
     structure_aware_split,
     recursive_character_split,
     Chunk,
@@ -134,3 +135,89 @@ class TestRecursiveCharacterSplit:
             chunk2_start = chunks[1].text[:100]
             overlap = len(set(chunk1_end.split()) & set(chunk2_start.split()))
             assert overlap > 0, "Expected some overlap between consecutive chunks"
+
+
+class TestDeterministicChunkIds:
+    """Re-running an analysis re-ingests every document in the workspace. With
+    a uuid4 per chunk an unchanged file came back under a whole new set of ids,
+    so evidence restored from a cached dimension cited chunks that no longer
+    existed — 11 of India's 49 citations failed the identity check while the
+    dimensions themselves were fine."""
+
+    def test_same_document_yields_same_ids(self):
+        key = "ws-1||policy.pdf"
+        first = [_deterministic_chunk_id(key, i, t) for i, t in enumerate(["alpha", "beta"])]
+        second = [_deterministic_chunk_id(key, i, t) for i, t in enumerate(["alpha", "beta"])]
+        assert first == second
+
+    def test_different_documents_do_not_collide(self):
+        a = _deterministic_chunk_id("ws-1||a.pdf", 0, "same text")
+        b = _deterministic_chunk_id("ws-1||b.pdf", 0, "same text")
+        assert a != b
+
+    def test_repeated_text_stays_distinct(self):
+        """Statutes repeat identical sentences; position keeps them apart."""
+        a = _deterministic_chunk_id("ws-1||act.pdf", 3, "shall be prescribed")
+        b = _deterministic_chunk_id("ws-1||act.pdf", 9, "shall be prescribed")
+        assert a != b
+
+    def test_edited_document_changes_the_id(self):
+        before = _deterministic_chunk_id("ws-1||policy.pdf", 0, "original")
+        after = _deterministic_chunk_id("ws-1||policy.pdf", 0, "revised")
+        assert before != after
+
+
+class TestWindowAlwaysAdvances:
+    """A short chunk made the window crawl one character at a time.
+
+    The overlap was a quarter of the MAXIMUM chunk size — a fixed 700 chars —
+    rather than a quarter of the chunk actually emitted. When a sentence
+    boundary landed early the chunk came out shorter than that, so
+    `end - overlap_chars` fell behind `start`, the `max(..., start + 1)` guard
+    took over, and the window advanced by a single character. Each pass
+    re-emitted almost the same passage: the live EU AI Act index held runs of
+    chunks 695, 692, 689, 686 chars long, every one a three-character shift of
+    the last, and 514 of its 1,707 chunks sat in a duplicate set.
+
+    Retrieval pays for this directly. A candidate sweep spends its budget on
+    near-identical windows, so the scorer sees a fraction of the distinct
+    passages the candidate count implies.
+    """
+
+    # One short sentence, then a long stretch with no sentence punctuation:
+    # the last boundary inside the 2800-char window sits at ~600, well under
+    # the 700-char overlap.
+    EARLY_BOUNDARY_TEXT = ("A" * 598) + ". " + ("B " * 3000)
+
+    def _chunks(self, text):
+        from src.ingestion import recursive_character_split
+        return recursive_character_split(text, {"source_file": "t.pdf"}, "Section", None, None)
+
+    def test_the_window_does_not_crawl(self):
+        chunks = self._chunks(self.EARLY_BOUNDARY_TEXT)
+        # A 6.6k text split into ~600-2800 char windows is a couple of dozen
+        # chunks at the very most. The crawl produced thousands.
+        assert len(chunks) < 50, f"window crawled: {len(chunks)} chunks"
+
+    def test_consecutive_chunks_are_not_near_identical(self):
+        texts = [c.text for c in self._chunks(self.EARLY_BOUNDARY_TEXT)]
+        for a, b in zip(texts, texts[1:]):
+            shorter = min(len(a), len(b))
+            if shorter < 50:
+                continue
+            # Whatever the overlap policy, one chunk must never be a
+            # near-complete copy of its neighbour.
+            assert not (a[:shorter] == b[:shorter] and abs(len(a) - len(b)) < 10), (
+                f"near-duplicate neighbours: {len(a)} vs {len(b)} chars"
+            )
+
+    def test_no_exact_duplicate_chunks(self):
+        texts = [c.text for c in self._chunks(self.EARLY_BOUNDARY_TEXT)]
+        assert len(texts) == len(set(texts)), "the same passage was emitted twice"
+
+    def test_the_whole_text_is_still_covered(self):
+        """Guarding progress must not skip content."""
+        chunks = self._chunks(self.EARLY_BOUNDARY_TEXT)
+        joined = "".join(c.text for c in chunks)
+        assert joined.count("A") >= 598
+        assert joined.count("B") >= 3000
