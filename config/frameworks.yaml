@@ -414,3 +414,113 @@ frameworks:
     roles: ["module_4_incident"]
     source_type: incident_record
 
+  # These 11 were ingested (some for Module 4 case intelligence, two as
+  # general Module 2 practice sources) but never registered here, so the
+  # Framework Library page never listed them even though their chunks were
+  # live and their citations were appearing in real analyses — an analysis
+  # citing one of these was correct, just invisible on the library page.
+  # No source PDF survives on disk for any of the eleven (same situation as
+  # Allegheny above), so local_path is null throughout. Where the source is
+  # an arXiv preprint the id is verifiable and the URL is filled in; for the
+  # court records, regulatory notices and news pieces no official URL was
+  # confirmed, so pdf_url/website are left null rather than guessed.
+
+  - name: "SyRI Judgment — Algorithmic Accountability Lessons from a Landmark Case"
+    pdf_url: null
+    website: null
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "Auditing a Dutch Public Sector Risk Profiling Algorithm"
+    pdf_url: "https://arxiv.org/abs/2502.01713"
+    website: "https://arxiv.org/abs/2502.01713"
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "DWP Universal Credit Advances Model — February 2024 Fairness Analysis Summary Report"
+    pdf_url: null
+    website: null
+    version: "2024"
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident", "module_2_practical"]
+    source_type: incident_record
+
+  - name: "Mobley v. Workday — AI Vendor Liability Under the Agent Theory"
+    pdf_url: null
+    website: null
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "Mobley v. Workday — Collective Certification and Emerging Liability for AI Hiring Tools"
+    pdf_url: null
+    website: null
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "Italy's First GenAI GDPR Fine — Garante v. OpenAI (EUR 15 Million)"
+    pdf_url: null
+    website: null
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "Maryland Lawmakers and PJM — Who Pays for the Data Centre Power Surge"
+    pdf_url: null
+    website: null
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "Systemic Environmental Risks of Artificial Intelligence — Expert Assessment (Gesellschaft fur Informatik)"
+    pdf_url: "https://arxiv.org/abs/2512.11863"
+    website: "https://arxiv.org/abs/2512.11863"
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident", "module_2_practical"]
+    source_type: incident_record
+
+  - name: "The Mechanisms of AI Harm — Lessons Learned from AI Incidents"
+    pdf_url: null
+    website: null
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_4_incident"]
+    source_type: incident_record
+
+  - name: "Open Problems in AI Incident Governance"
+    pdf_url: "https://arxiv.org/abs/2607.05163"
+    website: "https://arxiv.org/abs/2607.05163"
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+    source_type: framework
+
+  - name: "Impact Matters — An Audit Method to Evaluate AI Projects"
+    pdf_url: "https://arxiv.org/abs/2601.13936"
+    website: "https://arxiv.org/abs/2601.13936"
+    version: null
+    checksum: null
+    local_path: null
+    roles: ["module_2_practical"]
+    source_type: framework
+
