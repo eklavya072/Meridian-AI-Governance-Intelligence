@@ -62,9 +62,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
 COPY backend/ ./
-# The backend reads config/frameworks.yaml, which lives at the repo root —
-# so the build context is the root and the config is copied explicitly.
-COPY config/ /app/config/
+# Config lives at /opt/config, NOT under /app, for the same reason the
+# virtualenv does: docker-compose.yml bind-mounts ./backend onto /app for hot
+# reload, and anything the image put under /app is invisible once that mount
+# is in place. /app/config was hidden exactly that way and /frameworks
+# returned 500 in the compose stack while passing in the standalone
+# container.
+COPY config/ /opt/config/
 
 # ── models ───────────────────────────────────────────────────────────────
 # The embedding model is baked into a layer rather than fetched on first use.
@@ -99,7 +103,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/opt/hf \
-    HF_HUB_OFFLINE=1
+    HF_HUB_OFFLINE=1 \
+    FRAMEWORKS_CONFIG_PATH=/opt/config/frameworks.yaml
 
 CMD ["pytest", "-q"]
 
@@ -131,13 +136,14 @@ WORKDIR /app
 COPY --from=builder --chown=meridian:meridian /opt/venv /opt/venv
 COPY --from=models --chown=meridian:meridian /opt/hf /opt/hf
 COPY --chown=meridian:meridian backend/ ./
-COPY --chown=meridian:meridian config/ /app/config/
+COPY --chown=meridian:meridian config/ /opt/config/
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/opt/hf \
     HF_HUB_OFFLINE=1 \
+    FRAMEWORKS_CONFIG_PATH=/opt/config/frameworks.yaml \
     CHROMA_PERSIST_DIR=/app/data/chroma
 
 # Writable state lives under /app/data so the root filesystem can be mounted
