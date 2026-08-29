@@ -1,20 +1,43 @@
 [![CI](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/workflows/ci.yml)
+[![Release](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/workflows/release.yml/badge.svg)](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/workflows/release.yml)
 
 # Meridian — AI Governance Intelligence Workbench
 
-**Meridian** analyzes national AI policy documents against international governance
-frameworks and produces an evidence-verified, decision-ready assessment. Upload a
-policy PDF — a national AI strategy, a sectoral framework, a draft bill — and
-Meridian evaluates it across **8 governance dimensions**, grounded in a curated
-corpus of **international standards** (OECD AI Principles, UNESCO Recommendation,
-EU AI Act, NIST AI RMF, UN Global Digital Compact, and more), then generates an
-executive brief you can export as PDF or DOCX.
+A government analyst uploads a national AI policy — a strategy, a framework, a
+draft bill — and gets back a brief that says, dimension by dimension, what the
+document actually commits to and what it leaves open. Every sentence in it
+points at a specific passage of the document it came from, so a reader who
+disagrees can go and check.
 
-Every verdict is backed by **verifiable citations** — every quoted excerpt is
-traced to a real chunk of a real document and checked programmatically: the
-chunk exists, the page matches, and the excerpt is semantically consistent with
-the chunk it was drawn from. Nothing is invented: where the evidence doesn't
-support a claim, Meridian says so.
+```bash
+docker pull ghcr.io/eklavya072/meridian:latest
+```
+
+Public, no account needed, `linux/amd64` and `linux/arm64`. Or run the whole
+stack — API, Postgres, frontend, Azurite — from a clean clone:
+
+```bash
+make up && make ready
+```
+
+**Live demo:** not yet deployed.
+
+## Measured
+
+Every number here comes from a recorded run; see
+[docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) for the hardware, model versions
+and dates. Anything unmeasured says so rather than carrying an estimate.
+
+| | |
+|---|---|
+| Tests | **743 passed, 18 skipped** |
+| Coverage (`src`) | **59.5%** — CI gate 58%, set from measurement |
+| Production image | **1,869 MB** (down from 5,683 MB) |
+| Vulnerabilities at first scan | **161** (3 CRITICAL, 16 HIGH, 60 MEDIUM, 75 LOW) |
+| Fixable HIGH/CRITICAL | **3 → 0**, all fixed at source; `.trivyignore` is empty |
+| SBOM | 237 packages, SPDX 2.3, attached to every release |
+| Citation check accepts | **88.7%** of excerpts that appear verbatim in the chunk they cite |
+| End-to-end analysis latency | *not measured* |
 
 ---
 

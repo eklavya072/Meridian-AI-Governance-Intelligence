@@ -175,13 +175,15 @@ from pretending it is not there.
 
 | | |
 |---|---|
-| Result | 721 passed, 9 skipped |
+| Result | 743 passed, 18 skipped |
 | Wall clock | ~10 s |
-| Coverage (`src`) | **60%** (8,619 statements, 3,485 missed) |
+| Coverage (`src`) | **59.5%** (8,832 statements, 3,575 missed) |
 
-The 9 skips are deliberate: 5 evaluation tests behind `RUN_EVALUATION_TESTS=1`
-(they need an indexed corpus), 3 integration tests behind
-`RUN_INTEGRATION_TESTS=1`, and 1 needing a PDF with a real text layer.
+The 18 skips are deliberate and all need external state: 9 Azurite storage
+integration tests (they run in CI, where Azurite is a service container),
+5 evaluation tests behind `RUN_EVALUATION_TESTS=1` (an indexed corpus),
+3 integration tests behind `RUN_INTEGRATION_TESTS=1`, and 1 needing a PDF
+with a real text layer.
 
 Lowest-covered modules, honestly: `tasks.py` 0%, `workspace.py` 0%,
 `chat.py` 10%, `governance_advisor.py` 17%, `llm_provider.py` 24%,
@@ -190,9 +192,26 @@ so it catches regression without being aspirational.
 
 ---
 
+## Published image
+
+**Date:** 2026-08-30 · Verified by fetching an anonymous pull token from
+ghcr.io with no credentials, then requesting the manifest index.
+
+```
+docker pull ghcr.io/eklavya072/meridian:latest
+```
+
+| | |
+|---|---|
+| Anonymous manifest fetch | HTTP 200 |
+| Platforms | `linux/amd64`, `linux/arm64` |
+| Digest | `sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0` |
+
+---
+
 ## Not yet measured
 
 - End-to-end analysis latency (p50/p95/p99), throughput, error rate, peak memory
 - Live vs replay pipeline cost
-- Container image size and cold-start time
-- Vulnerability counts before and after remediation
+- OpenTelemetry span timings per pipeline stage
+- Provider failover behaviour under a real 429 storm
