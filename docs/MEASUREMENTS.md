@@ -101,6 +101,73 @@ this same dataset.
 
 ---
 
+## Container image
+
+**Date:** 2026-08-30 · Measured in CI on `ubuntu-latest`, `linux/amd64`.
+
+| | Size |
+|---|---|
+| Before | **5,683 MB** |
+| After removing the CUDA stack | **1,869 MB** (−67%) |
+
+torch's default PyPI wheel bundles the NVIDIA CUDA runtime — 43 `nvidia-*`
+packages, one of them a single 542 MB wheel. Meridian runs `bge-small` on CPU
+and has no GPU code path, so Linux now resolves torch from PyTorch's CPU
+index. macOS stays on PyPI, whose darwin wheels are already CPU-only.
+
+Remaining size is dominated by torch itself (~500 MB CPU), plus
+`sentence-transformers`, `chromadb` and the ~130 MB baked-in embedding model.
+The model is deliberate: startup otherwise makes a network call to
+huggingface.co before it can serve, and a DNS failure during one has already
+taken this API down.
+
+---
+
+## Vulnerability scan
+
+**Date:** 2026-08-30 · `trivy` in the release pipeline, scanning the built
+`prod` image before it is pushed.
+
+### Baseline — first scan
+
+| Severity | Count |
+|---|---|
+| CRITICAL | 3 |
+| HIGH | 16 |
+| MEDIUM | 60 |
+| LOW | 75 |
+| UNKNOWN | 7 |
+| **Total** | **161** |
+
+The gate covers HIGH/CRITICAL **with a fix available** (`--ignore-unfixed`).
+Three qualified, and the gate blocked the push while the image was still
+private — which is the reason the scan runs before the push rather than after.
+
+### What was fixed, and how
+
+All three were fixed at source. **`.trivyignore` is empty** — nothing has been
+allowlisted.
+
+| Package | Advisory | Resolution |
+|---|---|---|
+| `openssl` / `libssl3t64` 3.5.6-1~deb13u2 | CVE-2026-14456 (HIGH) | The base image tag lags the Debian security archive. The base stage now runs `apt-get upgrade`, pulling 3.5.7-1~deb13u2. |
+| `setuptools` 70.3.0 | CVE-2025-47273 (HIGH) | Not a Meridian dependency — vendored inside the base image's `pip`. Our locked setuptools is 84.0.0. |
+| `msgpack` 1.1.2 | GHSA-6v7p-g79w-8964 (HIGH) | Also vendored inside `pip`; nothing in the project depends on msgpack. |
+
+The last two were resolved together by removing `pip` from the production
+stage. The application runs entirely from `/opt/venv` and never invokes the
+system installer, so a package manager in a production image was surface with
+no purpose.
+
+The remaining CRITICAL/HIGH findings have no fix available upstream
+(`chromadb` CVE-2026-45829, `perl-base` CVE-2026-13221, `ncurses`
+CVE-2025-69720 and others). They are reported and tracked in the Security tab
+via SARIF, and are not suppressed — `--ignore-unfixed` means the gate does not
+fail on something this repository cannot act on, which is a different thing
+from pretending it is not there.
+
+---
+
 ## Test suite
 
 **Date:** 2026-08-30 · Measured on the environment above, against a clean
