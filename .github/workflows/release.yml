@@ -92,7 +92,7 @@ jobs:
       # the full count, so the numbers in docs/MEASUREMENTS.md come from a
       # real run. The second is the gate.
       - name: Trivy scan (full inventory, informational)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: meridian:scan
           format: table
@@ -110,7 +110,7 @@ jobs:
           cat trivy-full.txt
 
       - name: Trivy scan (gate — fails on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: meridian:scan
           format: table
@@ -125,7 +125,7 @@ jobs:
 
       - name: Trivy scan (SARIF for the Security tab)
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: meridian:scan
           format: sarif
@@ -143,7 +143,7 @@ jobs:
 
       # ── SBOM ──────────────────────────────────────────────────────────
       - name: Generate an SBOM with syft
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@v0.24.2
         with:
           image: meridian:scan
           format: spdx-json
