@@ -1,10 +1,29 @@
+# Secrets — never in a build context, never in a layer.
 .env
+.env.*
+
+# Local virtualenvs. The image builds its own from uv.lock; copying a macOS
+# venv into a linux image would also ship ~1.7GB of wrong-platform wheels.
 .venv
 venv
+
+# Local state. data/ holds the 447MB Chroma index, the uploaded PDFs and the
+# incident backups — it is a runtime volume, not build input, and including
+# it would dominate both the context upload and the image.
+data/
+
+# Caches
 __pycache__
 *.pyc
 .pytest_cache
-data/
-tests/
-eval/
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov/
+
+# tests/ is deliberately NOT ignored. CI runs pytest inside the built image so
+# the suite exercises the artifact that ships rather than a look-alike
+# environment; excluding them made that impossible. They cost ~350KB and are
+# absent from the prod runtime only in the sense that nothing invokes them.
+
 *.log

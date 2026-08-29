@@ -5,7 +5,7 @@ cites, and characterises the claim/chunk pair three ways:
 
   containment  — is the quoted excerpt literally inside the chunk text
   embedding    — bge-small cosine, the check that runs today
-  nli          — deberta entailment, the check the README claims runs
+  nli          — deberta entailment, available behind a flag
 
 No Gemini calls. Everything below reads Postgres, Chroma and local models.
 """
@@ -14,13 +14,16 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import re
 import statistics
 import sys
 import time
 
-sys.path.insert(0, "/Users/ed/Tech Projects/Meridian/Meridian/backend")
-os.environ.setdefault("CHROMA_PERSIST_DIR", "/Users/ed/Tech Projects/Meridian/Meridian/backend/data/chroma")
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+os.environ.setdefault(
+    "CHROMA_PERSIST_DIR", str(pathlib.Path(__file__).resolve().parent / "data" / "chroma")
+)
 
 import psycopg2  # noqa: E402
 
@@ -84,8 +87,10 @@ def main() -> None:
 
     # ── containment ────────────────────────────────────────────────────
     contained = sum(1 for p in resolved if normalise(p["claim"]) in normalise(p["chunk_text"]))
-    print(f"\nquoted excerpt is literally inside its cited chunk: "
-          f"{contained}/{len(resolved)} ({contained / len(resolved):.1%})")
+    print(
+        f"\nquoted excerpt is literally inside its cited chunk: "
+        f"{contained}/{len(resolved)} ({contained / len(resolved):.1%})"
+    )
 
     # ── embedding path (what runs today) ───────────────────────────────
     from src.utils import cosine_similarity
@@ -105,10 +110,12 @@ def main() -> None:
     print(f"  passes            {embed_pass}/{len(sims)} ({embed_pass / len(sims):.1%})")
     print(f"  cosine mean/med   {statistics.mean(sims):.3f} / {statistics.median(sims):.3f}")
     print(f"  cosine min/max    {min(sims):.3f} / {max(sims):.3f}")
-    print(f"  latency/pair      {embed_secs / len(resolved) * 1000:.1f} ms  "
-          f"({embed_secs:.1f}s total, 2 embeds per pair)")
+    print(
+        f"  latency/pair      {embed_secs / len(resolved) * 1000:.1f} ms  "
+        f"({embed_secs:.1f}s total, 2 embeds per pair)"
+    )
 
-    # ── NLI path (what the README claims) ──────────────────────────────
+    # ── NLI path (opt-in; see docs/MEASUREMENTS.md) ────────────────────
     if os.getenv("RUN_NLI", "1") != "1":
         return
 
@@ -149,7 +156,7 @@ def main() -> None:
     labels = [label(r) for r in scores]
     from collections import Counter
 
-    dist = Counter(l for l, _ in labels)
+    dist = Counter(name for name, _ in labels)
     # verify.py counts SUPPORTS and PARTIALLY_SUPPORTS as passing.
     nli_pass = dist["supports"] + dist["partially_supports"]
     print(f"  passes            {nli_pass}/{len(labels)} ({nli_pass / len(labels):.1%})")
@@ -161,14 +168,18 @@ def main() -> None:
         for p, (lab, _) in zip(resolved, labels)
         if (p["embed_sim"] >= THRESHOLD) == (lab in ("supports", "partially_supports"))
     )
-    print(f"\nagreement between the two paths: {agree}/{len(resolved)} ({agree / len(resolved):.1%})")
+    print(
+        f"\nagreement between the two paths: {agree}/{len(resolved)} ({agree / len(resolved):.1%})"
+    )
 
     only_embed = [
-        p for p, (lab, _) in zip(resolved, labels)
+        p
+        for p, (lab, _) in zip(resolved, labels)
         if p["embed_sim"] >= THRESHOLD and lab not in ("supports", "partially_supports")
     ]
     only_nli = [
-        p for p, (lab, _) in zip(resolved, labels)
+        p
+        for p, (lab, _) in zip(resolved, labels)
         if p["embed_sim"] < THRESHOLD and lab in ("supports", "partially_supports")
     ]
     print(f"  embedding passes, NLI does not: {len(only_embed)}")

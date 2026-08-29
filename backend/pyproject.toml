@@ -66,6 +66,9 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.14.0",
     "mypy>=1.18.0",
+    # scripts_measure_verification.py reads the stored analyses straight out
+    # of Postgres; the app itself talks to it through asyncpg.
+    "psycopg2-binary>=2.9.10",
 ]
 
 [tool.uv]
