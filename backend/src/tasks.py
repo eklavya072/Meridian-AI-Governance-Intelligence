@@ -4,7 +4,6 @@ import asyncio
 import os
 import re
 import time
-from pathlib import Path
 from typing import Any
 
 import structlog
@@ -20,6 +19,7 @@ from src.gap_analyzer import (
 )
 from src.ingestion import ingest_document
 from src.logging_config import log_analysis_run
+from src.storage import get_storage
 from src.vectorstore import VectorStore
 from src.verify import verify_gap_analysis_citations
 from src.workspace import WorkspaceService
@@ -177,16 +177,22 @@ async def run_full_analysis_pipeline(
                 # on reload while an analysis was running. Running them via
                 # to_thread hands the blocking work to a worker thread so the
                 # event loop stays free to serve concurrent requests.
-                doc_chunks = await asyncio.to_thread(
-                    ingest_document,
-                    Path(doc["file_path"]),
-                    framework_name=None,
-                    workspace_id=workspace_id,
-                    # Clean display name for multi-document workspaces: the
-                    # UUID-prefixed storage filename would otherwise leak into
-                    # the prompt source labels and the evidence chain.
-                    document_name=doc_name,
-                )
+                # Resolved through the storage interface: a filesystem
+                # reference yields the file in place, an Azure reference is
+                # downloaded to a temporary file and cleaned up on exit.
+                # ingest_document needs a real path because pypdf does.
+                with get_storage().local_path(doc["file_path"]) as local_pdf:
+                    doc_chunks = await asyncio.to_thread(
+                        ingest_document,
+                        local_pdf,
+                        framework_name=None,
+                        workspace_id=workspace_id,
+                        # Clean display name for multi-document workspaces:
+                        # the UUID-prefixed storage filename would otherwise
+                        # leak into the prompt source labels and the evidence
+                        # chain.
+                        document_name=doc_name,
+                    )
                 # Replace, don't append. Chunk ids are fresh uuid4s per
                 # ingestion, so re-uploading a document would otherwise stack a
                 # second full copy into the workspace and starve retrieval with

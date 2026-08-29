@@ -22,6 +22,31 @@ services:
       timeout: 5s
       retries: 5
 
+  # Azure Blob Storage, locally, with no cloud account and no credentials.
+  # Azurite speaks the real Blob API, so STORAGE_BACKEND=azure exercises the
+  # same code path here, in CI and in production — the only difference is the
+  # connection string. The alternative is an Azure path that first meets
+  # reality after deployment.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    command: ["azurite-blob", "--blobHost", "0.0.0.0", "--skipApiVersionCheck"]
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
+    healthcheck:
+      # Azurite has no shell utilities beyond node, so probe with node itself.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').request({host:'127.0.0.1',port:10000,path:'/devstoreaccount1?comp=list'},r=>process.exit(0)).on('error',()=>process.exit(1)).end()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
@@ -42,6 +67,12 @@ services:
       # The startup sweep of the whole collection is an optimisation that has
       # been OOM-killed on constrained machines; off by default for dev.
       WARM_FRAMEWORK_COUNTS: "0"
+      # Defaults to filesystem, which is byte-for-byte the previous
+      # behaviour. Set STORAGE_BACKEND=azure in .env to route uploads to
+      # Azurite instead; the connection string below is Azurite's published
+      # development credential, identical on every machine and not a secret.
+      AZURE_STORAGE_CONNECTION_STRING: >-
+        DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;
     volumes:
       # Live code for hot reload. The virtualenv lives at /opt/venv precisely
       # so this mount cannot shadow it.
@@ -54,6 +85,8 @@ services:
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       postgres:
+        condition: service_healthy
+      azurite:
         condition: service_healthy
 
   web:
@@ -73,5 +106,6 @@ services:
 
 volumes:
   pgdata:
+  azurite_data:
   chroma_data:
   uploads_data:

@@ -96,6 +96,13 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # Azurite so the Azure storage path is integration-tested on every push
+      # rather than first meeting reality in production.
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite:latest
+        ports:
+          - 10000:10000
+
     steps:
       - uses: actions/checkout@v4
 
@@ -117,6 +124,16 @@ jobs:
 
       - name: Run the suite inside the built image
         run: docker run --rm meridian:test pytest -q
+
+      # The Azure code path, against a real Blob endpoint. Azurite speaks the
+      # actual Blob API, so this exercises the SDK rather than our assumptions
+      # about it — container creation, overwrite semantics and 404 handling
+      # all live there, not in our wrapper.
+      - name: Run the Azure storage integration tests against Azurite
+        run: |
+          docker run --rm --network host \
+            -e AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;" \
+            meridian:test pytest tests/integration/test_azurite_storage.py -q
 
       - name: Build the prod image
         uses: docker/build-push-action@v6
