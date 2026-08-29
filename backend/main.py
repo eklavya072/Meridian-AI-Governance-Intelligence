@@ -424,7 +424,6 @@ async def prometheus_metrics():
     try:
         from src.provider_router import get_provider, key_ids_for, quota_status
 
-        provider = get_provider()
         snap = get_key_registry().snapshot(key_ids_for(get_provider()))
 
         metrics.refresh_provider_gauges(
