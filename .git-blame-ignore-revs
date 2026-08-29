@@ -1,0 +1,6 @@
+# Revisions that are pure formatting. Ignore them in blame:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub reads this file automatically.)
+
+# style: apply ruff check --fix and ruff format across the backend
+6c649de5ce9ceaab18fb2376c2cb279f011ffe85
