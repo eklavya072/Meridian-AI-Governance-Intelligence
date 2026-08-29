@@ -17,16 +17,8 @@ python-magic>=0.4.27
 chromadb>=0.5.0
 sentence-transformers>=3.0.0
 
-# LLM orchestration
-langchain>=0.3.0
-langchain-ollama>=0.2.0
-langchain-community>=0.3.0
-langchain-chroma>=0.2.0
-
-# RAGAS evaluation
+# Gemini SDK
 google-genai>=1.0.0
-ragas>=0.2.0
-datasets>=3.0.0
 
 
 # Structured logging
