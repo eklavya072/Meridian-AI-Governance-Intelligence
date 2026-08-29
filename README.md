@@ -8,10 +8,11 @@ corpus of **international standards** (OECD AI Principles, UNESCO Recommendation
 EU AI Act, NIST AI RMF, UN Global Digital Compact, and more), then generates an
 executive brief you can export as PDF or DOCX.
 
-Every verdict is backed by **verifiable citations** — every claim is traced to a
-real chunk of a real document, checked programmatically (chunk exists, page
-matches, and the passage supports the claim via an NLI cross-encoder). Nothing is
-invented: where the evidence doesn't support a claim, Meridian says so.
+Every verdict is backed by **verifiable citations** — every quoted excerpt is
+traced to a real chunk of a real document and checked programmatically: the
+chunk exists, the page matches, and the excerpt is semantically consistent with
+the chunk it was drawn from. Nothing is invented: where the evidence doesn't
+support a claim, Meridian says so.
 
 ---
 
@@ -148,9 +149,18 @@ baseline (read at startup).
 
 ### Every citation is verified
 
-- Each cited chunk is checked: **does the chunk exist? does the page match?
-  does the passage support the claim?** — the last via an NLI cross-encoder
-  (`cross-encoder/nli-deberta-v3-base`).
+- Each cited chunk is checked three ways: **does the chunk exist? does the page
+  match? is the quoted excerpt consistent with the chunk it came from?** The
+  third is an embedding-similarity check (`BAAI/bge-small-en-v1.5`, cosine
+  >= 0.65) with a keyword-overlap fallback at 0.30.
+- An NLI cross-encoder path (`cross-encoder/nli-deberta-v3-base`) also exists
+  behind `ENABLE_NLI_VERIFICATION=true`, but it is **off by default and that is
+  a measured decision, not an oversight** — see
+  [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md). On the 344 stored citations
+  whose excerpt appears verbatim in the chunk it cites — where fabrication is
+  impossible by construction — the embedding check accepts 88.7% and the NLI
+  check accepts 29.1%. NLI rejected 239 citations the embedding path accepted
+  and accepted none that it rejected.
 - If no retrieved passage supports a claim, the model emits an explicit
   **"no citation"** sentinel — an honest decline, never a fabricated citation.
 - Low-information glossary/index fragments (e.g. "Explainability15" from PDF
@@ -192,7 +202,7 @@ derived from real pipeline state, never an LLM self-assessment.
 | Backend | Python 3.12, FastAPI, SQLAlchemy (async) |
 | Vector store | ChromaDB (persistent, embedded) + `BAAI/bge-small-en-v1.5` embeddings |
 | LLM | **Gemini** (primary; quota-aware routing, per-key RPM/RPD throttles, failover and backoff across configured credentials), **Groq** fallback |
-| Verification | `cross-encoder/nli-deberta-v3-base` NLI cross-encoder |
+| Verification | `BAAI/bge-small-en-v1.5` embedding similarity (default); `cross-encoder/nli-deberta-v3-base` NLI available behind a flag |
 | Database | PostgreSQL 16 |
 | Frontend | Next.js 14 (fully static output), React 18, TypeScript, Tailwind, Motion (Framer Motion), Recharts |
 
@@ -404,7 +414,7 @@ aura-sdg/
 │   │   ├── provider_router.py    # LLM routing: Gemini rotation, throttles, Groq fallback
 │   │   ├── llm_provider.py       # Provider clients (Gemini / Groq)
 │   │   ├── verify.py             # Citation verification (chunk / page / NLI text support)
-│   │   ├── nli_verifier.py       # NLI cross-encoder wrapper
+│   │   ├── nli_verifier.py       # NLI cross-encoder wrapper (opt-in)
 │   │   ├── ingestion.py          # PDF parsing + structure-aware chunking
 │   │   ├── validation.py         # PDF validation (type, size, password, empty, OCR)
 │   │   ├── vectorstore.py        # ChromaDB + embeddings
