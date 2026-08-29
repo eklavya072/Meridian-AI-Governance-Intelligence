@@ -107,7 +107,8 @@ jobs:
       - name: Build the test image
         uses: docker/build-push-action@v6
         with:
-          context: backend
+          context: .
+          file: backend/Dockerfile
           target: test
           load: true
           tags: meridian:test
@@ -120,7 +121,8 @@ jobs:
       - name: Build the prod image
         uses: docker/build-push-action@v6
         with:
-          context: backend
+          context: .
+          file: backend/Dockerfile
           target: prod
           load: true
           tags: meridian:prod
