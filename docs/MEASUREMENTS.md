@@ -209,6 +209,37 @@ docker pull ghcr.io/eklavya072/meridian:latest
 
 ---
 
+## Live pipeline verification after the DevOps work
+
+**Date:** 2026-08-30 · **Gemini calls: 1.** The point was to confirm the real
+analysis path still works after the storage interface, the upload hardening
+and the config-path changes — not to regenerate any stored analysis.
+
+Without Gemini, on a real policy PDF (India AI Governance Guidelines, 0.5 MB,
+8 pages), through the exact path the upload and pipeline now take:
+
+| Step | Result |
+|---|---|
+| `validate_pdf_file` | valid, 0.28 s |
+| `storage.put` → `exists` → `get` | reference resolves, bytes identical |
+| `storage.local_path` → `ingest_document` | 14 chunks in 0.4 s |
+| Chunk ids | deterministic (`ad8784f0-…`), stable across runs |
+
+With Gemini, one small structured call through `generate_with_retry`:
+
+| | |
+|---|---|
+| Model | `gemini-3.6-flash` |
+| Latency | 2.84 s |
+| Result | `T4 Enforceable` for *"a provider who fails to report shall be liable to a penalty"* — the correct tier |
+| RPD counter | 0 → 1, persisted to `data/gemini_rpd.json` |
+
+That last row matters beyond the provider check: `quota_status()` is what
+`/readyz` reports, so the probe and the pipeline are demonstrably reading the
+same counter.
+
+---
+
 ## Not yet measured
 
 - End-to-end analysis latency (p50/p95/p99), throughput, error rate, peak memory
