@@ -30,14 +30,21 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 
 | | |
 |---|---|
-| Tests | **743 passed, 18 skipped** |
-| Coverage (`src`) | **59.5%** — CI gate 58%, set from measurement |
+| Tests | **798 passed, 18 skipped** |
+| Coverage (`src`) | **61.0%** — CI gate 58%, set from measurement |
 | Production image | **1,869 MB** (down from 5,683 MB) |
 | Vulnerabilities at first scan | **161** (3 CRITICAL, 16 HIGH, 60 MEDIUM, 75 LOW) |
 | Fixable HIGH/CRITICAL | **3 → 0**, all fixed at source; `.trivyignore` is empty |
 | SBOM | 237 packages, SPDX 2.3, attached to every release |
 | Citation check accepts | **88.7%** of excerpts that appear verbatim in the chunk they cite |
+| Capacity-exhaustion detection | **9 failed calls**, all credentials open ([INCIDENT-001](docs/INCIDENT-001.md)) |
 | End-to-end analysis latency | *not measured* |
+
+**Operations:** [RUNBOOK.md](docs/RUNBOOK.md) — SLOs with targets and measured
+values kept separate, five failure modes with detection → diagnosis →
+response → recovery, and rollback tied to image digests.
+[INCIDENT-001.md](docs/INCIDENT-001.md) — a 429 storm induced on purpose
+against a mocked provider, with what the signals showed and what the fix was.
 
 ---
 
