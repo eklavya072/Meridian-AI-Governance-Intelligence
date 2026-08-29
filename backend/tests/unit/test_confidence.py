@@ -83,7 +83,13 @@ def test_calibrated_confidence_agreement_factor_improves():
     import src.evidence_agreement
     original_fn = src.evidence_agreement.compute_evidence_agreement_score
 
-    score_no_pairs, _ = compute_calibrated_confidence(evidence, evidence_pairs=[])
+    # evidence_pairs=None (never computed, unknown agreement) is the real
+    # "no signal" baseline — falls back to the neutral 0.5 default.
+    # evidence_pairs=[] is DIFFERENT: it means pairs were actually computed
+    # and there were zero of them to disagree, which is a real, positive
+    # signal (nothing contradicts), not an absence of signal — it correctly
+    # scores at or above the unknown baseline, never below it.
+    score_unknown, _ = compute_calibrated_confidence(evidence, evidence_pairs=None)
 
     from src.models import EvidencePair, EvidenceAgreement
     good_pairs = [
@@ -92,4 +98,78 @@ def test_calibrated_confidence_agreement_factor_improves():
     ]
     score_with_pairs, _ = compute_calibrated_confidence(evidence, evidence_pairs=good_pairs)
 
-    assert score_with_pairs >= score_no_pairs
+    assert score_with_pairs >= score_unknown
+
+
+class TestConfidenceIsNotPenalisedByEvidenceVolume:
+    """Finding MORE supporting evidence must never lower confidence.
+
+    Two factors (evidence_diversity_factor and cross_source_agreement) both
+    divided by total_evidence, so the penalty applied twice inside a
+    seven-factor geometric mean. Measured before the fix: 16 verified,
+    high-similarity, fully-cited items scored 0.462 while 2 identical-quality
+    items scored 0.735. That systematically penalised the best-evidenced
+    documents — a dense binding statute assessed from the single instrument
+    itself scored below a thin strategy with a couple of scattered citations.
+    """
+
+    @staticmethod
+    def _evidence(n, sources, sim=0.85, verified=True):
+        from src.models import RetrievedEvidence
+
+        return [
+            RetrievedEvidence(
+                chunk_id=f"c{i}",
+                text="x" * 80,
+                source_framework=sources[i % len(sources)],
+                similarity_score=sim,
+                verified=verified,
+            )
+            for i in range(n)
+        ]
+
+    def test_more_evidence_from_one_source_does_not_reduce_confidence(self):
+        from src.gap_analyzer import compute_calibrated_confidence
+        from src.models import CoverageLevel
+
+        scores = []
+        for n in (2, 4, 8, 16, 32):
+            score, _ = compute_calibrated_confidence(
+                self._evidence(n, ["policy.pdf"]),
+                coverage_level=CoverageLevel.COVERED,
+                citation_pass_rate=1.0,
+                evidence_pairs=[],
+            )
+            scores.append(score)
+        assert scores == sorted(scores), scores
+
+    def test_additional_independent_sources_increase_confidence(self):
+        from src.gap_analyzer import compute_calibrated_confidence
+        from src.models import CoverageLevel
+
+        one, _ = compute_calibrated_confidence(
+            self._evidence(8, ["s0"]),
+            coverage_level=CoverageLevel.COVERED,
+            citation_pass_rate=1.0,
+            evidence_pairs=[],
+        )
+        three, _ = compute_calibrated_confidence(
+            self._evidence(8, ["s0", "s1", "s2"]),
+            coverage_level=CoverageLevel.COVERED,
+            citation_pass_rate=1.0,
+            evidence_pairs=[],
+        )
+        assert three > one
+
+    def test_weak_evidence_still_scores_low(self):
+        """The fix must not simply inflate everything."""
+        from src.gap_analyzer import compute_calibrated_confidence
+        from src.models import CoverageLevel
+
+        score, _ = compute_calibrated_confidence(
+            self._evidence(3, ["policy.pdf"], sim=0.35, verified=False),
+            coverage_level=CoverageLevel.MISSING,
+            citation_pass_rate=0.0,
+            evidence_pairs=[],
+        )
+        assert score < 0.4

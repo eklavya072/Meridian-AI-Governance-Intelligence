@@ -386,28 +386,90 @@ Evaluate what the uploaded document says about this dimension, using the
 the normative benchmark.
 
 1. coverage: "Covered" | "Partial" | "Missing". Judge by semantic substance,
-   not by exact terminology. A strategy that sets direction on the topic is
-   Covered even without a dedicated section.
+   not by exact terminology, and do NOT require the policy to use the same
+   vocabulary as the reference frameworks — the frameworks are the benchmark
+   for interpreting the policy, not a keyword checklist. Recognise
+   FUNCTIONALLY EQUIVALENT mechanisms expressed in the policy's own words: a
+   provision that serves the dimension's purpose counts even when it never
+   uses the framework's terms (e.g. an advance-notification or labelling duty
+   for transparency, a confidentiality or secrecy duty for privacy, a manual
+   review or non-automated handling right for human oversight, an
+   energy-efficient or green data-centre provision for environmental
+   sustainability). If ANY dimension-relevant provision or mechanism exists
+   but is incomplete, classify "Partial" — not "Missing". Only classify
+   "Missing" when, after considering equivalent terminology, the document
+   contains NO provision serving the dimension's purpose. If a mechanism
+   exists but lacks operational detail, keep the mechanism (list it in
+   operational_mechanisms) and let the maturity assessment reflect the
+   detail gap — do not erase the mechanism by declaring the dimension
+   Missing. A strategy that sets direction on the topic is Covered even
+   without a dedicated section.
+
+   PROCEDURAL AUTHORITY IS NOT A GOVERNANCE MECHANISM: a provision that
+   merely assigns a minister, ministry, agency, or other body a power to
+   approve, support, fund, administer, or announce something is NOT by
+   itself a governance mechanism for the dimension unless the provision
+   actually establishes a requirement that governs the dimension's content.
+   Example: "the Minister may approve or support AI data centres" is NOT
+   an Environmental Sustainability mechanism — it imposes no energy,
+   carbon, or e-waste requirement. Only count such a provision if it
+   imposes a dimension-specific obligation (e.g. data centres must report
+   energy consumption, obtain consent for data, test for bias). A bare
+   procedural power, like a passing principle mention, does not elevate the
+   dimension beyond the level its substantive requirements justify.
 2. gap_detected: true when coverage is Partial or Missing.
-3. reason_flagged: the single most important reason the dimension was flagged.
-   (For Covered coverage this is usually empty — nothing was flagged.)
-4. coverage_reasoning: explain the coverage decision, referencing specific
-   evidence. (For Covered coverage this is usually empty; use
+3. reason_flagged: the single most important reason the dimension was
+   flagged, written for a POLICYMAKER READER — plain language, no internal
+   process vocabulary ("ladder", "R1/R2", "deterministic check", "Level N",
+   "coverage rule"). Say what is actually missing in the document itself
+   (e.g. "No body is named to receive or act on AI incident reports" — not
+   "Rule R1 floor not satisfied"). (For Covered coverage this is usually
+   empty — nothing was flagged.)
+4. coverage_reasoning: explain the coverage decision IN PLAIN LANGUAGE, and
+   NAME THE ACTUAL SPECIFICS from the uploaded document — the real article/
+   section number, the real name of any body/ministry/agency, the real
+   title of any named programme or instrument. Never write a generic
+   sentence that could describe any country's policy ("the document touches
+   on this dimension but lacks detail") — write the sentence so a reader who
+   has never seen the document understands exactly what IS and ISN'T there
+   (e.g. "Article 12 requires the Ministry of Digital Affairs to publish an
+   annual AI transparency report, but no provision gives affected
+   individuals a right to an explanation of a specific automated decision.").
+   Never reference internal process concepts (ladder rules, levels,
+   thresholds) — only the document's own content. Write it as natural
+   analytical prose, not a rote checklist of "body: X, law: Y, policy: Z" —
+   name the specifics because they make the sentence clear, not for their
+   own sake. (For Covered coverage this is usually empty; use
    coverage_example instead.)
 5. coverage_example: ONLY when coverage is "Covered" — give 2-3 concrete
-   examples from the UPLOADED DOCUMENT that led to the Covered conclusion:
-   the substantive commitments, stated directions, principles, or mechanisms
-   the document sets out for this dimension. These are theoretical/substantive
-   examples drawn from the document's content (not verbatim citations). When
-   coverage is Partial or Missing, return "".
+   examples from the UPLOADED DOCUMENT that led to the Covered conclusion.
+   EACH EXAMPLE MUST NAME THE ACTUAL SPECIFIC THING: the real name of the
+   governance body/ministry/authority the document establishes or assigns,
+   the real title of the policy/programme/instrument, or the real article/
+   section that imposes the requirement. NEVER write a generic, could-apply-
+   to-any-country sentence like "the document establishes a governance body
+   and reporting requirements" — write "the document establishes the
+   National AI Safety Board (Section 14) and requires it to publish
+   quarterly compliance reports." If the document does not name something
+   specific enough to cite by name, describe the actual mechanism in the
+   document's own words rather than a generic label. Write these as natural
+   prose, not a rote "body: X, law: Y" listing — the name earns its place
+   because it makes the example concrete, not as a box-ticking exercise.
+   These are theoretical/substantive examples drawn from the document's
+   content (not verbatim citations). When coverage is Partial or Missing,
+   return "".
 6. principle_acknowledged: true if the document acknowledges the dimension's
    principle even in passing (relevant to maturity computation).
 7. operational_mechanisms: list concrete operational mechanisms the document
    actually specifies — a NAMED BODY (commission/board/authority/agency/
    ministry/council/office), a REPORTING REQUIREMENT (annual report, registry,
    register, disclosure), or an ENFORCEMENT/REDRESS mechanism (grievance
-   process, sanctions, audit, oversight, monitoring). If the document only
-   names the principle without any mechanism, return [].
+   process, sanctions, audit, oversight, monitoring). Recognise mechanisms
+   expressed in the policy's own terminology: a duty phrased as "shall",
+   "must", "is required to", or "prohibits" IS a mechanism. If a mechanism
+   exists but lacks operational detail, list it anyway — the maturity and
+   gap reasoning reflect the detail gap, the mechanism is not erased. If the
+   document only names the principle without any mechanism, return [].
 8. document_evidence: citations supporting the evaluation FROM THE UPLOADED
    DOCUMENT ONLY.
 9. framework_evidence: citations FROM MODULE 1 SOURCES establishing the
@@ -445,13 +507,24 @@ write gap-closing recommendations and do NOT set a priority.
 3. future_strengthening_opportunities: 2-3 strengthening opportunities for
    future revisions phrased as "may further strengthen" — refinements, not
    fixes. (Do NOT frame them as optional: to governments, "optional" reads as
-   "ignore".) Each must identify WHICH existing mechanism or practical
-   toolkit step it builds on.
+   "ignore".) EACH ONE MUST NAME THE SPECIFIC EXISTING MECHANISM in THIS
+   document it builds on (the real body/report/programme name) AND the
+   specific practical toolkit step from the MODULE 2 sources it would add.
+   FORBIDDEN: a generic sentence that could be pasted into any country's
+   report unchanged (e.g. "Consider adopting international best practices
+   for transparency" is FORBIDDEN — instead write "Extend the National AI
+   Council's existing annual transparency report (established under
+   Section 9) to include model cards, per the Model Cards for Model
+   Reporting practice.").
 4. international_examples: 2-3 REAL, CITED practices from other countries or
    governance frameworks that exemplify this dimension well. Each MUST carry
    a real chunk_id from the provided context and a brief quote — never invent
-   a country practice or a chunk id. If you cannot ground an example in a
-   real context line, omit it rather than fabricate.
+   a country practice or a chunk id. For EACH example, also write one
+   sentence in "alignment" stating how it relates to what THIS document
+   already does for this dimension — the same underlying approach, a more
+   advanced version of a mechanism the document already has, or a
+   complementary practice the document's own mechanism could adopt next.
+   Never describe the example in isolation from the document.
 5. international_standard_reference: the standard/practice the enhancements
    align to, naming the source.
 6. framework_synthesis: an OBJECT with three labeled fields — consensus,
@@ -460,9 +533,19 @@ write gap-closing recommendations and do NOT set a priority.
    - consensus: ONE sentence stating what the relevant international
      frameworks collectively require for this dimension (e.g. "All three
      frameworks require mandatory transparency obligations.").
-   - differences: ONE short passage on where they diverge (e.g. "UNESCO
-     focuses on rights; NIST focuses on operational transparency; CDEI
-     focuses on public-sector implementation.").
+   - differences: describe how the international frameworks differ from
+     EACH OTHER **and** from what the UPLOADED DOCUMENT itself does — name
+     the document's actual mechanism/body next to the frameworks' approach,
+     and explain why the different approaches still both work for this
+     dimension (e.g. "UNESCO frames this as a rights obligation and NIST as
+     an operational transparency requirement; the uploaded policy takes a
+     third route — its National AI Council publishes model-level disclosure
+     reports rather than individual explanation rights, which satisfies the
+     same underlying transparency goal through institutional reporting
+     instead of individual recourse."). Never leave the document out of this
+     field — a differences passage that only compares frameworks to each
+     other is incomplete. Write it as one flowing analytical passage, not a
+     rote "framework: X, document: Y" listing.
    - overall_assessment: the verdict on how the uploaded policy aligns with
      those requirements. For this branch it is a COMPLIANCE JUSTIFICATION,
      not a recommendation. It must explain how the policy ALREADY satisfies the international expectations
@@ -484,9 +567,27 @@ write gap-closing recommendations and do NOT set a priority.
    future strengthening opportunities and international examples.
 
 ──── BRANCH B — coverage is "Partial" or "Missing" (gap exists) ────
-1. recommendations: 3-6 concrete, implementable actions. Each must identify
-   WHICH existing policy mechanism it extends or WHICH practical toolkit/step
-   (from Module 2 sources) it operationalises. Vary phrasing.
+1. recommendations: 3-6 concrete, implementable actions. EACH ONE MUST NAME
+   THE SPECIFIC EXISTING MECHANISM in the uploaded document it builds on —
+   WHENEVER the document has any related mechanism to build on, even a
+   partial or adjacent one — creating a brand-new mechanism from scratch is
+   the LAST resort, only when nothing in the document relates. Also
+   identify WHICH practical toolkit/step (from Module 2 sources) it
+   operationalises.
+   VARY THE ANCHOR, don't default to "Article N" every time — a document's
+   mechanism can be named by its INSTITUTION ("the Safety Research
+   Institute's existing testing mandate"), its PROGRAMME/INSTRUMENT ("the
+   national AI certification scheme"), its PROCESS ("the pre-deployment
+   registration step"), or its provision number when that really is the
+   clearest handle. Across the 3-6 recommendations, lead with a mix of
+   these — not the same "Article N" pattern repeated in every sentence,
+   even when the document is a numbered legal text. Vary phrasing overall
+   too. FORBIDDEN: generic advice with no document-specific anchor at all
+   (e.g. "Establish a bias-testing framework" is FORBIDDEN on its own —
+   instead anchor it: "Task the existing Standards Committee with adding
+   the bias-testing results the CDEI review recommends to its current
+   registration review." or "Extend the Ministry's registration duty
+   (Art. 7) to also require those results at the point of registration.").
    INSTITUTION DISCIPLINE: when an action names a specific institution
    (ministry, board, standards body, office), that institution must be
    EXPLICITLY assigned that responsibility in the uploaded policy. If the
@@ -511,9 +612,18 @@ write gap-closing recommendations and do NOT set a priority.
    - consensus: ONE sentence stating what the relevant international
      frameworks collectively require for this dimension (e.g. "All three
      frameworks require mandatory transparency obligations.").
-   - differences: ONE short passage on where they diverge (e.g. "UNESCO
-     focuses on rights; NIST focuses on operational transparency; CDEI
-     focuses on public-sector implementation.").
+   - differences: describe how the international frameworks differ from
+     EACH OTHER **and**, specifically, how the uploaded document's current
+     approach (name its actual mechanism, or its actual absence) falls
+     short against those different approaches — this is where the GAP shows
+     up, not just a framework comparison (e.g. "UNESCO frames oversight as a
+     rights obligation, NIST as an operational requirement; the uploaded
+     policy has neither — it acknowledges human oversight in principle
+     (Section 4) but assigns no body and no review process, so it satisfies
+     neither framework's minimum bar."). Never write a differences passage
+     that only compares frameworks to each other — it must say where the
+     document sits relative to them. Write it as one flowing analytical
+     passage, not a rote "framework: X, document: Y" listing.
    - overall_assessment: the verdict on how the uploaded policy aligns,
      synthesising the Module 2 practical mechanism against what the Module 1
      normative principle requires. Example: "The OECD AI Principles require
@@ -638,6 +748,12 @@ assessments, assurance toolkits) — never generic "improve oversight" filler.1.
      creating a specific new office.
    - NEVER invent a plausible-sounding agency name that is not in the
      document.
+   - Any BODIES NAMED IN THE DOCUMENT list below is drawn verbatim from
+     passages about this dimension. Copy a name from it exactly if that body
+     genuinely carries responsibility here. Appearing in the list is NOT
+     evidence of responsibility — a privacy regulator mentioned in an
+     inclusivity passage is still the privacy regulator — so choose
+     "none_identified" over a body whose remit does not cover this dimension.
 3. documentation_requirements: 2-4 concrete record-keeping/reporting
    requirements (e.g. registry, annual transparency report, audit trail).
 4. monitoring_checklist: 3-6 concrete, checkable compliance items.
@@ -654,9 +770,24 @@ HARD RULES:
   invent an incident, a country case, or a headline.
 - If an incident is only loosely related, DO NOT force a match — return
   incident_matches: [] and matched: false.
-- For each matched incident, write the write-up fields (dimension_relevance,
-  potential_consequence, lessons_learned, mitigation) around the REAL
-  incident, citing its real chunk_id.
+- For each matched incident, write the write-up as an explicit COMPARISON
+  between what happened in the real incident and THIS document's actual
+  gap — using the SAME four fields below, no new section:
+    - dimension_relevance: state what mechanism failed or was absent in the
+      real incident, in one sentence.
+    - potential_consequence: state, specifically, why the SAME failure mode
+      is plausible under the uploaded document AS IT CURRENTLY STANDS —
+      name the document's actual gap (the missing body, missing review
+      step, missing reporting duty — whatever this dimension's
+      coverage_reasoning identified) and connect it directly to the
+      incident's failure mode. Do not write a generic risk statement; write
+      "because the document does not [specific gap], the same kind of
+      [specific incident failure] could occur here."
+    - lessons_learned: the concrete lesson from the real incident.
+    - mitigation: the concrete step that would close the specific gap named
+      in potential_consequence — tie it back to the roadmap phases above
+      where possible.
+  cite the real incident's chunk_id.
 - If NO genuinely relevant incident exists in the provided context, return
   incident_matches: [] (do NOT lower the relevance bar to fill the section).
 
@@ -706,8 +837,15 @@ def build_module3_4_combined_prompt(
     module4_chunks: list[dict[str, Any]],
     document_chunks: list[dict[str, Any]],
     country: str = "",
+    candidate_bodies: list[str] | None = None,
 ) -> tuple[str, str]:
     """Build the combined Module 3 + Module 4 prompt for one dimension.
+
+    `candidate_bodies` are institutions the DOCUMENT names in passages about
+    this dimension, extracted deterministically. Without them the model is
+    asked to name a responsible body while seeing only two document chunks,
+    and honestly answers "none_identified" for documents that do name one —
+    see document_named_bodies.
 
     `dimension_verdict` is the carried-forward Module 1+2 result text (coverage,
     gap reasoning, maturity, recommendations) so this call addresses the actual
@@ -809,6 +947,57 @@ def _national_context_block(country: str = "") -> str:
     )
 
 
+# The evidence headers carry chunk ids, and "cite only numbers that literally
+# appear above" reads as permission to cite one. India's Human Autonomy verdict
+# shipped "in Section 3081a297-54ab-4efd-9c8c-492521016736" three times over.
+_CHUNK_ID_PROHIBITION = (
+    "The bracketed chunk identifiers in the evidence headers are retrieval "
+    "bookkeeping, not provisions — never cite one as a Section, Article or "
+    "Part."
+)
+
+
+def _citation_instruction(division_vocabulary: list[str] | None) -> str:
+    """Tell the model to use the DOCUMENT's numbering words, not ours.
+
+    This instruction used to read "Cite ONLY article, section or recital
+    numbers...". That enumerates a closed vocabulary drawn from EU statutory
+    drafting, and most instruments this tool reads are not drafted that way.
+    Japan's AI Guidelines for Business organises itself into Parts — the word
+    "Section" appears in it zero times. Handed a document full of Parts and an
+    instruction permitting only article/section/recital, the model mapped
+    Part 4 onto the nearest allowed word and wrote "Section 4".
+
+    That reads as a fabricated citation and gets flagged as one, but the model
+    was doing what it was told; the substance of the claim was correct and the
+    surrounding references (P-7, P-4, U-6, U-7) were all real. The instruction
+    was wrong, not the answer.
+
+    So: name the forms the document actually uses when they are known, and
+    otherwise tell the model to mirror the document rather than pick from a
+    list.
+    """
+    if division_vocabulary:
+        forms = ", ".join(f'"{v} N"' for v in division_vocabulary)
+        return (
+            "This document numbers its divisions as "
+            f"{forms} — use that exact wording when you cite one. Do NOT "
+            "translate it into another scheme (do not write \"Section\" for a "
+            "document organised into Parts). Cite ONLY numbers that literally "
+            "appear in the passages above; if you cannot see the number there, "
+            "describe the provision without numbering it. "
+            + _CHUNK_ID_PROHIBITION
+        )
+    return (
+        "When you cite a numbered division, copy the document's own wording "
+        "for it verbatim (Part, Chapter, Article, Section, Clause — whichever "
+        "the text itself uses) and never substitute a different scheme. Cite "
+        "ONLY numbers that literally appear in the passages above; if you "
+        "cannot see the number there, describe the provision without "
+        "numbering it. " + _CHUNK_ID_PROHIBITION
+    )
+
+
 def build_module1_2_combined_prompt(
     dimension: str,
     dimension_definition: str,
@@ -816,8 +1005,15 @@ def build_module1_2_combined_prompt(
     module1_chunks: list[dict[str, Any]],
     module2_chunks: list[dict[str, Any]],
     country: str = "",
+    determined_verdict: dict[str, Any] | None = None,
+    division_vocabulary: list[str] | None = None,
 ) -> tuple[str, str]:
     """Build the single combined Module 1 + Module 2 prompt for one dimension.
+
+    `division_vocabulary` names how THIS document numbers its own internal
+    divisions ("Part" for Japan's AI Guidelines, "Article" for the EU AI Act),
+    detected from the document text. See the citation instruction below for
+    why prescribing a fixed vocabulary instead was actively harmful.
 
     `country` (the workspace country, set at workspace creation — never an LLM
     guess) drives a deterministic national-context block so the model knows
@@ -861,6 +1057,70 @@ def build_module1_2_combined_prompt(
     parts: list[str] = []
     parts.append(f"Dimension: {dimension}")
     parts.append("")
+
+    # The coverage and maturity verdict is decided BEFORE this call, from the
+    # document's own provisions (see _compute_deterministic_verdict). It is
+    # given to the model as a FIXED INPUT to explain, not a judgment to make.
+    # Previously the model formed its own verdict, wrote prose justifying it,
+    # and then had the verdict replaced downstream — which is why reports
+    # carried gap language underneath a Covered result and recommendations
+    # aimed at a different conclusion than the one shown.
+    if determined_verdict:
+        parts.append("═══ [DETERMINED VERDICT — EXPLAIN THIS, DO NOT RE-JUDGE] ═══")
+        parts.append(f"Coverage: {determined_verdict.get('coverage_label')}")
+        parts.append(f"Governance maturity: {determined_verdict.get('maturity_label')}")
+        basis = determined_verdict.get("basis")
+        if basis:
+            parts.append(f"Basis: {basis}")
+        missing = determined_verdict.get("missing_mechanisms") or []
+        if missing:
+            parts.append(
+                "Governance mechanisms the reference frameworks expect that this "
+                "document does NOT provide: " + ", ".join(missing)
+            )
+        present = determined_verdict.get("present_mechanisms") or []
+        if present:
+            parts.append(
+                "Mechanisms the document DOES provide: " + ", ".join(present)
+            )
+        n_bind = determined_verdict.get("binding_provisions")
+        n_enf = determined_verdict.get("enforceable_provisions")
+        if n_bind is not None:
+            parts.append(
+                f"Measured instrument character: {n_bind} binding provision(s), "
+                f"{n_enf} backed by enforcement or supervision."
+            )
+            if not n_bind:
+                parts.append(
+                    "This document imposes NO binding duty for this dimension. "
+                    "Describe it accordingly — say it 'recommends', 'expects' or "
+                    "'calls on' actors. Do NOT write that it 'mandates', "
+                    "'requires', 'obliges' or 'enforces' anything."
+                )
+            elif not n_enf:
+                parts.append(
+                    "This document creates duties but attaches NO penalty, audit "
+                    "or supervisory consequence for this dimension. Do not "
+                    "describe it as 'enforced'."
+                )
+        parts.append(
+            "This verdict is our computed reading of the document, shown to you "
+            "as a REFERENCE. If you believe it is wrong — for example we missed "
+            "a provision, or misread a passage's force — put your objection in "
+            "the 'verdict_challenge' field: name the specific provision and say "
+            "what coverage you would assign instead. Leave it empty if you agree. "
+            "Your challenge is recorded for review; it does not change the "
+            "reported result, so still write the fields below consistently with "
+            "the Coverage value above."
+        )
+        parts.append(
+            "Write coverage_reasoning and reason_flagged so they are consistent "
+            "with the Coverage value above, citing the document's actual "
+            "provisions. Do not argue for a different coverage level. Target "
+            "recommendations at the mechanisms listed as not provided. "
+            + _citation_instruction(division_vocabulary)
+        )
+        parts.append("")
 
     parts.append("═══ [UPLOADED DOCUMENT] — primary evidence ═══")
     if document_chunks:

@@ -46,10 +46,45 @@ _COVERED_SYNTHESIS_STRONG_PHRASES: tuple[str, ...] = (
     "does not substantively",
 )
 
+# Weight 3: the general "would/will VERB ... into ..." construction — e.g.
+# "would transform these commitments into enforceable safeguards" or "will
+# convert this high-level commitment into an actionable framework". This is
+# the same gap-filling template as the enumerated STRONG_PHRASES above
+# ("would strengthen", "will translate", ...), just with a different verb.
+# Confirmed live: two real Covered verdicts (EU Inclusivity, Kenya
+# Environmental Sustainability) used this exact template with paraphrased
+# verbs ("transform", "convert") that the hand-picked phrase list didn't
+# cover, so each scored only 1 point (the generic "would"/"lacks" soft hit)
+# instead of the 3 needed to trigger the auto-downgrade — the safeguard
+# correctly fires on "would strengthen" but was blind to any other verb
+# filling the same "turn a principle into a mechanism" role. A regex on the
+# construction itself, not the specific verb, closes that gap.
+_COVERED_SYNTHESIS_TRANSFORM_RE = re.compile(
+    r"\b(?:would|will)\s+[\w-]+(?:\s+[\w-]+){0,5}\s+into\b",
+    re.IGNORECASE,
+)
+
+# Weight 3: "transition/move/shift from [current state] to [target state]" —
+# a distinct gap-filling idiom from the "would/will ... into" one above, but
+# the same underlying tell: describing where the document should GO, not
+# where it already IS. Confirmed live: India's Accountability synthesis used
+# "must transition from directional proposals to concrete enforcement
+# rules" — no would/will/should present at all, so it scored 0 under every
+# other check and shipped as an unflagged "Covered" verdict.
+_COVERED_SYNTHESIS_FROM_TO_RE = re.compile(
+    r"\b(?:transition|move|shift|evolve|progress)(?:s|ing|ed)?\s+from\b[^.]{0,80}?\bto\b",
+    re.IGNORECASE,
+)
+
 # Weight 1: softer gap-indicating vocabulary (word-bounded, so "recommend"
-# does not match "recommendation" or "recommending").
+# does not match "recommendation" or "recommending"). "must" is included
+# here (not as a standalone strong phrase) because it is common in
+# legitimate present-tense descriptions of a document's OWN requirements
+# ("the policy states operators must report annually") — a soft weight lets
+# it contribute to a downgrade alongside other signals without being a
+# strong signal entirely on its own.
 _COVERED_SYNTHESIS_SOFT_RE = re.compile(
-    r"\b(should|would|recommend|lacks|missing|gap|shortfall|deficit)\b",
+    r"\b(should|would|must|recommend|lacks|missing|gap|shortfall|deficit)\b",
     re.IGNORECASE,
 )
 
@@ -91,6 +126,14 @@ def detect_covered_synthesis_drift(synthesis: str) -> tuple[int, list[str]]:
         if phrase in lower:
             score += 3
             matched.append(phrase)
+    transform_match = _COVERED_SYNTHESIS_TRANSFORM_RE.search(lower)
+    if transform_match:
+        score += 3
+        matched.append(transform_match.group(0))
+    from_to_match = _COVERED_SYNTHESIS_FROM_TO_RE.search(lower)
+    if from_to_match:
+        score += 3
+        matched.append(from_to_match.group(0))
     for m in _COVERED_SYNTHESIS_SOFT_RE.finditer(lower):
         score += 1
         matched.append(m.group(1))
@@ -98,6 +141,119 @@ def detect_covered_synthesis_drift(synthesis: str) -> tuple[int, list[str]]:
         if phrase in lower:
             score += 1
             matched.append(phrase)
+    seen: set[str] = set()
+    dedup: list[str] = []
+    for p in matched:
+        if p not in seen:
+            seen.add(p)
+            dedup.append(p)
+    return score, dedup
+
+
+# ── Ladder-raise review safeguard ────────────────────────────────────────
+# The deterministic coverage ladder (R1 floor, R2 raise) can override the
+# LLM's raw verdict (Missing → Partial, Partial → Covered). When such a
+# raise produces a final verdict that contradicts the model's OWN
+# coverage_reasoning — the reasoning lists explicit gaps ("does not
+# establish", "no provisions", "lacks") yet the raised verdict says
+# Covered — the mismatch must be flagged for review rather than shipped
+# silently. This is the same review discipline as the synthesis-drift
+# safeguard above, applied to the ladder's OWN override instead of LLM
+# output.
+
+# Weight 3: unambiguous gap assertions — the model's own admission that the
+# document lacks the very mechanisms a raised verdict claims.
+_LADDER_RAISE_GAP_PHRASES: tuple[str, ...] = (
+    "does not establish",
+    "does not provide",
+    "does not address",
+    "does not contain",
+    "does not set out",
+    "does not specify",
+    "does not include",
+    "does not define",
+    "does not cover",
+    "does not require",
+    "does not mention",
+    "does not create",
+    "does not introduce",
+    "never mentions",
+    "makes no mention",
+    "no provisions",
+    "no mention of",
+    "no mechanism",
+    "no requirement",
+    "no obligation",
+    "no reference",
+    "no evidence",
+    "no language",
+    "no framework",
+    "nowhere",
+    "lacks",
+    "lacking",
+    "fails to",
+    "absent",
+    "omits",
+    "is silent",
+    "not addressed",
+    "no coverage",
+    # Explicit-absence constructions with the object AFTER the negator
+    # ("provides no concrete operational mechanisms", "establishes no
+    # liability framework", "contains no privacy provisions", "sets out
+    # no redress pathway"). The "does not provide" family only catches
+    # subject-verb-negator order; a raised verdict paired with "provides
+    # no…" reasoning is the same contradiction and must flag too.
+    "provides no",
+    "provides neither",
+    "offers no",
+    "gives no",
+    "sets out no",
+    "lays down no",
+    "establishes no",
+    "creates no",
+    "introduces no",
+    "contains no",
+    "includes no",
+    "specifies no",
+    "defines no",
+    "mentions no",
+    "requires no",
+    "mandates no",
+    "imposes no",
+)
+
+# Weight 1: softer gap vocabulary (word-bounded).
+_LADDER_RAISE_GAP_SOFT_RE = re.compile(
+    r"\b(missing|gap|insufficient|deficient)\b", re.IGNORECASE
+)
+
+# Flag for review when the weighted score reaches this threshold — a single
+# strong gap assertion ("does not establish") is enough.
+LADDER_RAISE_REVIEW_THRESHOLD = 3
+
+
+def detect_ladder_raise_contradiction(reasoning: str) -> tuple[int, list[str]]:
+    """Score a model's coverage_reasoning for gap assertions that contradict
+    a deterministic ladder raise.
+
+    Returns (weighted_score, matched_phrases). (0, []) means the reasoning
+    does not list explicit gaps — the raise is consistent with the model's
+    own text. Score >= LADDER_RAISE_REVIEW_THRESHOLD is a strong
+    contradiction (flag for review, e.g. reasoning lists explicit gaps but
+    the raised verdict says Covered).
+    """
+    if not reasoning:
+        return 0, []
+    lower = reasoning.lower()
+    score = 0
+    matched: list[str] = []
+    for phrase in _LADDER_RAISE_GAP_PHRASES:
+        if phrase in lower:
+            score += 3
+            matched.append(phrase)
+    for m in _LADDER_RAISE_GAP_SOFT_RE.finditer(lower):
+        score += 1
+        matched.append(m.group(1))
     seen: set[str] = set()
     dedup: list[str] = []
     for p in matched:
@@ -131,9 +287,21 @@ def build_governance_dimension_graph() -> DimensionGraph:
     return g
 
 
+# Risk levels each coverage tier may legitimately carry.
+#
+# These MUST stay in sync with compute_risk() in gap_analyzer.py, which
+# applies a documented cluster-compounding escalation: when a related
+# dimension in the same cluster is also a genuine gap, risk is raised one
+# step (LOW->MEDIUM, MEDIUM->HIGH). A core Partial dimension therefore
+# legitimately reaches HIGH.
+#
+# PARTIAL previously allowed only [LOW, MEDIUM], so the validator flagged the
+# pipeline's OWN correct output as a "risk_coverage_mismatch" error every time
+# compounding fired — an internal contradiction between two components that
+# were each individually right. The table now reflects the escalation rule.
 RISK_COVERAGE_MAP: dict[CoverageLevel, list[RiskLevel]] = {
     CoverageLevel.COVERED: [RiskLevel.LOW],
-    CoverageLevel.PARTIAL: [RiskLevel.LOW, RiskLevel.MEDIUM],
+    CoverageLevel.PARTIAL: [RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH],
     CoverageLevel.MISSING: [RiskLevel.MEDIUM, RiskLevel.HIGH],
 }
 
@@ -444,7 +612,14 @@ class ConsistencyValidator:
                     ),
                 ))
 
-            if g.framework_positions and g.recommendation in ("", "No recommendation provided."):
+            # framework_synthesis, not framework_positions. The combined
+            # Module 1+2 call emits the synthesis as prose and never fills the
+            # structured positions list, so keying this check on
+            # framework_positions meant it could never fire on a real run —
+            # a validator that is always silent is not a validator.
+            if (g.framework_synthesis or g.framework_positions) and g.recommendation in (
+                "", "No recommendation provided."
+            ):
                 violations.append(ConsistencyViolation(
                     dimension=g.dimension,
                     violation_type="recommendation_missing",

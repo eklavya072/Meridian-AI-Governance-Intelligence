@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
+from functools import lru_cache
+from typing import Any, Callable
+
+from src.utils import ocr_flexible_fragment
 
 from src.models import (
     CoverageLevel,
@@ -38,31 +41,37 @@ def detect_document_type(chunks_text: list[str]) -> str:
 
 # ── Governance Maturity (Module 1) — deterministic rule ────────────────
 #
-# Maturity is a 5-stage scale (Ad Hoc → Developing → Defined → Managed →
-# Optimized) that is deliberately DISTINCT from Coverage. It is computed
-# deterministically from (a) the Coverage level and (b) whether the document
-# specifies actual operational mechanisms (a named body, a reporting
-# requirement, an enforcement/redress mechanism) versus merely acknowledging
-# a principle in passing. The LLM never freely assigns maturity — the same
-# structural discipline already applied to Risk severity.
+# Maturity is a 4-stage Institutionalization Scale (Unaddressed → Emerging →
+# Operationalized → Institutionalized) that is deliberately DISTINCT from Coverage —
+# each stage is a strictly stronger, unambiguous claim than the last (see
+# GovernanceMaturity's docstring in models.py). It is computed
+# deterministically from (a) the Coverage level and (b) whether the SAME
+# evidence that grounds the Coverage verdict shows an actual operational
+# mechanism (a named body, a reporting requirement) and/or enforcement
+# evidence (audit, redress, monitoring) versus merely signalling intent.
+# The LLM never freely assigns maturity — the same structural discipline
+# already applied to Risk severity.
 #
 # Rule table (documented, reproducible):
 #
-#   Coverage   | Principle acknowledged | Operational mechanism(s)      | Maturity
-#   -----------|----------------------|-------------------------------|----------
-#   Missing    | No                   | —                             | Ad Hoc
-#   Missing    | Yes                  | —                             | Developing
-#   Partial    | Yes                  | None                          | Developing
-#   Partial    | Yes                  | Named body / reporting        | Defined
-#   Covered    | Yes                  | None (principle-level only)   | Defined
-#   Covered    | Yes                  | Named body / reporting        | Managed
-#   Covered    | Yes                  | + enforcement / redress /     | Optimized
-#   Covered    | Yes                  |   monitoring                  |
+#   Coverage   | Mechanism found | Enforcement found | Maturity
+#   -----------|------------------|--------------------|-------------
+#   Missing    | —                | —                  | Unaddressed
+#   Partial    | No               | —                  | Emerging
+#   Partial    | Yes              | —                  | Operationalized
+#   Covered    | No               | —                  | Emerging
+#   Covered    | Yes              | No                 | Operationalized
+#   Covered    | Yes              | Yes                | Institutionalized
 #
 # Invariants enforced:
-#   - Missing coverage can only ever map to Ad Hoc or Developing.
-#   - Fully Covered requires evidence of a named mechanism to reach
-#     Managed/Optimized, not just principle-acknowledgment.
+#   - Missing coverage always maps to Unaddressed — R1/R2 guarantee that a
+#     Missing verdict has no qualifying commitment/mechanism evidence.
+#   - A bare Covered LABEL is never treated as proof of a mechanism: Covered
+#     without any mechanism evidence (self-reported OR ladder evidence)
+#     caps at Emerging, same as an under-evidenced Partial — this is what
+#     stops a ladder-raised "Covered" from silently reading as mature.
+#   - Institutionalized requires BOTH a mechanism and enforcement/redress/
+#     monitoring evidence, never enforcement language alone.
 
 # Keywords that signal an operational mechanism in the document text.
 # Includes the IRREGULAR plurals the whole-word matcher's "(?:s)?" cannot
@@ -73,12 +82,26 @@ NAMED_BODY_KEYWORDS = (
     "task force", "committee", "directorate", "office", "institute",
     "centre", "center", "department", "ombudsman", "inspectorate",
     "agencies", "ministries", "authorities", "ombudsmen",
+    # Stem form: Korean-style body names assign duties to "the Minister of
+    # Science and ICT" (not "the ministry"), which the literal "ministry"
+    # entry cannot match. "minister*" → \bminister\w*\b covers minister,
+    # ministers, ministerial — and never "administration" (no word boundary
+    # before "minist").
+    "minister*",
 )
 REPORTING_KEYWORDS = (
     "report", "reporting", "reported", "register", "registered", "registry",
     "registries", "publication", "annual report", "disclosure",
     "transparency report", "publish", "published", "publishing",
     "notify", "records", "documentation requirement", "audit trail",
+    # Noun stems: the Korea Act's duties are phrased as "advance notification
+    # duty" and "labeling/indication requirement", which the verb keyword
+    # "notify" misses under word-boundary matching. "notif*" → \bnotif\w*\b
+    # covers the whole notification family; "label*" covers labeling/labelling;
+    # "indicatio*" covers indication(s) only — never "indicator" or
+    # "indicative" (stems diverge after "indicat"), so a performance-
+    # indicator mention is not credited as a reporting duty.
+    "notif*", "label*", "indicatio*",
 )
 ENFORCEMENT_KEYWORDS = (
     "enforce", "enforcement", "enforcing", "redress", "grievance",
@@ -145,7 +168,7 @@ _KEYWORD_PATTERN_CACHE: dict[str, re.Pattern] = {}
 
 
 def _word_pattern(phrase: str) -> re.Pattern:
-    """Compile a whole-word regex for a phrase/keyword.
+    r"""Compile a whole-word regex for a phrase/keyword.
 
     Word boundaries on both sides: "program" matches only the standalone
     word (and its plural "programs"), never inside "programming" or
@@ -154,13 +177,32 @@ def _word_pattern(phrase: str) -> re.Pattern:
     plurals ("programs", "roadmaps", "initiatives") matching without
     reopening the substring holes. This is the pure regex-boundary fix
     applied everywhere the ladder pattern-matches text.
+
+    A trailing "*" marks a STEM-PREFIX keyword: the stem matches followed by
+    any word characters, so one entry covers a word family the "(?:s)?"
+    plural cannot — "notif*" compiles to \bnotif\w*\b and matches notify,
+    notification, notifications, notified, notifying; "minister*" matches
+    minister, ministers, ministerial. Word boundaries still apply on both
+    sides, so a stem never reaches inside a longer word: "minister*" never
+    matches "administration" (no boundary before "minist"), and
+    "indicatio*" never matches "indicator" or "indicative" (their stems
+    diverge after "indicat"). This is the same boundary discipline as the
+    earlier program/programming fix, applied deliberately where whole-word
+    families share a prefix.
     """
-    pattern = _KEYWORD_PATTERN_CACHE.get(phrase)
-    if pattern is None:
+    stem_key = phrase.endswith("*")
+    cached = _KEYWORD_PATTERN_CACHE.get(phrase)
+    if cached is not None:
+        return cached
+    if stem_key:
+        pattern = re.compile(
+            r"\b" + re.escape(phrase[:-1]) + r"\w*\b", re.IGNORECASE
+        )
+    else:
         pattern = re.compile(
             r"\b" + re.escape(phrase) + r"(?:s)?\b", re.IGNORECASE
         )
-        _KEYWORD_PATTERN_CACHE[phrase] = pattern
+    _KEYWORD_PATTERN_CACHE[phrase] = pattern
     return pattern
 
 
@@ -191,65 +233,97 @@ def compute_governance_maturity(
     coverage: str,
     principle_acknowledged: bool = True,
     operational_mechanisms: list[str] | None = None,
+    evidence_texts: list[str] | None = None,
 ) -> tuple[GovernanceMaturity, str]:
     """Compute the Module 1 governance maturity stage from Coverage + mechanisms.
 
+    Four levels, each a strictly stronger claim than the last — Unaddressed
+    → Emerging → Operationalized → Institutionalized (see GovernanceMaturity docstring
+    for what each level means).
+
+    `operational_mechanisms` is the LLM's own self-reported mechanism list;
+    `evidence_texts` (new) is the SAME dimension-grounded, document-sourced
+    chunk/sentence text that the coverage ladder (R1/R2) actually used to
+    reach its verdict. The two signals are OR-combined before classifying
+    named-body/reporting/enforcement presence, so maturity can never
+    disagree with the evidence that justified Coverage — the previous
+    version scored maturity from the LLM's self-report alone, which could
+    diverge from what actually fired R1/R2 (e.g. a ladder-raised Covered
+    verdict with an empty self-reported mechanism list scored as
+    principle-only, when the raising evidence itself named a mechanism).
+
     Returns (maturity_stage, reasoning) where reasoning documents which rule
-    applied, keeping the decision fully explainable.
+    applied and what evidence it drew on, keeping the decision auditable.
     """
     mechanisms = [m for m in (operational_mechanisms or []) if m and m.strip()]
     mech = classify_mechanisms(mechanisms)
+    if evidence_texts:
+        ev_body = any(_has_keyword(t, NAMED_BODY_KEYWORDS) for t in evidence_texts if t)
+        ev_reporting = any(_has_keyword(t, REPORTING_KEYWORDS) for t in evidence_texts if t)
+        ev_enforcement = any(_has_keyword(t, ENFORCEMENT_KEYWORDS) for t in evidence_texts if t)
+        mech = {
+            "has_named_body": mech["has_named_body"] or ev_body,
+            "has_reporting": mech["has_reporting"] or ev_reporting,
+            "has_enforcement": mech["has_enforcement"] or ev_enforcement,
+        }
+        mech["has_operational_mechanism"] = (
+            mech["has_named_body"] or mech["has_reporting"] or mech["has_enforcement"]
+        )
     cov = coverage.lower()
 
     if cov == "missing":
-        if not principle_acknowledged:
-            return (
-                GovernanceMaturity.AD_HOC,
-                "Coverage is Missing and the principle is not acknowledged at all — "
-                "maturity stays at Ad Hoc (rule: Missing → Ad Hoc/Developing only).",
-            )
         return (
-            GovernanceMaturity.DEVELOPING,
-            "Coverage is Missing but the document acknowledges the principle in "
-            "passing — maturity capped at Developing (rule: Missing → "
-            "Ad Hoc/Developing only; no mechanism evidence required for Developing).",
+            GovernanceMaturity.UNADDRESSED,
+            "Coverage is Missing — no dimension-relevant mechanism or "
+            "explicit commitment survived the deterministic ladder, so the "
+            "dimension is not meaningfully addressed. Maturity is "
+            "Unaddressed (rule: Missing → Unaddressed only).",
         )
 
     if cov == "partial":
         if mech["has_operational_mechanism"]:
             return (
-                GovernanceMaturity.DEFINED,
-                "Coverage is Partial and a named operational mechanism is present "
-                f"(body={mech['has_named_body']}, reporting={mech['has_reporting']}) "
-                "— maturity is Defined (rule: Partial + named mechanism → Defined).",
+                GovernanceMaturity.DEVELOPING,
+                "Coverage is Partial and a concrete mechanism is present "
+                f"(named body={mech['has_named_body']}, reporting="
+                f"{mech['has_reporting']}) but without enforcement/redress "
+                "evidence — maturity is Operationalized (rule: Partial + "
+                "mechanism, no enforcement → Operationalized).",
             )
         return (
-            GovernanceMaturity.DEVELOPING,
-            "Coverage is Partial with no named operational mechanism — "
-            "maturity is Developing (rule: Partial + no mechanism → Developing).",
+            GovernanceMaturity.EMERGING,
+            "Coverage is Partial: dimension-relevant terms and an explicit "
+            "commitment/intent are present, but no concrete mechanism "
+            "(named body or documented process) exists yet — maturity is "
+            "Emerging (rule: Partial + no mechanism → Emerging).",
         )
 
     # Covered
-    if not mech["has_operational_mechanism"]:
+    if mech["has_operational_mechanism"] and mech["has_enforcement"]:
         return (
-            GovernanceMaturity.DEFINED,
-            "Coverage is Fully Covered at principle-acknowledgment level only — "
-            "no named body, reporting requirement, or enforcement mechanism found. "
-            "Maturity is Defined (rule: Fully Covered without a named mechanism "
-            "cannot reach Managed/Optimized).",
+            GovernanceMaturity.ESTABLISHED,
+            "Coverage is Covered with a concrete mechanism AND "
+            "enforcement/monitoring/audit/redress evidence — maturity is "
+            "Institutionalized (rule: Covered + mechanism + enforcement → "
+            "Institutionalized).",
         )
-    if mech["has_enforcement"]:
+    if mech["has_operational_mechanism"]:
         return (
-            GovernanceMaturity.OPTIMIZED,
-            "Coverage is Fully Covered with a named operational mechanism AND "
-            "enforcement/redress/monitoring evidence — maturity is Optimized "
-            "(rule: Covered + named mechanism + enforcement → Optimized).",
+            GovernanceMaturity.DEVELOPING,
+            "Coverage is Covered with a concrete mechanism "
+            f"(named body={mech['has_named_body']}, reporting="
+            f"{mech['has_reporting']}) but no enforcement/monitoring/redress "
+            "evidence yet — maturity is Operationalized (rule: Covered + "
+            "mechanism, no enforcement → Operationalized).",
         )
     return (
-        GovernanceMaturity.MANAGED,
-        "Coverage is Fully Covered with a named operational mechanism "
-        f"(body={mech['has_named_body']}, reporting={mech['has_reporting']}) "
-        "— maturity is Managed (rule: Covered + named mechanism → Managed).",
+        GovernanceMaturity.EMERGING,
+        "Coverage is Covered at principle/intent level only — no named "
+        "body, documented process, or enforcement mechanism found in "
+        "either the model's self-report or the grounding evidence. "
+        "Maturity is capped at Emerging (rule: Covered without any "
+        "mechanism evidence cannot exceed Emerging — a bare Covered label "
+        "is not, by itself, proof of an operational mechanism).",
     )
 
 
@@ -321,6 +395,16 @@ LEVEL_LABELS = {
 #        DIMENSION_TOPIC_KEYWORDS) — a UN advisory-body participation
 #        paragraph must not trigger Accountability, an events calendar must
 #        not trigger Inclusivity.
+#     4. MECHANISM-REPORT co-occurrence (R2 path a): the model's
+#        operational-mechanism report only counts as an implementation
+#        commitment when a NAMED BODY co-occurs with a reporting or
+#        enforcement mechanism in it. A single keyword alone — a lone
+#        reporting keyword like "disclosure", or a bare "penalties" — is
+#        NOT enough, and neither is a bare named body with nothing
+#        alongside it. (This is the tightened bar that fixed the India
+#        Transparency false positive: notification/labeling mechanisms
+#        with no named body were raising Partial -> Covered against the
+#        model's own reasoning.)
 
 # Phrases that signal a Level-3 implementation commitment when found in
 # dimension-scoped document chunks or in the model's mechanism report.
@@ -365,6 +449,26 @@ EXPLICIT_COMMITMENT_VERBS = (
     "will support",
 )
 
+# Obligation language — the R1 floor's mechanism bar. A dimension-relevant
+# passage that IMPOSES a requirement ("shall notify", "must ensure", "is
+# required to", "prohibits") is an actual governance mechanism expressed in
+# the policy's own terminology, distinct from a bare principle mention
+# ("recognizes the importance of X" carries no obligation). This is what
+# distinguishes "principle mentioned" from "governance mechanism exists"
+# deterministically, and it is deliberately mechanism-agnostic — the same
+# obligation vocabulary applies to every dimension, so a policy that says
+# "financial institutions shall maintain strict confidentiality of personal
+# information" is recognised as containing a privacy mechanism without any
+# privacy-specific keyword table. Negated occurrences ("shall not",
+# "does not require") are handled by the shared negation guard; a
+# prohibition ("shall not discriminate") still counts — it is a mechanism.
+OBLIGATION_VERBS = (
+    "shall", "must", "requires", "is required to", "are required to",
+    "obligated", "obliges", "mandates", "establishes", "sets out",
+    "provides for", "lays down", "prohibits", "ensures that",
+    "guarantees", "directs", "instructs", "imposes",
+)
+
 # Negation words that make a phrase a DENIAL rather than a commitment. When
 # a matched phrase is preceded (within a short window) by one of these, it
 # does not count — e.g. "will not support" must not floor Missing->Partial,
@@ -403,6 +507,26 @@ def _contains_commitment_phrase(text: str, phrases: tuple[str, ...]) -> bool:
             if not _is_negated_occurrence(text, match.start()):
                 return True
     return False
+
+
+def text_contains_mechanism(text: str) -> bool:
+    """True when a passage imposes a governance mechanism.
+
+    Mechanism-agnostic: a named body, a reporting/disclosure duty, an
+    enforcement/redress duty, or obligation language ("shall", "must",
+    "requires"...) in the passage. The same categories apply to every
+    dimension — this is the "governance mechanism exists" level of the
+    principle → mechanism → operationalized ladder, recognised in the
+    policy's own terminology rather than a per-dimension keyword checklist.
+    """
+    if not text:
+        return False
+    if _has_keyword(
+        text,
+        NAMED_BODY_KEYWORDS + REPORTING_KEYWORDS + ENFORCEMENT_KEYWORDS,
+    ):
+        return True
+    return _contains_commitment_phrase(text.lower(), OBLIGATION_VERBS)
 
 
 # ── Dimension grounding (R1/R2 topical eligibility) ─────────────────────
@@ -462,6 +586,224 @@ DIMENSION_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# ── Core-term precision gate (anti false-positive, collision fix) ───────
+#
+# DIMENSION_TOPIC_KEYWORDS (above) is deliberately broad — it is a RECALL
+# gate for the loose relevance check. That breadth has a failure mode:
+# vocabulary that is topically adjacent but NOT about the dimension can
+# still match a broad keyword. Confirmed live case: a Korea AI Basic Act
+# sentence listing "healthcare, energy, public services" as HIGH-IMPACT AI
+# SECTORS matches "Environmental Sustainability" via the bare word "energy"
+# and, when it also contains obligation language ("operators shall..."),
+# fires R1 — even though the sentence is about sector scoping, not AI's own
+# environmental/carbon footprint. Confirmed by the model's own raw output:
+# principle_acknowledged=False, operational_mechanisms=[], zero
+# document_evidence, yet the ladder still floored Missing → Partial.
+#
+# CORE_TERMS is a tighter, higher-precision anchor per dimension: unlike
+# the topic list, every phrase here is nearly unambiguous evidence the
+# sentence is actually ABOUT the dimension's substance (not merely a
+# neighbouring sector/domain name). R1/R2 require a core-term hit IN
+# ADDITION TO the (looser) semantic/topic gates — recall stays with the
+# topic keywords / embedding gate, precision comes from this list.
+# ── Sense-disambiguation guard (anti topic-collision) ────────────────────
+# Some core terms are genuinely the right vocabulary for a dimension but
+# carry a second, unrelated sense in policy prose. Three such collisions were
+# confirmed live and each one inflated a verdict:
+#
+#   "sustainable growth and innovation"      -> economic, not environmental
+#   "relevant, accessible and comprehensible" -> availability, not disability
+#   "transparent financing models"            -> fiscal, not AI transparency
+#
+# Removing the stem entirely would lose real matches ("transparen" IS the
+# right term for Transparency), so instead the OFF-SENSE PHRASES are masked
+# out of the sentence before core terms are matched. A sentence whose only
+# hit lies inside a masked phrase correctly stops matching, while the same
+# stem used in its governance sense elsewhere in the sentence still counts.
+DIMENSION_TERM_EXCLUSIONS: dict[str, tuple[str, ...]] = {
+    "Transparency": (
+        "transparent financing", "transparent funding", "transparent pricing",
+        "transparent procurement", "transparent market", "transparent tax",
+        "financial transparency", "fiscal transparency", "budget transparency",
+        "transparency in financing", "transparency of markets",
+    ),
+    "Inclusivity": (
+        # "inclusive growth/economy" is an economic-development claim, not a
+        # demographic-inclusion governance mechanism.
+        "inclusive growth", "inclusive economy", "inclusive economic",
+        "financial inclusion", "inclusive development",
+    ),
+    "Fairness": (
+        # "fair market"/"fair competition"/"fair trade" are competition-policy
+        # senses, not algorithmic fairness.
+        "fair market", "fair competition", "fair trade", "fair value",
+        "fair price", "fair pricing", "fair share",
+    ),
+    "Safety": (
+        # Occupational/road/food safety are different policy domains.
+        "food safety", "road safety", "occupational safety", "public safety net",
+    ),
+}
+
+
+@lru_cache(maxsize=64)
+def _exclusion_pattern(dimension: str) -> re.Pattern | None:
+    """Compiled matcher for a dimension's off-sense phrases."""
+    phrases = DIMENSION_TERM_EXCLUSIONS.get(dimension)
+    if not phrases:
+        return None
+    return re.compile(
+        "|".join(ocr_flexible_fragment(p) for p in phrases), re.IGNORECASE
+    )
+
+
+DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
+    "Transparency": (
+        "transparen", "disclos", "explainab", "interpretab", "documentation",
+        "audit trail", "black box", "black-box",
+        # Real-world equivalents of "transparency" in a country's own
+        # legal terminology (e.g. Korea's AI Basic Act phrases its
+        # transparency duty as "advance notification" + "labeling", never
+        # the word "transparency" itself) — the gate must recognize the
+        # MECHANISM, not just the abstract vocabulary.
+        "notif", "label", "inform users", "inform individuals",
+    ),
+    "Accountability": (
+        # Incident-reporting vocabulary is included because
+        # DIMENSION_MECHANISMS lists "incident reporting" as an Accountability
+        # mechanism. Without it the two tables contradicted each other: the
+        # mechanism audit looked for a mechanism whose own vocabulary this gate
+        # filtered out, so the EU AI Act's Article 73 serious-incident duty —
+        # present in the retrieved pool — was reported as "incident reporting:
+        # not addressed". A mechanism the table expects must have vocabulary
+        # the gate admits.
+        "accountab", "liabilit", "liable", "redress", "sanction", "penalt",
+        "fine", "grievance", "complaint mechanism", "answerable", "duty of care",
+        "serious incident", "incident report", "report an incident",
+        "notify the authorit", "report to the market surveillance",
+    ),
+    "Privacy": (
+        "privacy", "personal data", "personal information", "data protection",
+        "anonymiz", "pseudonymiz", "data subject", "confidential",
+    ),
+    "Safety": (
+        "safety", "safe design", "risk management", "fail-safe", "failsafe",
+        "red team", "red-team", "adversarial test", "robustness",
+    ),
+    "Human Autonomy": (
+        "human oversight", "human control", "human-in-the-loop",
+        "human in the loop", "override", "human agency", "autonomy",
+        "meaningful control", "opt-out",
+        # "human oversight" is EU drafting. Other traditions express the same
+        # binding duty in their own words, and matching only the EU phrasing
+        # silently reports the duty as absent. Korea's AI Framework Act,
+        # Article 34(1)(4), requires "Human management and supervision of
+        # high-impact AI" under a "must implement the following measures"
+        # obligation — Meridian scored Human Autonomy as Missing / Unaddressed
+        # / High risk for a law that mandates human oversight of its highest
+        # risk tier. GDPR Article 22's "human intervention" was missing for
+        # the same reason.
+        #
+        # All bigrams beginning with "human", deliberately: bare "supervision"
+        # and "management" collide with regulatory supervision and corporate
+        # management throughout these documents.
+        "human management", "human supervision", "human intervention",
+        "human review", "human monitoring", "human judgment", "human judgement",
+    ),
+    "Inclusivity": (
+        # Bare "accessib" is deliberately NOT listed (removed after a
+        # confirmed live false positive): AI-instrument transparency
+        # provisions routinely require information to be "accessible" in the
+        # sense of understandable/available ("relevant, accessible and
+        # comprehensible information" — EU AI Act Article 13), a Transparency
+        # concept with nothing to do with disability/demographic inclusion.
+        # A sandbox confidentiality clause restricting data to be "accessible
+        # only to market surveillance authorities" hit the same collision.
+        # Genuine disability-accessibility content is still caught via
+        # "persons with disabilities", "disabilit", and "digital divide"
+        # below, so nothing is lost by anchoring the compound instead.
+        "inclusiv", "inclusion", "accessibility for persons with disabilities",
+        "digital accessibility", "accessible design", "web accessibility",
+        "disabilit", "digital divide", "underserved",
+        "marginalis", "persons with disabilities", "multi-stakeholder",
+        "multistakeholder", "public participation",
+    ),
+    "Fairness": (
+        "fair", "fairness", "bias", "discrimina", "demographic parity",
+        "protected characteristics", "stereotype",
+    ),
+    "Environmental Sustainability": (
+        # NOTE: a bare "sustainab" stem is deliberately NOT listed. In policy
+        # documents "sustainable" overwhelmingly modifies ECONOMIC growth
+        # ("sustainable growth and innovation", "sustainable socio-economic
+        # transformation"), which is a different dimension entirely — that
+        # collision was scoring a skills-and-curricula sentence as an
+        # environmental-sustainability provision. Only environment-anchored
+        # forms of the word are counted.
+        # "ecosystem" alone is excluded for the same reason as bare
+        # "sustainab": in technology policy it overwhelmingly means an
+        # INNOVATION ecosystem ("catalyze the AI ecosystem"), not an
+        # ecological one — that collision scored a start-up partnership
+        # sentence as environmental-sustainability governance.
+        # Bare "environment" is deliberately NOT listed either (removed after
+        # a confirmed live false positive): EU AI Act incident-reporting
+        # language lists "damage to property or the environment" as one of
+        # several possible incident consequences alongside critical-
+        # infrastructure disruption and fundamental-rights infringements —
+        # a real, binding Article 73 SAFETY provision, misclassified as
+        # environmental-sustainability governance purely because its last
+        # six words happened to contain the bare stem.
+        "environmentally sustainable", "environmental sustainability",
+        "sustainable development", "ecological", "natural ecosystem",
+        "ecosystems and biodiversity", "biodiversity",
+        "carbon", "emission", "e-waste", "electronic waste",
+        "energy efficiency", "energy consumption", "power consumption",
+        "climate", "footprint", "green computing", "green energy",
+        "resource consumption", "resource-efficient", "resource efficiency",
+        "renewable",
+    ),
+}
+
+
+@lru_cache(maxsize=64)
+def _core_term_pattern(dimension: str) -> re.Pattern | None:
+    """Compiled, OCR-tolerant matcher for a dimension's core terms."""
+    terms = DIMENSION_CORE_TERMS.get(dimension)
+    if not terms:
+        return None
+    return re.compile(
+        "|".join(ocr_flexible_fragment(t) for t in terms), re.IGNORECASE
+    )
+
+
+def _sentence_has_core_term(text: str, dimension: str) -> bool:
+    """True when `text` contains a HIGH-PRECISION core term for `dimension`.
+
+    Substring match (not whole-word) is deliberate: these are already
+    multi-character stems/phrases chosen to be unambiguous, and a substring
+    check catches inflections (transparency/transparent/transparently)
+    without a bigger regex table. Dimensions without a core-term entry are
+    not gated (defensive default — never blocks an unrecognised dimension).
+
+    Matching is OCR-tolerant (see ocr_flexible_fragment): PDF extraction
+    splits words with spurious internal spaces, and a literal substring test
+    silently dropped nearly every core-term match in the most heavily
+    corrupted document in the corpus.
+    """
+    pattern = _core_term_pattern(dimension)
+    if pattern is None:
+        return True
+    candidate = text or ""
+    # Mask off-sense phrases first (see DIMENSION_TERM_EXCLUSIONS) so a hit
+    # that exists only inside e.g. "transparent financing models" does not
+    # qualify the sentence, while the same stem used in its governance sense
+    # elsewhere in the sentence still does.
+    exclusions = _exclusion_pattern(dimension)
+    if exclusions is not None:
+        candidate = exclusions.sub(" ", candidate)
+    return bool(pattern.search(candidate))
+
+
 def _chunk_matches_dimension(text: str, dimension: str) -> bool:
     """True when a chunk is topically related to the dimension.
 
@@ -478,10 +820,82 @@ def _chunk_matches_dimension(text: str, dimension: str) -> bool:
     return any(kw in lower for kw in keywords)
 
 
+# ── Sentence-level evidence discipline ───────────────────────────────────
+# A retrieved chunk can be a long legal passage where one sentence carries a
+# genuine dimension mechanism while another is procedural boilerplate ("the
+# Minister shall promote measures to facilitate the production, collection,
+# management, distribution, utilization of Learning Data"). The substantive
+# gate validates ANY mechanism-bearing sentence of the chunk, so R1/R2 could
+# fire using a strong obligation phrase / named body located in a DIFFERENT
+# sentence than the one that passed the gate — the co-location leak that let
+# a safety mechanism in a mixed Article 32/33 chunk promote Fairness. The
+# ladder therefore evaluates evidence SENTENCE by SENTENCE: the sentence
+# that carries the commitment/obligation phrase (and the named body for R2)
+# must itself pass the dimension + substantive gates.
+# Terminators include U+FFFD and the mojibake bullets PDF extraction leaves
+# where a full stop or list bullet should be. Documents in this corpus were
+# found using "�" as their ONLY sentence terminator across whole sections —
+# with a plain [.!?] splitter every such chunk collapsed into one enormous
+# pseudo-sentence, which then failed every downstream length filter, so those
+# documents contributed almost no scorable sentences at all. That looked like
+# "this policy says nothing about the dimension" when the real cause was an
+# encoding artifact.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?�•·])\s+|�")
+
+# Hard ceiling for a single sentence. Legal prose runs long, but a segment
+# past this is unsplit layout (a table dump or a run-on with no terminators),
+# and must still be broken up rather than discarded — see _split_sentences.
+_MAX_SENTENCE_CHARS = 600
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Split `text` into sentences on punctuation boundaries.
+
+    A chunk with no sentence-ending punctuation is treated as a single
+    sentence (keeps single-clause chunks working). Empty segments are
+    dropped.
+
+    Segments longer than _MAX_SENTENCE_CHARS are further split on newlines and
+    then on clause punctuation, because a chunk that never terminates a
+    sentence (common in extracted tables and implementation matrices) would
+    otherwise be dropped wholesale by the callers' length filters and count as
+    an absence of governance.
+    """
+    if not text:
+        return []
+    out: list[str] = []
+    for seg in _SENTENCE_SPLIT_RE.split(text):
+        if not seg or not seg.strip():
+            continue
+        seg = seg.strip()
+        if len(seg) <= _MAX_SENTENCE_CHARS:
+            out.append(seg)
+            continue
+        # Too long to be one sentence — fall back to newline, then clause
+        # boundaries, keeping any residue as a trimmed window.
+        parts = [p.strip() for p in re.split(r"[\r\n]+", seg) if p.strip()]
+        for p in parts:
+            if len(p) <= _MAX_SENTENCE_CHARS:
+                out.append(p)
+                continue
+            for clause in re.split(r"(?<=[;:])\s+", p):
+                clause = clause.strip()
+                if not clause:
+                    continue
+                while len(clause) > _MAX_SENTENCE_CHARS:
+                    out.append(clause[:_MAX_SENTENCE_CHARS].strip())
+                    clause = clause[_MAX_SENTENCE_CHARS:].strip()
+                if clause:
+                    out.append(clause)
+    return out
+
+
 def detect_explicit_commitment(
     operational_mechanisms: list[str] | None,
     document_chunk_texts: list[str] | None,
     dimension: str = "",
+    dimension_match_fn: Callable[[str, str], bool] | None = None,
+    substantive_match_fn: Callable[[str, str], bool] | None = None,
 ) -> bool:
     """R1 floor bar: actual attempted mechanism OR explicit commitment.
 
@@ -490,46 +904,117 @@ def detect_explicit_commitment(
       (a) a non-empty operational-mechanism report (named body / reporting /
           enforcement-redress, classified with the same keyword sets used by
           governance maturity), or
-      (b) a STRONG commitment phrase in a dimension-TOPICAL retrieved
-          document chunk (programme, initiative, task force, "will
-          establish", ...), or
-      (c) an explicit commitment verb in a dimension-topical chunk ("commits
-          to", "plans to", "will ensure", "will address", ...).
+      (b) a STRONG commitment phrase in a dimension-relevant document chunk
+          (programme, initiative, task force, "will establish", ...), or
+      (c) an explicit commitment verb in a dimension-relevant chunk
+          ("commits to", "plans to", "will ensure", "will address", ...),
+          or
+      (d) OBLIGATION language in a dimension-relevant chunk ("shall",
+          "must", "requires", "prohibits"...) — a requirement the policy
+          imposes about the dimension is a governance mechanism expressed
+          in the policy's own terminology, so a "shall notify"
+          transparency duty floors Missing -> Partial exactly like a
+          named-body mechanism would. This is the deterministic
+          "principle mentioned → governance mechanism exists"
+          distinction: a bare principle mention ("recognizes the
+          importance of X") carries no obligation and stays Missing.
 
     Dimension grounding: chunks are only eligible when they are actually
-    topically related to the dimension (see _chunk_matches_dimension) — a
-    UN advisory-body participation paragraph containing "will support" is
-    NOT Accountability evidence and never fires R1.
+    topically related to the dimension. The gate is pluggable
+    (dimension_match_fn) so the general pipeline can use semantic
+    equivalence (chunks whose meaning matches the dimension even when the
+    terminology differs) instead of a keyword checklist; the default is
+    _chunk_matches_dimension. A UN advisory-body participation paragraph
+    containing "will support" is NOT Accountability evidence and never
+    fires R1.
+
+    SUBSTANTIVE grounding (anti-false-positive): when the pipeline supplies
+    a substantive_match_fn, the evidence carrying the commitment/obligation
+    language must ALSO be substantively about the dimension's operational
+    content — not merely pass the loose relevance gate. This is the
+    "procedural authority ≠ substantive governance mechanism" rule: a
+    provision that merely assigns a minister or body a power to
+    approve/support/administer something ("the Minister may approve/support
+    AI data centres", "shall promote measures to facilitate the production,
+    collection, management, distribution, utilization of learning data") is
+    NOT a governance mechanism for Environmental Sustainability unless it
+    actually establishes environmental governance requirements.
+
+    SENTENCE-LEVEL discipline: the gates are evaluated on the SENTENCE that
+    carries the phrase, not the whole chunk. A long chunk can contain a
+    genuine dimension mechanism in one sentence and procedural boilerplate
+    with obligation language in another — the co-located boilerplate must
+    not fire R1 ("the same evidence that contains the commitment language
+    must itself pass the substantive gate").
 
     A bare risk acknowledgment with no proposed action attached matches
     none of these and returns False — such a document stays Missing.
     Negated occurrences ("will not support", "not committed to") never count.
     """
+    fired, _ = detect_explicit_commitment_evidence(
+        operational_mechanisms, document_chunk_texts, dimension,
+        dimension_match_fn, substantive_match_fn,
+    )
+    return fired
+
+
+def detect_explicit_commitment_evidence(
+    operational_mechanisms: list[str] | None,
+    document_chunk_texts: list[str] | None,
+    dimension: str = "",
+    dimension_match_fn: Callable[[str, str], bool] | None = None,
+    substantive_match_fn: Callable[[str, str], bool] | None = None,
+) -> tuple[bool, str]:
+    """Same rule as detect_explicit_commitment, but also returns the actual
+    matched sentence (empty string when the mechanism-report path fired
+    instead of a chunk sentence) — so the ladder's reasoning can quote real
+    evidence instead of a generic rule description."""
     if classify_mechanisms(operational_mechanisms)["has_operational_mechanism"]:
-        return True
+        return True, ""
+    match = dimension_match_fn or _chunk_matches_dimension
+    substantive = substantive_match_fn or match
     for text in document_chunk_texts or []:
-        if dimension and not _chunk_matches_dimension(text, dimension):
-            continue
-        lower = (text or "").lower()
-        if _contains_commitment_phrase(lower, STRONG_COMMITMENT_PHRASES):
-            return True
-        if _contains_commitment_phrase(lower, EXPLICIT_COMMITMENT_VERBS):
-            return True
-    return False
+        for sentence in _split_sentences(text):
+            if dimension and not (
+                match(sentence, dimension)
+                and substantive(sentence, dimension)
+                # Precision gate: the sentence must ALSO contain a
+                # high-precision core term for the dimension, not merely
+                # pass the broader relevance/substantive checks — blocks
+                # sector-name collisions (e.g. "energy" in a HIGH-IMPACT-AI
+                # sector list matching Environmental Sustainability).
+                and _sentence_has_core_term(sentence, dimension)
+            ):
+                continue
+            lower = sentence.lower()
+            if (
+                _contains_commitment_phrase(lower, STRONG_COMMITMENT_PHRASES)
+                or _contains_commitment_phrase(lower, EXPLICIT_COMMITMENT_VERBS)
+                or _contains_commitment_phrase(lower, OBLIGATION_VERBS)
+            ):
+                return True, sentence
+    return False, ""
 
 
 def detect_implementation_commitment(
     operational_mechanisms: list[str] | None,
     document_chunk_texts: list[str] | None,
     dimension: str = "",
+    dimension_match_fn: Callable[[str, str], bool] | None = None,
+    substantive_match_fn: Callable[[str, str], bool] | None = None,
 ) -> bool:
     """Detect Level-3+ implementation-commitment evidence.
 
     Three independent signals, any of which suffices:
-      (a) the model's own operational-mechanism report contains a named
-          body / reporting requirement / enforcement-redress mechanism
-          (classified with the same keyword sets used by governance
-          maturity), or
+      (a) the model's own operational-mechanism report shows a NAMED BODY
+          co-occurring with a reporting/enforcement mechanism (classified
+          with the same keyword sets used by governance maturity) — the
+          same co-occurrence standard as path (b). A single keyword alone
+          (a lone reporting keyword like "disclosure", or a bare
+          "penalties") is NOT enough, and neither is a bare named body
+          with nothing alongside it; this is the tightened bar that fixed
+          the India Transparency false positive (labeling/notification
+          mechanisms with no named body must not raise), or
       (b) the retrieved document chunks contain a STRONG commitment phrase
           (programme, initiative, task force, "will establish", "setting
           up", roadmap, ...) THAT CO-OCCURS WITH A NAMED-BODY/INSTITUTION
@@ -540,28 +1025,86 @@ def detect_implementation_commitment(
           same chunk, or appear in at least two distinct chunks.
 
     Dimension grounding: only chunks actually topically related to the
-    dimension are eligible (see _chunk_matches_dimension). Deterministic and
+    dimension are eligible. The gate is pluggable (dimension_match_fn) so
+    the general pipeline can use semantic equivalence instead of a keyword
+    checklist; the default is _chunk_matches_dimension. Deterministic and
     document-agnostic — the same detector runs for any uploaded policy. It
     never judges the verdict; it only reports whether commitment language
     exists.
+
+    SUBSTANTIVE grounding (anti-false-positive): when the pipeline supplies
+    a substantive_match_fn, the evidence carrying the implementation
+    language must be substantively about the dimension's operational
+    content — Covered must rest on substantive implementation evidence, not
+    merely a named authority + mandate. A procedural authority provision
+    ("the Minister may approve/support AI data centres") carries
+    implementation language but is not a substantive governance mechanism
+    for the dimension; it can neither raise to Covered nor corroborate weak
+    phrases.
+
+    SENTENCE-LEVEL discipline: paths (b)/(c) are evaluated on the SENTENCE
+    that carries the strong phrase and the named body, not the whole chunk.
+    A long chunk can contain a genuine dimension mechanism in one sentence
+    and an unrelated strong obligation phrase / named body in another — the
+    same evidence sentence that contains the strong implementation phrase
+    and/or named responsible body must itself pass the substantive
+    dimension gate before it can trigger the R2 promotion. Co-located
+    evidence elsewhere in the chunk never satisfies the requirement (the
+    fix for the mixed Article 32/33 chunk that promoted Fairness on a
+    safety provision).
     """
-    if classify_mechanisms(operational_mechanisms)["has_operational_mechanism"]:
-        return True
+    fired, _ = detect_implementation_commitment_evidence(
+        operational_mechanisms, document_chunk_texts, dimension,
+        dimension_match_fn, substantive_match_fn,
+    )
+    return fired
+
+
+def detect_implementation_commitment_evidence(
+    operational_mechanisms: list[str] | None,
+    document_chunk_texts: list[str] | None,
+    dimension: str = "",
+    dimension_match_fn: Callable[[str, str], bool] | None = None,
+    substantive_match_fn: Callable[[str, str], bool] | None = None,
+) -> tuple[bool, str]:
+    """Same rule as detect_implementation_commitment, but also returns the
+    matched sentence (empty when the mechanism-report path fired) for
+    quoting real evidence in the ladder's reasoning."""
+    mech = classify_mechanisms(operational_mechanisms)
+    # Path (a) — tightened: a mechanism report is a concrete implementation
+    # commitment only when a named body co-occurs with a reporting OR
+    # enforcement mechanism (the same co-occurrence standard as path (b)).
+    # A lone reporting keyword ("disclosure") — the India Transparency
+    # false positive — or a bare named body alone must never raise.
+    if mech["has_named_body"] and (mech["has_reporting"] or mech["has_enforcement"]):
+        return True, ""
+    match = dimension_match_fn or _chunk_matches_dimension
+    substantive = substantive_match_fn or match
     weak_hits = 0
     for text in document_chunk_texts or []:
-        if dimension and not _chunk_matches_dimension(text, dimension):
-            continue
-        lower = (text or "").lower()
-        if (
-            _contains_commitment_phrase(lower, STRONG_COMMITMENT_PHRASES)
-            and _has_keyword(text, NAMED_BODY_KEYWORDS)
-        ):
-            return True
-        if _contains_commitment_phrase(lower, WEAK_COMMITMENT_PHRASES):
+        chunk_weak = False
+        for sentence in _split_sentences(text):
+            if dimension and not (
+                match(sentence, dimension)
+                and substantive(sentence, dimension)
+                # Precision gate — same collision fix as R1 (see
+                # DIMENSION_CORE_TERMS docstring).
+                and _sentence_has_core_term(sentence, dimension)
+            ):
+                continue
+            lower = sentence.lower()
+            if (
+                _contains_commitment_phrase(lower, STRONG_COMMITMENT_PHRASES)
+                and _has_keyword(sentence, NAMED_BODY_KEYWORDS)
+            ):
+                return True, sentence
+            if _contains_commitment_phrase(lower, WEAK_COMMITMENT_PHRASES):
+                chunk_weak = True
+                if _has_keyword(sentence, NAMED_BODY_KEYWORDS):
+                    return True, sentence
+        if chunk_weak:
             weak_hits += 1
-            if _has_keyword(text, NAMED_BODY_KEYWORDS):
-                return True
-    return weak_hits >= 2
+    return weak_hits >= 2, ""
 
 
 def validate_coverage_deterministic(
@@ -570,6 +1113,8 @@ def validate_coverage_deterministic(
     operational_mechanisms: list[str] | None,
     document_chunks: list[dict[str, Any]] | None = None,
     dimension: str = "",
+    dimension_match_fn: Callable[[str, str], bool] | None = None,
+    substantive_match_fn: Callable[[str, str], bool] | None = None,
 ) -> tuple[CoverageLevel, list[str]]:
     """Deterministic coverage validation for the combined Module 1+2 path.
 
@@ -580,6 +1125,20 @@ def validate_coverage_deterministic(
 
     `dimension` grounds the ladder: chunks are only eligible to fire R1/R2
     when they are topically related to the dimension being evaluated.
+    `dimension_match_fn` plugs in the pipeline's semantic-equivalence gate
+    (chunks whose MEANING matches the dimension even when the terminology
+    differs, e.g. an "advance notification" duty for Transparency or a
+    "confidentiality" duty for Privacy); the default is the keyword gate
+    _chunk_matches_dimension.
+
+    `substantive_match_fn` (anti-false-positive) plugs in the pipeline's
+    SUBSTANTIVE-specificity gate: when supplied, a chunk must ALSO be
+    substantively about the dimension's operational content to fire R1/R2 —
+    a procedural authority provision ("the Minister may approve/support AI
+    data centres") passes the loose relevance gate but is not a governance
+    mechanism for Environmental Sustainability, so it stays inert. When
+    None, the substantive gate defaults to the dimension gate (no stricter
+    bar) for backward compatibility.
     """
     applied: list[str] = []
     cov = coverage
@@ -596,44 +1155,112 @@ def validate_coverage_deterministic(
     # R1 — explicit-commitment floor. Gated by LADDER_FLOOR_ENABLED so the
     # floor's impact is measurable. A bare acknowledgment with no proposed
     # action (principle_acknowledged alone) does NOT satisfy the bar — the
-    # document must show an actual attempted mechanism or explicit
-    # commitment. (principle_acknowledged is deliberately NOT used here: it
-    # is exactly the permissive signal that used to inflate "mentioned once"
-    # into Partial.)
-    if (
-        LADDER_FLOOR_ENABLED
-        and cov == CoverageLevel.MISSING
-        and has_doc_evidence
-        and detect_explicit_commitment(operational_mechanisms, chunk_texts, dimension=dimension)
-    ):
-        cov = CoverageLevel.PARTIAL
-        applied.append(
-            "R1 explicit-commitment floor: the document shows an actual "
-            "attempted mechanism or explicit commitment with retrieved "
-            "evidence (establishment language, programme/initiative, named "
-            "body, roadmap, mandate, or an explicit commitment verb); a bare "
-            "risk acknowledgment with no proposed action does not satisfy "
-            "this bar. Level 1 (Governance Recognised) maps to Partial — "
-            "Missing was raised."
+    # document must show an actual attempted mechanism, an explicit
+    # commitment, or OBLIGATION language about the dimension (a mechanism
+    # expressed in the policy's own terminology). (principle_acknowledged is
+    # deliberately NOT used here: it is exactly the permissive signal that
+    # used to inflate "mentioned once" into Partial.)
+    r1_fired = False
+    if LADDER_FLOOR_ENABLED and cov == CoverageLevel.MISSING and has_doc_evidence:
+        r1_fired, r1_sentence = detect_explicit_commitment_evidence(
+            operational_mechanisms, chunk_texts, dimension=dimension,
+            dimension_match_fn=dimension_match_fn,
+            substantive_match_fn=substantive_match_fn,
         )
+        if r1_fired:
+            cov = CoverageLevel.PARTIAL
+            quote = f' Firing evidence: "{r1_sentence[:220]}"' if r1_sentence else ""
+            applied.append(
+                "R1 explicit-commitment floor: the document shows an actual "
+                "attempted mechanism, an explicit commitment, or an obligation "
+                "imposing a governance mechanism with retrieved evidence "
+                "(establishment language, programme/initiative, named body, "
+                "roadmap, mandate, an explicit commitment verb, or obligation "
+                "language such as shall/must/requires); a bare risk "
+                "acknowledgment with no proposed action does not satisfy this "
+                "bar. Level 1 (Governance Recognised) maps to Partial — Missing "
+                f"was raised.{quote}"
+            )
 
     # R2 — implementation-commitment raise. Fires ONLY on Partial: R1 is the
     # only rule that rescues a Missing verdict, so disabling the floor is
     # observable. A Missing dimension with commitment language is raised to
     # Partial by R1 first (when enabled) and then to Covered here.
     if cov == CoverageLevel.PARTIAL and has_doc_evidence:
-        if detect_implementation_commitment(operational_mechanisms, chunk_texts, dimension=dimension):
+        r2_fired, r2_sentence = detect_implementation_commitment_evidence(
+            operational_mechanisms, chunk_texts, dimension=dimension,
+            dimension_match_fn=dimension_match_fn,
+            substantive_match_fn=substantive_match_fn,
+        )
+        if r2_fired:
             cov = CoverageLevel.COVERED
+            quote = f' Firing evidence: "{r2_sentence[:220]}"' if r2_sentence else ""
             applied.append(
                 "R2 implementation-commitment raise: the document (or the "
                 "model's own mechanism report) shows a concrete implementation "
-                "commitment — a named body/institution co-occurring with "
-                "programme/initiative, establishment language, roadmap or "
-                "mandate in dimension-relevant evidence; Level 3 (Implementation "
-                "Commitment Exists) maps to Covered — Partial was raised."
+                "commitment — a named body/institution co-occurring with a "
+                "reporting/enforcement mechanism or with programme/initiative, "
+                "establishment language, roadmap or mandate in "
+                "dimension-relevant evidence; a lone mechanism keyword (e.g. "
+                "a single reporting keyword like 'disclosure') with no named "
+                "body does NOT satisfy this bar; Level 3 (Implementation "
+                f"Commitment Exists) maps to Covered — Partial was raised.{quote}"
             )
 
     return cov, applied
+
+
+_FIRING_QUOTE_RE = re.compile(r'Firing evidence: "([^"]*)"')
+
+
+def plain_language_ladder_note(coverage_rules: list[str]) -> str:
+    """Translate the ladder's technical rule-audit strings into one short,
+    plain-language sentence for END USERS.
+
+    `coverage_rules` (from validate_coverage_deterministic) is written for
+    developers/tests — "R1 explicit-commitment floor", "Level 1 (Governance
+    Recognised) maps to Partial" — and must never reach a user-facing field
+    (coverage_reasoning, reason_flagged). This is the ONLY translation of
+    that audit trail a user should see: what changed, and — when the ladder
+    quoted a real sentence — what specifically justified it. The technical
+    strings themselves stay available for logs/tests via the original
+    `coverage_rules` list.
+    """
+    if not coverage_rules:
+        return ""
+    combined = " ".join(coverage_rules)
+    r1_rule = next((r for r in coverage_rules if r.startswith("R1")), None)
+    r2_rule = next((r for r in coverage_rules if r.startswith("R2")), None)
+
+    def _quote(rule: str | None) -> str:
+        if not rule:
+            return ""
+        m = _FIRING_QUOTE_RE.search(rule)
+        return m.group(1)[:180] if m else ""
+
+    parts: list[str] = []
+    if r1_rule:
+        note = "Raised from Missing to Partial: the document commits to acting on this"
+        q = _quote(r1_rule)
+        if q:
+            note += f' — for example, it states: "{q}"'
+        note += ", even though no governing body, reporting requirement, or enforcement process is defined for it yet."
+        parts.append(note)
+    if r2_rule:
+        note = (
+            "Raised from Partial to Covered: the document assigns this to a "
+            "named body and includes a reporting or enforcement mechanism"
+        )
+        q = _quote(r2_rule)
+        if q:
+            note += f' — for example: "{q}"'
+        note += "."
+        parts.append(note)
+    if not parts and combined:
+        # Defensive fallback for a future rule label this function doesn't
+        # recognize yet — never show the raw technical string.
+        parts.append("The coverage level was adjusted based on evidence found in the document.")
+    return " ".join(parts)
 
 
 class FrameworkMatchResult:
