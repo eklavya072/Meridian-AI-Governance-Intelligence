@@ -71,7 +71,8 @@ class TestCitationMetrics:
         metrics.record_citation_results([{"verified": True}] * 3 + [{"verified": False}])
 
         line = next(
-            ln for ln in _scrape(client).splitlines()
+            ln
+            for ln in _scrape(client).splitlines()
             if ln.startswith("meridian_citation_pass_rate ")
         )
 
@@ -82,7 +83,8 @@ class TestCitationMetrics:
         metrics.record_citation_results([])
 
         line = next(
-            ln for ln in _scrape(client).splitlines()
+            ln
+            for ln in _scrape(client).splitlines()
             if ln.startswith("meridian_citation_pass_rate ")
         )
 
