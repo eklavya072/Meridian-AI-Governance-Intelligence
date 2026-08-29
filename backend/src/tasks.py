@@ -10,6 +10,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from src import metrics
 from src.db_models import WorkspaceStatus
 from src.gap_analyzer import (
     CoverageLevel,
@@ -181,7 +182,10 @@ async def run_full_analysis_pipeline(
                 # reference yields the file in place, an Azure reference is
                 # downloaded to a temporary file and cleaned up on exit.
                 # ingest_document needs a real path because pypdf does.
-                with get_storage().local_path(doc["file_path"]) as local_pdf:
+                with (
+                    get_storage().local_path(doc["file_path"]) as local_pdf,
+                    metrics.timed_stage("ingest"),
+                ):
                     doc_chunks = await asyncio.to_thread(
                         ingest_document,
                         local_pdf,
@@ -208,7 +212,10 @@ async def run_full_analysis_pipeline(
                         document_name=doc_name,
                         removed_chunks=removed,
                     )
-                await asyncio.to_thread(vector_store.add_chunks, doc_chunks)
+                with metrics.timed_stage("index"):
+                    await asyncio.to_thread(vector_store.add_chunks, doc_chunks)
+                metrics.chunks_indexed.inc(len(doc_chunks))
+                metrics.documents_ingested.labels(outcome="ok").inc()
                 chunks.extend(doc_chunks)
                 logger.info(
                     "pipeline_orchestration_document_indexed",
@@ -270,16 +277,17 @@ async def run_full_analysis_pipeline(
             # minutes (up to 16 LLM calls across 8 dimensions). Off the event
             # loop, via to_thread, so the workspace list and status polling
             # keep working for the whole duration of the run.
-            result: GapAnalysisResult = await asyncio.to_thread(
-                analyzer.analyze,
-                document_text=full_text,
-                document_name=file_name,
-                workspace_id=workspace_id,
-                frameworks=frameworks,
-                existing_results=existing_gaps if existing_gaps else None,
-                dimension_callback=on_dimension,
-                country=ws_country,
-            )
+            with metrics.timed_stage("analyse"):
+                result: GapAnalysisResult = await asyncio.to_thread(
+                    analyzer.analyze,
+                    document_text=full_text,
+                    document_name=file_name,
+                    workspace_id=workspace_id,
+                    frameworks=frameworks,
+                    existing_results=existing_gaps if existing_gaps else None,
+                    dimension_callback=on_dimension,
+                    country=ws_country,
+                )
             logger.info(
                 "pipeline_orchestration_analysis_complete",
                 workspace_id=workspace_id,
@@ -347,6 +355,15 @@ async def run_full_analysis_pipeline(
 
             cit_pass = sum(1 for c in citation_results if c.get("verified", False))
             cit_fail = sum(1 for c in citation_results if not c.get("verified", False))
+            # The evidence gate's own pass rate. A prompt change that starts
+            # producing citations which no longer resolve moves this before
+            # anyone reads a brief.
+            metrics.record_citation_results(citation_results)
+            for gap in result.governance_gaps:
+                metrics.coverage_verdicts.labels(
+                    verdict=getattr(gap.coverage, "value", str(gap.coverage)),
+                    dimension=gap.dimension,
+                ).inc()
 
             log_analysis_run(
                 analysis_id=result.analysis_id,
@@ -456,6 +473,7 @@ async def run_full_analysis_pipeline(
                 framed_with=frameworks,
             )
 
+            metrics.analysis_runs.labels(outcome="complete").inc()
             return {
                 "status": "complete",
                 "analysis_id": result.analysis_id,
@@ -487,6 +505,7 @@ async def run_full_analysis_pipeline(
                 WorkspaceStatus.ERROR,
                 detail=f"Pipeline error: {exc}",
             )
+            metrics.analysis_runs.labels(outcome="error").inc()
             return {
                 "status": "error",
                 "error": str(exc),

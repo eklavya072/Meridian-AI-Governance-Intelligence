@@ -3,10 +3,18 @@ name: Release
 # On merge to the default branch: build the production image, scan it, and
 # publish it to GHCR as a public package with an SBOM attached.
 #
-# Deliberately separate from ci.yml. CI is the gate that must stay fast and
-# green on every PR; this is the pipeline that produces an artifact the world
-# can pull. A slow scan or a registry outage should never turn the CI badge
-# red on a pull request.
+# Three jobs, in order:
+#   scan   — build amd64 once, gate on Trivy, produce the SBOM. Nothing is
+#            pushed until this passes, so a HIGH/CRITICAL finding fails while
+#            the image is still private.
+#   build  — amd64 and arm64 in parallel, each on its NATIVE runner, pushed
+#            by digest. Emulating arm64 through QEMU took ~20 minutes for a
+#            torch-sized image, which was slow enough that queued runs piled
+#            up and got cancelled — and a cancelled run reads as a red badge.
+#   merge  — assemble the multi-arch manifest list from those digests.
+#
+# Deliberately separate from ci.yml: a slow scan or a registry outage must
+# never turn the CI badge red on someone's pull request.
 
 on:
   push:
@@ -26,49 +34,20 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/meridian
 
 jobs:
-  publish:
-    name: build · scan · push
+  # ── Gate ────────────────────────────────────────────────────────────────
+  scan:
+    name: scan · sbom
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
-      contents: write # attach the SBOM to a release when one is tagged
-      packages: write # push to GHCR
-      security-events: write # upload Trivy findings to the Security tab
+      contents: read
+      security-events: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
-
       - uses: docker/setup-buildx-action@v3
 
-      # The built-in GITHUB_TOKEN with packages:write is enough — no personal
-      # access token, so nothing long-lived exists to leak or rotate.
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Derive tags and labels
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=long
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-          labels: |
-            org.opencontainers.image.title=Meridian
-            org.opencontainers.image.description=Evidence-linked AI governance policy analysis
-            org.opencontainers.image.licenses=MIT
-
-      # Built once, loaded locally, and scanned BEFORE it is pushed. Scanning
-      # after the push would mean a HIGH/CRITICAL finding fails the job with
-      # the vulnerable image already public.
       - name: Build the prod image (amd64, for scanning)
         uses: docker/build-push-action@v6
         with:
@@ -78,16 +57,15 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: meridian:scan
-          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Report the image size
         run: |
           bytes=$(docker image inspect meridian:scan --format '{{.Size}}')
-          awk -v b="$bytes" 'BEGIN { printf "prod image: %.0f MB\n", b/1024/1024 }'
+          awk -v b="$bytes" 'BEGIN { printf "prod image: %.0f MB\n", b/1024/1024 }' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # ── Vulnerability scan ────────────────────────────────────────────
       # Run twice on purpose. The first is informational and always records
       # the full count, so the numbers in docs/MEASUREMENTS.md come from a
       # real run. The second is the gate.
@@ -103,13 +81,15 @@ jobs:
 
       - name: Show the full inventory
         run: |
-          echo "### Trivy — full inventory" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          tail -c 60000 trivy-full.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat trivy-full.txt
+          {
+            echo "### Trivy — full inventory"
+            echo '```'
+            tail -c 60000 trivy-full.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "^Total:" trivy-full.txt || true
 
-      - name: Trivy scan (gate — fails on HIGH/CRITICAL)
+      - name: Trivy scan (gate — fails on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: meridian:scan
@@ -141,7 +121,6 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy-image
 
-      # ── SBOM ──────────────────────────────────────────────────────────
       - name: Generate an SBOM with syft
         uses: anchore/sbom-action@v0.24.2
         with:
@@ -152,17 +131,13 @@ jobs:
 
       - name: Summarise the SBOM
         run: |
-          python3 - <<'PY'
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
           import json
           doc = json.load(open("meridian-sbom.spdx.json"))
-          pkgs = doc.get("packages", [])
-          print(f"SBOM: {len(pkgs)} packages, SPDX {doc.get('spdxVersion')}")
-          with open("sbom-summary.txt", "w") as fh:
-              fh.write(f"{len(pkgs)} packages\n")
+          print(f"SBOM: {len(doc.get('packages', []))} packages, SPDX {doc.get('spdxVersion')}")
           PY
-          cat sbom-summary.txt >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload the SBOM and scan report as artifacts
+      - name: Upload the SBOM and scan report
         uses: actions/upload-artifact@v4
         with:
           name: sbom-and-scan
@@ -172,47 +147,157 @@ jobs:
             trivy-results.sarif
           if-no-files-found: error
 
-      # ── Publish ───────────────────────────────────────────────────────
-      # Only reached when the gate above passed. Multi-arch so the published
-      # image runs on both x86 servers and Apple Silicon.
-      - name: Build and push (multi-arch)
-        id: push
+  # ── Build, natively, per architecture ───────────────────────────────────
+  build:
+    name: build ${{ matrix.platform }}
+    needs: scan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            # Native arm64, free for public repositories. QEMU emulation of a
+            # torch-sized build was the single slowest thing in this pipeline.
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: backend/Dockerfile
           target: prod
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          platforms: ${{ matrix.platform }}
           provenance: true
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
 
-      - name: Record what was published
+      - name: Export the digest
         run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+
+      - name: Upload the digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ strategy.job-index }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Assemble the multi-arch manifest ────────────────────────────────────
+  merge:
+    name: publish manifest
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # attach the SBOM to a tagged release
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect the digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+          labels: |
+            org.opencontainers.image.title=Meridian
+            org.opencontainers.image.description=Evidence-linked AI governance policy analysis
+            org.opencontainers.image.licenses=MIT
+
+      - name: Create the manifest list
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Verify what was published
+        run: |
+          docker buildx imagetools inspect \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest | tee /tmp/inspect.txt
           {
             echo "### Published"
             echo ""
-            echo '```'
+            echo '```bash'
             echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
             echo '```'
             echo ""
-            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
-            echo ""
-            echo "Tags:"
             echo '```'
-            echo "${{ steps.meta.outputs.tags }}"
+            cat /tmp/inspect.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Attach the SBOM to the GitHub Release when this run is for a tag.
+      # Proves the acceptance criterion rather than asserting it: fetch an
+      # anonymous pull token with no credentials and read the manifest, which
+      # is exactly what someone with no access to this repository would do.
+      - name: Assert an anonymous pull works
+        run: |
+          token=$(curl -sf "https://ghcr.io/token?scope=repository:${{ env.IMAGE_NAME }}:pull&service=ghcr.io" | jq -r .token)
+          test -n "$token" && test "$token" != "null"
+          code=$(curl -s -o /tmp/manifest.json -w '%{http_code}' \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/${{ env.IMAGE_NAME }}/manifests/latest")
+          echo "anonymous manifest fetch -> $code"
+          test "$code" = "200"
+          jq -r '.manifests[]?.platform | select(.architecture != "unknown") | .os + "/" + .architecture' /tmp/manifest.json
+
+      - name: Fetch the SBOM from the scan job
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-and-scan
+          path: /tmp/sbom
+
       - name: Attach the SBOM to the release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            meridian-sbom.spdx.json
-            trivy-full.txt
+            /tmp/sbom/meridian-sbom.spdx.json
+            /tmp/sbom/trivy-full.txt

@@ -24,6 +24,27 @@ class RetryableError(Exception):
     pass
 
 
+class TerminalProviderError(Exception):
+    """Retrying cannot help: bad credential, retired model, malformed request.
+
+    Previously these were raised as QuotaExceededError, so the router rotated
+    through every configured credential and then reported exhausted quota for
+    what was actually a one-line configuration fix.
+    """
+
+
+def _as_provider_error(exc: Exception) -> Exception:
+    """Map a provider exception onto the router's three outcomes."""
+    from src.provider_errors import FailureKind, classify
+
+    failure = classify(exc)
+    if failure.kind is FailureKind.QUOTA:
+        return QuotaExceededError(str(exc))
+    if failure.kind is FailureKind.TERMINAL:
+        return TerminalProviderError(f"{failure.reason}: {exc}")
+    return RetryableError(str(exc))
+
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -195,18 +216,7 @@ class GeminiProvider(LLMProvider):
             result._raw_json = text
             return result
         except Exception as exc:
-            error_str = str(exc)
-            if "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower():
-                raise QuotaExceededError(str(exc)) from exc
-            if "500" in error_str or "503" in error_str or "timeout" in error_str.lower():
-                raise RetryableError(str(exc)) from exc
-            if (
-                "404" in error_str
-                or "not found" in error_str.lower()
-                or "is no longer available" in error_str
-            ):
-                raise QuotaExceededError(f"Model unavailable: {exc}") from exc
-            raise
+            raise _as_provider_error(exc) from exc
 
     def generate_text(
         self,
@@ -224,18 +234,7 @@ class GeminiProvider(LLMProvider):
             )
             return text
         except Exception as exc:
-            error_str = str(exc)
-            if "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower():
-                raise QuotaExceededError(str(exc)) from exc
-            if "500" in error_str or "503" in error_str or "timeout" in error_str.lower():
-                raise RetryableError(str(exc)) from exc
-            if (
-                "404" in error_str
-                or "not found" in error_str.lower()
-                or "is no longer available" in error_str
-            ):
-                raise QuotaExceededError(f"Model unavailable: {exc}") from exc
-            raise
+            raise _as_provider_error(exc) from exc
 
 
 class CerebrasProvider(LLMProvider):

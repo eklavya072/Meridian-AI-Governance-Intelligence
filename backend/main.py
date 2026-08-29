@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from src import metrics
 from src.brief_export import render_docx, render_pdf
 from src.brief_generator import generate_executive_brief_text
 from src.brief_synthesis import generate_brief as generate_brief_v2
@@ -30,6 +31,7 @@ from src.db_models import Base, ChatMessage, ChatSession, Report, WorkspaceStatu
 from src.framework_library import get_framework_library
 from src.framework_sync import FrameworkSyncService
 from src.guardrails import Guardrails
+from src.key_health import get_registry as get_key_registry
 from src.logging_config import log_upload_rejection, setup_logging
 from src.storage import get_storage
 from src.validation import MAX_FILE_SIZE_BYTES, validate_pdf_file
@@ -382,11 +384,25 @@ async def readyz(response: Response):
     # Provider budget: with no headroom every analysis would be accepted and
     # then fail partway through, which is worse than refusing traffic.
     try:
-        from src.provider_router import quota_status
+        from src.provider_router import get_provider, quota_status
 
         quota = quota_status()
-        checks["llm_provider"] = {"ok": quota["has_headroom"], **quota}
-        if not quota["has_headroom"]:
+        provider = get_provider()
+        key_ids = [
+            f"{type(provider).__name__.lower()}:{i}"
+            for i in range(len(getattr(provider, "api_keys", [1])))
+        ]
+        health = get_key_registry().snapshot(key_ids)
+        # Headroom alone is not readiness: the daily budget can be untouched
+        # while every credential sits circuit-open behind a 429 storm.
+        has_capacity = quota["has_headroom"] and health["healthy"] > 0
+        checks["llm_provider"] = {
+            "ok": has_capacity,
+            **quota,
+            "credentials_healthy": health["healthy"],
+            "credentials_open": health["open"],
+        }
+        if not has_capacity:
             ready = False
     except Exception as exc:
         ready = False
@@ -395,6 +411,30 @@ async def readyz(response: Response):
     if not ready:
         response.status_code = 503
     return {"status": "ready" if ready else "not_ready", "checks": checks}
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus exposition.
+
+    Refreshes the provider gauges on scrape rather than on every call: they
+    are cheap to read from the registry and there is no point paying for the
+    update on a hot path nobody is scraping.
+    """
+    try:
+        from src.provider_router import get_provider, key_ids_for, quota_status
+
+        provider = get_provider()
+        snap = get_key_registry().snapshot(key_ids_for(get_provider()))
+
+        metrics.refresh_provider_gauges(
+            healthy=snap["healthy"], quota_remaining=quota_status()["remaining"]
+        )
+    except Exception as exc:  # never let a gauge refresh break a scrape
+        logger.warning("metrics_gauge_refresh_failed", error=str(exc))
+
+    payload, content_type = metrics.render()
+    return Response(content=payload, media_type=content_type)
 
 
 @app.get("/api/v1/health")
