@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import structlog
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -46,18 +47,18 @@ class BriefSynthesis(BaseModel):
     """
 
     executive_summary: str = Field(
-        ..., description="2-4 sentences, max 80 words, synthesizing the digest"
+        ..., description="4-6 sentences, max 160 words, synthesizing the digest"
     )
     areas_of_strength: list[str] = Field(
-        default_factory=list, description="2-3 bullets, each max 40 words"
+        default_factory=list, description="2-4 bullets, each max 50 words"
     )
     areas_requiring_attention: list[str] = Field(
         default_factory=list,
-        description="Up to 3 bullets, each max 40 words. Empty when every dimension is fully covered.",
+        description="Up to 5 bullets, each max 50 words. Empty when every dimension is fully covered.",
     )
     priority_recommendations: list[BriefPriorityRecommendation] = Field(
         default_factory=list,
-        description="3-5 items from the highest-priority gapped dimensions only. Empty when no gaps.",
+        description="3-6 items from the highest-priority gapped dimensions only. Empty when no gaps.",
     )
 
 
@@ -76,11 +77,14 @@ BRIEF_SYSTEM_PROMPT = (
     "keeping every substantive element.\n"
     "5. Tone: precise, neutral, decision-maker oriented. No marketing language.\n\n"
     "PER-SECTION WORD BUDGETS (enforce exactly):\n"
-    "- executive_summary: 2-4 sentences, max 80 words total.\n"
-    "- areas_of_strength: 2-3 bullets, each max 40 words, one per finding.\n"
-    "- areas_requiring_attention: up to 3 bullets, each max 40 words. If every dimension "
+    "- executive_summary: 4-6 sentences, max 160 words total. State the overall "
+    "posture, name the strongest and weakest dimensions, and say what kind of "
+    "instrument this is (binding, soft law, strategy) — that framing is what a "
+    "decision-maker reads first.\n"
+    "- areas_of_strength: 2-4 bullets, each max 50 words, one per finding.\n"
+    "- areas_requiring_attention: up to 5 bullets, each max 50 words. If every dimension "
     "is fully covered, return an empty list.\n"
-    "- priority_recommendations: 3-5 items total, selected from the highest-priority "
+    "- priority_recommendations: 3-6 items total, selected from the highest-priority "
     "gapped dimensions only. Each recommendation is one sentence; each rationale is one "
     "line drawn from the digest. If there are no gapped dimensions, return an empty list."
 )
@@ -135,8 +139,6 @@ def build_brief_prompt(
         parts.append(f"Coverage distribution: {decision.get('covered', 0)} Covered, "
                      f"{decision.get('partial', 0)} Partial, "
                      f"{decision.get('missing', 0)} Missing")
-        parts.append(f"Overall governance maturity (weakest-dimension rule): "
-                     f"{decision.get('overall_governance_maturity', 'n/a')}")
         strongest = decision.get("strongest_dimension")
         if strongest:
             parts.append(f"Strongest dimension: {strongest}")
@@ -235,6 +237,145 @@ def build_relevant_precedent(gaps: list[dict[str, Any]]) -> str | None:
     )
 
 
+def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per-dimension detail — the substance the brief used to discard.
+
+    The brief summarised eight dimensions into three strength bullets and
+    three attention bullets, so a reader never saw what was actually found for
+    any particular dimension. Everything here is already computed and already
+    verified: the coverage tier, the maturity stage, the evidence-derived risk
+    basis, and which of the mechanisms the dimension calls for are absent.
+
+    Deterministic by construction — no LLM involvement, so extending the brief
+    this way adds length without adding a single new place for the model to
+    invent something.
+    """
+    rows: list[dict[str, Any]] = []
+    for g in gaps:
+        if g.get("analysis_error"):
+            rows.append({
+                "dimension": g.get("dimension", ""),
+                "coverage": "Not assessed",
+                "maturity": "",
+                "basis": "This dimension could not be analysed (provider or quota error). "
+                         "It is not a finding about the document.",
+                "absent_mechanisms": [],
+                "confidence": None,
+            })
+            continue
+        rows.append({
+            "dimension": g.get("dimension", ""),
+            "coverage": g.get("coverage", ""),
+            "maturity": g.get("governance_maturity", "") or "",
+            # risk_basis states what the document contains and what it lacks;
+            # coverage_reasoning is the fuller narrative and is the fallback.
+            # The trailing "Not addressed: ..." clause is stripped because the
+            # absent mechanisms are rendered as their own structured line —
+            # leaving it in printed the same list twice in consecutive lines.
+            "basis": _ABSENT_RE.sub("", (g.get("risk_basis") or g.get("coverage_reasoning") or "")).strip(),
+            "absent_mechanisms": _absent_mechanisms(g),
+            "confidence": g.get("confidence_score"),
+        })
+    return rows
+
+
+_ABSENT_RE = re.compile(r"[Nn]ot addressed:\s*([^.]+)\.")
+
+
+def _absent_mechanisms(gap: dict[str, Any]) -> list[str]:
+    """Pull the named absent mechanisms out of the coverage reasoning.
+
+    They are written there deterministically by MechanismCoverage.summary()
+    ("... Not addressed: carbon disclosure, e-waste / hardware lifecycle."),
+    so parsing them back is reading our own output, not interpreting the LLM's.
+    """
+    for field in ("risk_basis", "coverage_reasoning"):
+        m = _ABSENT_RE.search(str(gap.get(field) or ""))
+        if m:
+            return [x.strip() for x in m.group(1).split(",") if x.strip()]
+    return []
+
+
+def build_implementation_roadmap(gaps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sequenced actions for the gapped dimensions, from Module 3.
+
+    Module 3 already produces phased, timeline-reasoned plans with a
+    document-grounded responsible agency, and none of it reached the brief —
+    a decision-maker got recommendations with no indication of ordering,
+    duration or ownership. Ordered by coverage severity so Missing dimensions
+    lead.
+    """
+    severity = {"Missing": 0, "Partial": 1, "Covered": 2}
+    ordered = sorted(
+        (g for g in gaps if not g.get("analysis_error") and (g.get("module_3") or {}).get("phases")),
+        key=lambda g: severity.get(g.get("coverage", ""), 3),
+    )
+    out: list[dict[str, Any]] = []
+    for g in ordered:
+        m3 = g.get("module_3") or {}
+        phases = []
+        for ph in (m3.get("phases") or []):
+            steps = [str(x).strip() for x in (ph.get("steps") or []) if str(x).strip()]
+            if not steps:
+                continue
+            phases.append({
+                "phase": (ph.get("phase") or "").strip(),
+                "timeline": (ph.get("timeline") or "").strip(),
+                "objective": (ph.get("objective") or "").strip(),
+                "steps": steps[:4],
+            })
+        if not phases:
+            continue
+        out.append({
+            "dimension": g.get("dimension", ""),
+            "coverage": g.get("coverage", ""),
+            "responsible_agency": (m3.get("responsible_agency") or "").strip(),
+            "phases": phases,
+            "monitoring": [
+                str(x).strip() for x in (m3.get("monitoring_checklist") or []) if str(x).strip()
+            ][:3],
+        })
+    return out
+
+
+def build_evidence_base(gaps: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the assessment actually rests on.
+
+    A brief that reports verdicts without showing the evidence asks to be
+    taken on trust. These counts and quotes come from citations that already
+    passed verification against their source chunk, so nothing here is a new
+    claim — it is the existing evidence chain, surfaced.
+    """
+    total = verified = 0
+    quotes: list[dict[str, str]] = []
+    for g in gaps:
+        for e in (g.get("evidence") or []):
+            total += 1
+            if e.get("verified"):
+                verified += 1
+        # One representative verified quote per gapped dimension, longest
+        # first (the longest verified passage is reliably the most
+        # substantive, and short fragments read as filler in a brief).
+        if g.get("coverage") in ("Partial", "Missing") and not g.get("analysis_error"):
+            candidates = [
+                (e.get("text") or e.get("quote") or "").strip()
+                for e in (g.get("evidence") or [])
+                if e.get("verified")
+            ]
+            candidates = [c for c in candidates if len(c) > 80]
+            if candidates:
+                best = max(candidates, key=len)
+                quotes.append({
+                    "dimension": g.get("dimension", ""),
+                    "quote": " ".join(best.split())[:320],
+                })
+    return {
+        "citations_total": total,
+        "citations_verified": verified,
+        "representative_quotes": quotes[:4],
+    }
+
+
 def build_scope_and_methodology(
     scope_disclaimer: str,
     frameworks_used: list[str],
@@ -282,13 +423,23 @@ def assemble_brief(
         "covered": sum(1 for g in gaps if g.get("coverage") == "Covered"),
         "partial": sum(1 for g in gaps if g.get("coverage") == "Partial"),
         "missing": sum(1 for g in gaps if g.get("coverage") == "Missing"),
+        # A dimension that FAILED to analyse carries coverage "Insufficient
+        # Evidence" AND analysis_error, so counting both unguarded double-counts
+        # it and the five buckets stop summing to the dimension total. Genuine
+        # insufficient-evidence (assessed, but nothing found to judge on) is a
+        # real verdict; a provider/quota failure is not. Mirrors the same guard
+        # already applied in GapAnalyzer._generate_summary.
         "insufficient_evidence": sum(
-            1 for g in gaps if g.get("coverage") == "Insufficient Evidence"
+            1 for g in gaps
+            if g.get("coverage") == "Insufficient Evidence" and not g.get("analysis_error")
         ),
         "analysis_failed": sum(1 for g in gaps if g.get("analysis_error")),
     }
     risk_overview = build_risk_overview(gaps)
     precedent = build_relevant_precedent(gaps)
+    dimension_assessment = build_dimension_assessment(gaps)
+    implementation_roadmap = build_implementation_roadmap(gaps)
+    evidence_base = build_evidence_base(gaps)
     scope_and_methodology = build_scope_and_methodology(
         scope_disclaimer=scope_disclaimer,
         frameworks_used=frameworks_used,
@@ -322,6 +473,13 @@ def assemble_brief(
                 for r in synthesis.priority_recommendations
                 if r.recommendation.strip()
             ],
+            # Deterministic depth: per-dimension detail, the sequenced Module 3
+            # roadmap, and the verified evidence the verdicts rest on. All read
+            # from stored analysis, so the brief gets longer without the model
+            # getting more room to invent.
+            "dimension_assessment": dimension_assessment,
+            "implementation_roadmap": implementation_roadmap,
+            "evidence_base": evidence_base,
             "relevant_precedent": precedent,
             "scope_and_methodology": scope_and_methodology,
         },
@@ -423,6 +581,21 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
     lines.append("## RISK OVERVIEW")
     lines.append(s["risk_overview"]["paragraph"])
     lines.append("")
+    rows = s.get("dimension_assessment") or []
+    if rows:
+        lines.append("## DIMENSION ASSESSMENT")
+        for r in rows:
+            head = f"### {r['dimension']} — {r['coverage']}"
+            if r.get("maturity"):
+                head += f" · {r['maturity']}"
+            lines.append(head)
+            if r.get("basis"):
+                lines.append(r["basis"])
+            if r.get("absent_mechanisms"):
+                lines.append(
+                    "Mechanisms not addressed: " + ", ".join(r["absent_mechanisms"]) + "."
+                )
+            lines.append("")
     lines.append("## PRIORITY RECOMMENDATIONS")
     recs = s["priority_recommendations"]
     if recs:
@@ -430,6 +603,36 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
             lines.append(f"{i}. **{r['recommendation']}** — {r['rationale']}")
     else:
         lines.append("No critical gaps identified — no priority actions required.")
+    roadmap = s.get("implementation_roadmap") or []
+    if roadmap:
+        lines.append("")
+        lines.append("## IMPLEMENTATION ROADMAP")
+        for item in roadmap:
+            lines.append(f"### {item['dimension']} ({item['coverage']})")
+            if item.get("responsible_agency"):
+                lines.append(f"Responsible body: {item['responsible_agency']}")
+            for ph in item["phases"]:
+                label = ph["phase"] or "Phase"
+                if ph.get("timeline"):
+                    label += f" · {ph['timeline']}"
+                lines.append(f"**{label}** — {ph.get('objective', '')}")
+                lines.extend(f"- {st}" for st in ph["steps"])
+            if item.get("monitoring"):
+                lines.append("Monitoring:")
+                lines.extend(f"- {mc}" for mc in item["monitoring"])
+            lines.append("")
+
+    ev = s.get("evidence_base") or {}
+    if ev.get("citations_total"):
+        lines.append("")
+        lines.append("## EVIDENCE BASE")
+        lines.append(
+            f"{ev['citations_verified']} of {ev['citations_total']} citations "
+            "were verified against their source passage."
+        )
+        for q in (ev.get("representative_quotes") or []):
+            lines.append(f"- **{q['dimension']}** — \"{q['quote']}\"")
+
     if s.get("relevant_precedent"):
         lines.append("")
         lines.append("## RELEVANT PRECEDENT")

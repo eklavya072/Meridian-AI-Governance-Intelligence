@@ -29,6 +29,7 @@ Anti-fabrication (the core rule of this mode):
 
 from __future__ import annotations
 
+import re
 import structlog
 from typing import Any
 
@@ -305,7 +306,9 @@ def build_overview_prompt(
         "Answer the question about the uploaded document. Cite [DOC-n] for "
         "every factual claim. If the retrieved passages don't cover the "
         "question, say so honestly. Organize your answer into sections with "
-        "bullets where enumerable, and end with an offer to go deeper."
+        "bullets where enumerable, and end with an offer to go deeper.\n\n"
+        "Be CONCISE: keep the whole answer under ~120 words unless the user "
+        "explicitly asks for detail. A short, precise answer beats a long one."
     )
     return "\n".join(parts)
 
@@ -315,11 +318,62 @@ def build_overview_prompt(
 DOC_SPECIFIC_MARKERS = (
     "this document", "the document", "this policy", "the policy",
     "this strategy", "the strategy", "this report", "the report",
+    # The uploaded file is a PDF and people say so — "does this pdf deal with
+    # accountability" is as document-anchored as a question gets, and it was
+    # falling through to the unscoped corpus for want of the word.
+    "this pdf", "the pdf", "this file", "the file", "uploaded",
+    "this guideline", "the guideline", "this act", "this bill", "this law",
+    "this framework", "this paper",
     "summarize", "summarise", "overview", "main focus", "focus on",
     "what does the policy", "what does this", "what is in the",
+    "does this", "does the document", "where in", "where does",
+    "mentioned in", "mention", "say about", "cover", "covered in",
     "approach to", "key themes", "main themes", "priorities of",
     "what are the main", "about the document", "tell me about this",
 )
+
+
+# Questions the Auditor should decline and hand to the analysis pipeline.
+#
+# "How does this fare against the EU AI Act?", "what should it improve?",
+# "what's the best implementation plan?" are all real questions with real
+# answers — but the answer is a full dimension-by-dimension run, not a chat
+# turn over a handful of retrieved passages. Answering them from chat would
+# mean producing verdicts and recommendations outside the scored pipeline,
+# ungrounded in the force ladder and unverifiable against it, which is exactly
+# the second source of truth this codebase keeps eliminating.
+_FULL_ANALYSIS_MARKERS = re.compile(
+    r"\b("
+    r"compare[ds]?|comparison|compares|contrast|benchmark|"
+    r"how does (it|this|the \w+) (compare|fare|stack|measure|hold up)|"
+    r"(fair|fares|stack(s)? up|measure(s)? up|hold(s)? up|line(s)? up)\s+(against|with|to)|"
+    r"(against|versus|vs\.?|relative to|in line with|consistent with|aligned? with|"
+    r"alignment with|fall(s)? short)\b|"
+    r"international (standard|standards|practice|norms|benchmark)|"
+    r"best practice|global (standard|standards|norms)|"
+    r"what (should|could|would|needs? to) .{0,30}(improve|strengthen|change|add|fix|do better)|"
+    r"how (should|could|can) .{0,24}(it|they|this|the \w+) (improve|strengthen|be improved)|"
+    r"(gaps?|weakness(es)?|shortcoming)s?\b.{0,30}(against|compared|relative|are there|does it have)|"
+    r"implementation plan|implementation roadmap|roadmap|how to implement|"
+    r"(rate|score|grade|assess|evaluate) (this|it|the (document|policy|strategy))|"
+    r"(is|are) (this|it|the|these)( \w+){0,2} "
+    r"(good|strong|weak|adequate|sufficient|compliant|comprehensive|enough|robust)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def needs_full_analysis(message: str) -> bool:
+    """Is this a question only a scored analysis run can honestly answer?
+
+    Comparison against a framework, prescriptive improvement advice, and
+    implementation planning all require the per-dimension verdicts, the
+    normative-force grading and the mechanism breakdown that the analysis
+    pipeline produces. Chat has none of those, so it points at the pipeline
+    rather than improvising a shallow version of its output.
+    """
+    normalized = (message or "").strip().lower()
+    return bool(normalized and _FULL_ANALYSIS_MARKERS.search(normalized))
 
 
 def is_document_specific_question(message: str) -> bool:

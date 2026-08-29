@@ -28,7 +28,7 @@ def gaps():
             "coverage": "Partial",
             "risk_level": "Medium",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Developing"},
+            "module_1": {"governance_maturity": "Emerging"},
             "module_2": {
                 "priority": "Medium",
                 "recommendations": ["Mandate model-level disclosure", "Publish an AI system registry"],
@@ -39,7 +39,7 @@ def gaps():
             "coverage": "Missing",
             "risk_level": "High",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Ad Hoc"},
+            "module_1": {"governance_maturity": "Unaddressed"},
             "module_2": {
                 "priority": "High",
                 "recommendations": ["Establish a responsible AI oversight body"],
@@ -50,7 +50,7 @@ def gaps():
             "coverage": "Covered",
             "risk_level": "Low",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Defined"},
+            "module_1": {"governance_maturity": "Formalized"},
             "module_2": {
                 "priority": None,
                 "recommendations": [],
@@ -62,7 +62,7 @@ def gaps():
             "coverage": "Partial",
             "risk_level": "High",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Developing"},
+            "module_1": {"governance_maturity": "Emerging"},
             "module_2": {"priority": "High", "recommendations": ["Pre-deployment safety testing"]},
             "module_4": {
                 "matched": True,
@@ -75,7 +75,7 @@ def gaps():
 def _synthesis():
     return BriefSynthesis(
         executive_summary="The strategy covers privacy well but has partial transparency and safety mechanisms.",
-        areas_of_strength=["Privacy is fully addressed at Defined maturity."],
+        areas_of_strength=["Privacy is fully addressed at Formalized maturity."],
         areas_requiring_attention=["Accountability has no owner mechanism."],
         priority_recommendations=[
             {"recommendation": "Establish a responsible AI oversight body", "rationale": "No accountable owner exists today"}
@@ -125,7 +125,7 @@ class TestAssembly:
             scope_disclaimer=SCOPE,
             gaps=gaps,
             synthesis=_synthesis(),
-            decision_analytics={"overall_governance_maturity": "Developing"},
+            decision_analytics={},
         )
         assert brief["num_dimensions"] == 4
         assert brief["coverage_summary"] == {
