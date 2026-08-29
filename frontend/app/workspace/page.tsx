@@ -9,54 +9,6 @@ import SpecularButton from "@/components/SpecularButton";
 import EditorialReveal from "@/components/EditorialReveal";
 import SmoothInput from "@/components/SmoothInput";
 
-/* Progressive edge blur for the Recent Workspaces history list — adapted
-   from the Skiper 41 (ProgressiveBlur) technique: a gradient background
-   matching the page surface fades the rows into the page colour, while a
-   mask reveals only the outer band of the backdrop blur, so the softening
-   builds progressively instead of being a hard-edged strip. Pure overlay —
-   it never touches the cards themselves. */
-function ProgressiveBlur({
-  position,
-  // Resolves to the page surface (#F5F5F5) — var() works inside inline
-  // style strings, so the gradient stays in sync with the design token.
-  backgroundColor = "var(--surface)",
-  height = "48px",
-  blurAmount = "4px",
-}: {
-  position: "top" | "bottom";
-  backgroundColor?: string;
-  height?: string;
-  blurAmount?: string;
-}) {
-  const isTop = position === "top";
-  const maskGradient = isTop
-    ? `linear-gradient(to bottom, ${backgroundColor} 50%, transparent)`
-    : `linear-gradient(to top, ${backgroundColor} 50%, transparent)`;
-  // React's vendor-prefix normalizer drops WebkitBackdropFilter/
-  // WebkitMaskImage camelCase keys, so the Safari prefixes are written
-  // verbatim as hyphenated string keys (typed via Record spread).
-  const webkit: Record<string, string> = {
-    "-webkit-mask-image": maskGradient,
-    "-webkit-backdrop-filter": `blur(${blurAmount})`,
-  };
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-x-0 z-10 select-none"
-      style={{
-        [isTop ? "top" : "bottom"]: 0,
-        height,
-        background: isTop
-          ? `linear-gradient(to top, transparent, ${backgroundColor})`
-          : `linear-gradient(to bottom, transparent, ${backgroundColor})`,
-        maskImage: maskGradient,
-        backdropFilter: `blur(${blurAmount})`,
-        ...webkit,
-      }}
-    />
-  );
-}
-
 export default function WorkspacePage() {
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -68,15 +20,26 @@ export default function WorkspacePage() {
   const [creating, setCreating] = useState(false);
 
   const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const [pollInterval, setPollInterval] = useState<ReturnType<typeof setInterval> | null>(null);
-  // Freshly-created workspaces awaiting their first document: held locally
-  // so the Upload PDF picker can open immediately (a queued workspace is
-  // filtered out of the history list — it only reappears once processing).
-  // Rendered as visible "awaiting document" rows so that if the browser
-  // blocks the programmatic picker click (user activation is consumed by
-  // the create await), the user still has an explicit Upload PDF button.
-  // A list (not a single slot) so creating a second workspace can never
-  // strand an earlier one that is still awaiting its document.
+  const [startingId, setStartingId] = useState<string | null>(null);
+  // Client-side run-start timestamps, keyed by workspace id — lets the
+  // "estimated time remaining" line show a real elapsed counter even though
+  // the backend has no dedicated "pipeline started at" field. Falls back to
+  // updated_at (below) for a workspace whose run began before this page
+  // load, e.g. after a browser refresh mid-run. Set when Run Analysis is
+  // pressed, not on upload: uploading no longer starts anything, so timing
+  // from the upload would show a counter for a workspace sitting idle.
+  const [runStartedAt, setRunStartedAt] = useState<Record<string, number>>({});
+  // Ticks once a second, only while something is actually processing, so the
+  // elapsed-time text stays live without a re-render storm the rest of the
+  // time.
+  const [nowTick, setNowTick] = useState(Date.now());
+  // Freshly-created workspaces, newest last. Only used to know which
+  // workspace the auto-opened file picker belongs to; the workspace itself
+  // is already visible in the list below, which is where the explicit
+  // Upload PDF button lives if the browser blocks that programmatic click
+  // (the create await consumes the user activation). A list rather than a
+  // single slot so creating a second workspace cannot retarget the picker
+  // of one still waiting on its file.
   const [pendingUploads, setPendingUploads] = useState<Workspace[]>([]);
   const pendingInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,34 +47,81 @@ export default function WorkspacePage() {
     loadWorkspaces();
   }, []);
 
+  // Is any run actually in flight? "queued" now means "documents attached,
+  // waiting for the user to press Run Analysis" — an idle state, not a
+  // running one, so it must not start a poller.
+  //
+  // Derived as a BOOLEAN and used as the effect dependency, which is the
+  // whole point. Both timers below previously depended on the `workspaces`
+  // ARRAY, and the poller additionally stored its interval id in state and
+  // guarded on it. That combination cancels itself after exactly one tick:
+  // the poll refreshes `workspaces`, the new array identity fires the
+  // cleanup which clears the live interval, the effect re-runs, and the
+  // guard `hasActiveRun && !pollInterval` sees the stale-but-truthy id in
+  // state and declines to start a replacement. Polling stops, the status
+  // never reaches "complete", and the 1s ticker counts up forever because
+  // `workspaces` never changes again — so a finished analysis looked like it
+  // was still running until the page was reloaded by hand.
+  //
+  // A boolean only changes when a run actually starts or stops, so neither
+  // interval is torn down by routine data refreshes.
+  const hasActiveRun = workspaces.some(
+    (w) => w.status === "processing" || w.status === "generating_report"
+  );
+
   useEffect(() => {
-    const hasProcessing = workspaces.some(
-      (w) => w.status === "processing" || w.status === "queued"
-    );
-    if (hasProcessing && !pollInterval) {
-      const id = setInterval(loadWorkspaces, 3000);
-      setPollInterval(id);
-    } else if (!hasProcessing && pollInterval) {
-      clearInterval(pollInterval);
-      setPollInterval(null);
+    if (!hasActiveRun) return;
+    const id = setInterval(loadWorkspaces, 3000);
+    return () => clearInterval(id);
+  }, [hasActiveRun]);
+
+  // Live elapsed-time ticker for the "estimated time" line — only runs while
+  // something is actually processing.
+  useEffect(() => {
+    if (!hasActiveRun) return;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [hasActiveRun]);
+
+  // Based on real pipeline runs this session: an 8-dimension analysis
+  // typically lands in the 90s-3min range, with larger documents or provider
+  // slowness pushing past that — so the estimate is a range, not a false
+  // promise of an exact number.
+  const ESTIMATED_LOW_S = 90;
+  const ESTIMATED_HIGH_S = 240;
+
+  // A workspace accepts documents (and can be started) whenever it is not
+  // mid-run. "error" is included so a failed run can be retried without
+  // creating a new workspace.
+  function canAttach(ws: Workspace): boolean {
+    return ws.status === "queued" || ws.status === "error";
+  }
+
+  function estimateLine(ws: Workspace): string {
+    const started =
+      runStartedAt[ws.id] ?? Date.parse(ws.updated_at || ws.created_at);
+    if (!started || Number.isNaN(started)) return "Estimated time: ~2-4 minutes.";
+    const elapsedS = Math.max(0, Math.floor((nowTick - started) / 1000));
+    const mm = Math.floor(elapsedS / 60);
+    const ss = elapsedS % 60;
+    const elapsedLabel = `${mm}:${ss.toString().padStart(2, "0")}`;
+    if (elapsedS < ESTIMATED_HIGH_S) {
+      return `Estimated time: ~2-4 minutes total · elapsed ${elapsedLabel}`;
     }
-    return () => {
-      if (pollInterval) clearInterval(pollInterval);
-    };
-  }, [workspaces, pollInterval]);
+    // Past the usual window — most likely provider quota/latency, not a
+    // stuck pipeline (this app hits daily LLM quota limits regularly).
+    return `Taking longer than usual (elapsed ${elapsedLabel}) — likely provider load, still running`;
+  }
 
   async function loadWorkspaces() {
     try {
       const data = await api.listWorkspaces();
       // AI Auditor uploads are chat-only workspaces (document ingested for
       // chat, never analysed) — they live on the AI Auditor page, not here.
-      // Queued workspaces (created, no document yet) are also hidden from
-      // history — they only appear once processing begins.
-      setWorkspaces(
-        data.filter(
-          (w) => w.status !== "chat_only" && w.status !== "queued"
-        )
-      );
+      // Queued workspaces DO belong here: that is where a workspace sits
+      // while it collects documents, and hiding it would strand the Run
+      // Analysis button the moment the page reloaded.
+      setWorkspaces(data.filter((w) => w.status !== "chat_only"));
       setError(null);
     } catch (e) {
       setError("Failed to load workspaces");
@@ -134,10 +144,9 @@ export default function WorkspacePage() {
       setCountry("");
       setPolicyTitle("");
       await loadWorkspaces();
-      // Queued workspaces are hidden from history, so open the file picker
-      // for the brand-new workspace immediately — it appears in the list as
-      // soon as the upload starts processing. The pending rows (below) are
-      // the fallback if the browser blocks this programmatic click.
+      // Open the picker straight away — one less click in the common case.
+      // The new workspace's own card is the fallback if the browser blocks
+      // this programmatic click.
       setPendingUploads((prev) => [...prev, ws]);
       pendingInputRef.current?.click();
     } catch (e) {
@@ -157,6 +166,27 @@ export default function WorkspacePage() {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setUploadingId(null);
+    }
+  }
+
+  async function handleRunAnalysis(workspaceId: string) {
+    setStartingId(workspaceId);
+    setError(null);
+    setRunStartedAt((prev) => ({ ...prev, [workspaceId]: Date.now() }));
+    try {
+      await api.runAnalysis(workspaceId);
+      await loadWorkspaces();
+    } catch (e: unknown) {
+      // Clear the timestamp again, otherwise a failed start leaves an
+      // elapsed counter ticking against a workspace that never began.
+      setRunStartedAt((prev) => {
+        const next = { ...prev };
+        delete next[workspaceId];
+        return next;
+      });
+      setError(e instanceof Error ? e.message : "Could not start analysis");
+    } finally {
+      setStartingId(null);
     }
   }
 
@@ -258,50 +288,6 @@ export default function WorkspacePage() {
         />
       </section>
 
-      {/* Freshly-created workspaces awaiting their first document. Not part
-          of the history list (queued is filtered out) — dedicated rows with
-          explicit Upload PDF buttons so a blocked auto-picker can never
-          leave a workspace stranded and invisible. Each row clears the
-          moment its upload starts. */}
-      {pendingUploads.length > 0 && (
-        <div className="space-y-3">
-          {pendingUploads.map((pw) => (
-            <div
-              key={pw.id}
-              className="bg-white rounded-lg border border-dashed border-undp-blue/40 p-4 flex items-center justify-between gap-3"
-            >
-              <div className="space-y-0.5 min-w-0">
-                <p className="font-medium text-gray-900">
-                  {pw.country} — {pw.policy_title}
-                </p>
-                <p className="text-xs text-gray-500">
-                  Workspace created. Upload a policy document to start the
-                  analysis.
-                </p>
-              </div>
-              <label className="shrink-0 text-sm px-4 py-2 rounded-lg cursor-pointer transition-colors bg-undp-blue text-white hover:bg-undp-blue-light">
-                Upload PDF
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (file) {
-                      setPendingUploads((prev) =>
-                        prev.filter((w) => w.id !== pw.id)
-                      );
-                      handleUpload(pw.id, file);
-                    }
-                  }}
-                />
-              </label>
-            </div>
-          ))}
-        </div>
-      )}
-
       <section>
         <h2 className="text-lg font-semibold text-undp-blue mb-4">
           Recent Workspaces
@@ -313,16 +299,9 @@ export default function WorkspacePage() {
             No workspaces yet. Create one above.
           </p>
         ) : (
-          <div className="relative">
-            {/* Progressive edge blur (Skiper 41 technique): a taller,
-                gradient + masked overlay so rows passing the top and bottom
-                edges fade into the page colour and soften progressively,
-                rather than hitting a hard-edged blur strip. */}
-            <ProgressiveBlur position="top" />
-            <ProgressiveBlur position="bottom" />
+          <div>
             {/* Internal scroll with NO visible scrollbar (the .no-scrollbar
-                utility hides it) — the edge blur overlays are the only cue
-                that more rows wait above/below. */}
+                utility hides it). */}
             <div className="no-scrollbar max-h-[56vh] space-y-3 overflow-y-auto pb-2 pt-1 pr-1">
             {workspaces.map((ws) => (
               <TiltCard key={ws.id} className="rounded-lg">
@@ -337,7 +316,6 @@ export default function WorkspacePage() {
                     <StatusBadge
                       status={ws.status}
                       showBar={
-                        ws.status === "queued" ||
                         ws.status === "processing" ||
                         ws.status === "generating_report"
                       }
@@ -351,12 +329,30 @@ export default function WorkspacePage() {
                       {ws.status_detail}
                     </p>
                   )}
+                  {(ws.pending_documents?.length ?? 0) > 0 && (
+                    <p className="text-xs text-gray-500 truncate">
+                      Attached: {ws.pending_documents.join(", ")}
+                    </p>
+                  )}
+                  {/* The elapsed counter belongs to a run in flight. A queued
+                      workspace is waiting on the user, so showing a timer
+                      there would count up against nothing. */}
+                  {(ws.status === "processing" ||
+                    ws.status === "generating_report") && (
+                    <p className="text-xs text-undp-blue font-medium">
+                      {estimateLine(ws)}
+                    </p>
+                  )}
                 </div>
                 <div className="shrink-0 flex gap-2 flex-wrap">
                   {/* Completed analysis → View Analysis takes you straight
                       to the analysis page with this workspace preselected.
-                      Upload is only offered while a document is still
-                      needed (queued / error). */}
+                      Otherwise the card offers Upload PDF, and Run Analysis
+                      once at least one document is attached. Upload stays
+                      available next to Run Analysis on purpose: adding a
+                      second document (a strategy plus its implementation
+                      plan) and starting are separate decisions, and the
+                      user makes both in their own order. */}
                   {ws.status === "complete" ? (
                     <button
                       onClick={() => router.push(`/analysis?workspace=${ws.id}`)}
@@ -365,27 +361,41 @@ export default function WorkspacePage() {
                       View Analysis
                     </button>
                   ) : (
-                    <label
-                      className={`text-sm px-4 py-2 rounded-lg cursor-pointer transition-colors ${
-                        ws.status === "queued" || ws.status === "error"
-                          ? "bg-undp-blue text-white hover:bg-undp-blue-light"
-                          : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      }`}
-                    >
-                      {uploadingId === ws.id ? "Uploading..." : "Upload PDF"}
-                      <input
-                        type="file"
-                        accept=".pdf,application/pdf"
-                        className="hidden"
-                        disabled={
-                          ws.status !== "queued" && ws.status !== "error"
-                        }
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleUpload(ws.id, file);
-                        }}
-                      />
-                    </label>
+                    <>
+                      <label
+                        className={`text-sm px-4 py-2 rounded-lg cursor-pointer transition-colors ${
+                          canAttach(ws)
+                            ? "border border-undp-blue text-undp-blue hover:bg-undp-blue/5"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
+                      >
+                        {uploadingId === ws.id
+                          ? "Uploading..."
+                          : ws.pending_documents?.length
+                            ? "Add another PDF"
+                            : "Upload PDF"}
+                        <input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          className="hidden"
+                          disabled={!canAttach(ws)}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = "";
+                            if (file) handleUpload(ws.id, file);
+                          }}
+                        />
+                      </label>
+                      {canAttach(ws) && (ws.pending_documents?.length ?? 0) > 0 && (
+                        <button
+                          onClick={() => handleRunAnalysis(ws.id)}
+                          disabled={startingId === ws.id || uploadingId === ws.id}
+                          className="pressable text-sm px-4 py-2 rounded-lg transition-colors bg-undp-blue text-white hover:bg-undp-blue-light disabled:bg-gray-100 disabled:text-gray-400"
+                        >
+                          {startingId === ws.id ? "Starting..." : "Run Analysis"}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

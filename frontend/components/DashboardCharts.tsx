@@ -26,7 +26,7 @@ import Gauge from "@/components/Gauge";
 // distribution is the one chart that carries the Covered/Partial/Missing
 // semantic, so it uses the muted status colors; everything else is grey.
 const CHART_COVERED = "#3F7A52"; // muted forest green
-const CHART_PARTIAL = "#B07E2B"; // muted amber
+const CHART_PARTIAL = "#C9AF7A"; // soft gold — softer than amber against red/green
 const CHART_MISSING = "#A8483F"; // muted red
 const CHART_NEUTRAL = "#8A8A8A"; // grey — not assessed
 const CHART_EMPTY = "rgba(10, 10, 10, 0.08)"; // --border, for zero-state slice
@@ -90,7 +90,7 @@ export function CoverageDonut({
   );
 }
 
-// ── Maturity gauge ──────────────────────────────────────────────────────
+// ── Binding-force gauge ─────────────────────────────────────────────────
 
 // Native Gauge (see components/Gauge.tsx) in the old gauge's layout — a
 // single smooth 260° arc with "65.6 / 100" in the centre, the stage in a
@@ -103,7 +103,6 @@ export function MaturityGauge({
   analytics: DecisionAnalytics;
 }) {
   const index = Math.max(0, Math.min(100, analytics.maturity_index || 0));
-  const stage = analytics.overall_governance_maturity || "—";
 
   return (
     <div className="flex flex-col items-center">
@@ -114,27 +113,21 @@ export function MaturityGauge({
         size={180}
         inactiveFillOpacity={0.08}
         useGradient
-        ariaLabel={`Governance maturity gauge: ${index.toFixed(1)} of 100`}
+        ariaLabel={`Implementation depth gauge: ${index.toFixed(1)} of 100`}
       />
-      <div className="mt-3 text-center">
-        <span className="dot-indicator">
-          <span className="dot" style={{ background: CHART_COVERED }} />
-          <span className="text-sm text-navy-800">{stage}</span>
-        </span>
-      </div>
     </div>
   );
 }
 
 // Fully greyscale ramp for the stage histogram — dark-grey steps, no
 // semantic color: the maturity block stays strictly monochrome.
-const GAUGE_COLORS = ["#8A8A8A", "#595959", "#262626", "#0A0A0A"];
+const GAUGE_COLORS = ["#8A8A8A", "#6E6E6E", "#4A4A4A", "#262626", "#0A0A0A"];
 
 // ── Mini stage histogram (kept from the original card) ─────────────────
 // The gauge replaces the segmented bar, but the per-stage distribution is
 // still valuable — rendered as a compact, animated strip below the gauge.
 
-const STAGE_ORDER = ["Ad Hoc", "Developing", "Defined", "Managed", "Optimized"];
+const STAGE_ORDER = ["Unaddressed", "Emerging", "Delegated", "Operationalized", "Institutionalized"];
 
 export function StageHistogram({
   analytics,

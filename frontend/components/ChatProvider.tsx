@@ -29,6 +29,10 @@ interface ChatContextValue {
   togglePanel: () => void;
   workspaceId: string | null;
   setWorkspaceId: (id: string | null) => void;
+  /** The analysis run currently selected on the results page, so questions
+   *  are answered about the run the user is actually looking at. */
+  analysisId: string | null;
+  setAnalysisId: (id: string | null) => void;
   sessionId: string | null;
   /** "advisor" (analysis-aware) | "framework_qa" (knowledge-base only) */
   mode: ChatMode;
@@ -54,6 +58,7 @@ export function useChat() {
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [mode, setModeState] = useState<ChatMode>("advisor");
   const [findingLabel, setFindingLabel] = useState<string | null>(null);
@@ -146,7 +151,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         text,
         sessionId,
         findingContextRef.current,
-        mode
+        mode,
+        analysisId
       );
 
       if (!sessionId) {
@@ -177,7 +183,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, sessionId, loading, loadSessions, mode]);
+  }, [workspaceId, sessionId, loading, loadSessions, mode, analysisId]);
 
   return (
     <ChatContext.Provider
@@ -188,6 +194,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         togglePanel,
         workspaceId,
         setWorkspaceId,
+        analysisId,
+        setAnalysisId,
         sessionId,
         mode,
         setMode,
