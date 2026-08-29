@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
+
 import magic
 import structlog
-from pathlib import Path
 from pydantic import BaseModel
 
 logger = structlog.get_logger()
@@ -25,7 +26,9 @@ class ValidationResult(BaseModel):
     ocr_warning: bool = False
 
 
-def validate_pdf_file(file_bytes: bytes, filename: str, max_file_size: int | None = None) -> ValidationResult:
+def validate_pdf_file(
+    file_bytes: bytes, filename: str, max_file_size: int | None = None
+) -> ValidationResult:
     if max_file_size is None:
         max_file_size = MAX_FILE_SIZE_BYTES
 
@@ -33,7 +36,7 @@ def validate_pdf_file(file_bytes: bytes, filename: str, max_file_size: int | Non
         return ValidationResult(
             valid=False,
             error_type="file_too_large",
-            error_message=f"File exceeds the {max_file_size // (1024*1024)}MB limit.",
+            error_message=f"File exceeds the {max_file_size // (1024 * 1024)}MB limit.",
         )
     if not file_bytes:
         return ValidationResult(
@@ -86,6 +89,7 @@ def validate_pdf_file(file_bytes: bytes, filename: str, max_file_size: int | Non
 def _check_password_protected(file_bytes: bytes) -> bool:
     try:
         from pypdf import PdfReader
+
         reader = PdfReader(io.BytesIO(file_bytes))
         if reader.is_encrypted:
             return True
@@ -97,6 +101,7 @@ def _check_password_protected(file_bytes: bytes) -> bool:
 def _extract_text_and_detect_scan(file_bytes: bytes) -> tuple[str, bool]:
     try:
         from pypdf import PdfReader
+
         reader = PdfReader(io.BytesIO(file_bytes))
         text_parts: list[str] = []
         total_chars = 0

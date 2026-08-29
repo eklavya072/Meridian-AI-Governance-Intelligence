@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import os
 import threading
-import time
-import json
-import structlog
 from abc import ABC, abstractmethod
-from typing import Any, TypeVar, Type
+from typing import Any, TypeVar
 
+import structlog
 from pydantic import BaseModel
 
 logger = structlog.get_logger()
@@ -32,13 +30,11 @@ T = TypeVar("T", bound=BaseModel)
 class LLMProvider(ABC):
     @abstractmethod
     def generate_structured(
-        self, prompt: str, schema: Type[T], system_prompt: str | None = None
+        self, prompt: str, schema: type[T], system_prompt: str | None = None
     ) -> T: ...
 
     @abstractmethod
-    def generate_text(
-        self, prompt: str, system_prompt: str | None = None
-    ) -> str: ...
+    def generate_text(self, prompt: str, system_prompt: str | None = None) -> str: ...
 
     @property
     @abstractmethod
@@ -77,9 +73,11 @@ class GeminiProvider(LLMProvider):
 
         key_count = len(self.api_keys)
         if key_count > 1:
-            print(f"[DEBUG] GeminiProvider initialized with {key_count} API keys (auto-rotation enabled)")
+            print(
+                f"[DEBUG] GeminiProvider initialized with {key_count} API keys (auto-rotation enabled)"
+            )
         else:
-            print(f"[DEBUG] GeminiProvider initialized with 1 API key")
+            print("[DEBUG] GeminiProvider initialized with 1 API key")
 
     @property
     def api_key(self) -> str:
@@ -127,8 +125,12 @@ class GeminiProvider(LLMProvider):
         return len(self.api_keys) - self.current_key_index - 1
 
     def _call_gemini(
-        self, prompt: str, system_prompt: str | None = None, schema: type[T] | None = None,
-        key_index: int | None = None, max_output_tokens: int | None = None,
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        schema: type[T] | None = None,
+        key_index: int | None = None,
+        max_output_tokens: int | None = None,
     ) -> tuple[str, Any | None]:
         """Make a single Gemini API call with the current (or explicitly
         selected) key. `key_index` is set by provider_router's per-key
@@ -161,9 +163,7 @@ class GeminiProvider(LLMProvider):
             # lighter one) is the safe cut: faster without the quality risk
             # of "minimal", which skips the pass that catches nuance.
             # Env-tunable if a future model needs recalibrating.
-            "thinking_config": types.ThinkingConfig(
-                thinking_level=GEMINI_THINKING_LEVEL
-            ),
+            "thinking_config": types.ThinkingConfig(thinking_level=GEMINI_THINKING_LEVEL),
         }
         if system_prompt:
             config_kwargs["system_instruction"] = system_prompt
@@ -181,7 +181,10 @@ class GeminiProvider(LLMProvider):
         return text, None
 
     def generate_structured(
-        self, prompt: str, schema: type[T], system_prompt: str | None = None,
+        self,
+        prompt: str,
+        schema: type[T],
+        system_prompt: str | None = None,
         key_index: int | None = None,
     ) -> T:
         try:
@@ -197,17 +200,26 @@ class GeminiProvider(LLMProvider):
                 raise QuotaExceededError(str(exc)) from exc
             if "500" in error_str or "503" in error_str or "timeout" in error_str.lower():
                 raise RetryableError(str(exc)) from exc
-            if "404" in error_str or "not found" in error_str.lower() or "is no longer available" in error_str:
+            if (
+                "404" in error_str
+                or "not found" in error_str.lower()
+                or "is no longer available" in error_str
+            ):
                 raise QuotaExceededError(f"Model unavailable: {exc}") from exc
             raise
 
     def generate_text(
-        self, prompt: str, system_prompt: str | None = None,
-        key_index: int | None = None, max_output_tokens: int | None = None,
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        key_index: int | None = None,
+        max_output_tokens: int | None = None,
     ) -> str:
         try:
             text, _ = self._call_gemini(
-                prompt=prompt, system_prompt=system_prompt, key_index=key_index,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                key_index=key_index,
                 max_output_tokens=max_output_tokens,
             )
             return text
@@ -217,7 +229,11 @@ class GeminiProvider(LLMProvider):
                 raise QuotaExceededError(str(exc)) from exc
             if "500" in error_str or "503" in error_str or "timeout" in error_str.lower():
                 raise RetryableError(str(exc)) from exc
-            if "404" in error_str or "not found" in error_str.lower() or "is no longer available" in error_str:
+            if (
+                "404" in error_str
+                or "not found" in error_str.lower()
+                or "is no longer available" in error_str
+            ):
                 raise QuotaExceededError(f"Model unavailable: {exc}") from exc
             raise
 
@@ -226,9 +242,7 @@ class CerebrasProvider(LLMProvider):
     def __init__(self) -> None:
         api_key = os.getenv("CEREBRAS_API_KEY")
         if not api_key:
-            raise ValueError(
-                "CEREBRAS_API_KEY not set. Get one free at https://cloud.cerebras.ai"
-            )
+            raise ValueError("CEREBRAS_API_KEY not set. Get one free at https://cloud.cerebras.ai")
         self.api_key = api_key
         self.model_name_str = os.getenv("CEREBRAS_MODEL", "llama3.1-70b")
 
@@ -272,7 +286,20 @@ class CerebrasProvider(LLMProvider):
             return text, usage
         except Exception as exc:
             error_str = str(exc).lower()
-            if any(k in error_str for k in ("402", "429", "quota", "rate", "payment required", "model not found", "model does not exist", "not found", "404")):
+            if any(
+                k in error_str
+                for k in (
+                    "402",
+                    "429",
+                    "quota",
+                    "rate",
+                    "payment required",
+                    "model not found",
+                    "model does not exist",
+                    "not found",
+                    "404",
+                )
+            ):
                 raise QuotaExceededError(str(exc)) from exc
             if any(k in error_str for k in ("500", "502", "503")):
                 raise RetryableError(str(exc)) from exc
@@ -282,23 +309,32 @@ class CerebrasProvider(LLMProvider):
         self, prompt: str, schema: type[T], system_prompt: str | None = None
     ) -> T:
         import re
-        raw, usage = self._call_cerebras(prompt=prompt, system_prompt=system_prompt, temperature=0.1)
+
+        raw, usage = self._call_cerebras(
+            prompt=prompt, system_prompt=system_prompt, temperature=0.1
+        )
         cleaned = re.sub(r"^```(?:json)?\s*|```\s*$", "", raw.strip(), flags=re.MULTILINE)
         try:
             import json
+
             parsed = json.loads(cleaned)
             obj = schema(**parsed)
             obj._raw_json = cleaned
             obj._token_usage = usage
             return obj
         except Exception as exc:
-            logger.error("cerebras_structured_parse_failed", error=str(exc), raw_preview=raw[:200], cleaned_preview=cleaned[:200])
+            logger.error(
+                "cerebras_structured_parse_failed",
+                error=str(exc),
+                raw_preview=raw[:200],
+                cleaned_preview=cleaned[:200],
+            )
             raise
 
-    def generate_text(
-        self, prompt: str, system_prompt: str | None = None
-    ) -> str:
-        raw, _usage = self._call_cerebras(prompt=prompt, system_prompt=system_prompt, temperature=0.3)
+    def generate_text(self, prompt: str, system_prompt: str | None = None) -> str:
+        raw, _usage = self._call_cerebras(
+            prompt=prompt, system_prompt=system_prompt, temperature=0.3
+        )
         return raw
 
 
@@ -306,9 +342,7 @@ class GroqProvider(LLMProvider):
     def __init__(self) -> None:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            raise ValueError(
-                "GROQ_API_KEY not set. Get one free at https://console.groq.com"
-            )
+            raise ValueError("GROQ_API_KEY not set. Get one free at https://console.groq.com")
         self.api_key = api_key
         # "llama-3.3-70b-versatile" was retired from Groq's catalog (confirmed
         # live 404 "model_not_found" from a real analysis run, and absent
@@ -332,7 +366,11 @@ class GroqProvider(LLMProvider):
         return self.model_name_str
 
     def _call_groq(
-        self, prompt: str, system_prompt: str | None = None, temperature: float = 0.1, json_mode: bool = False,
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.1,
+        json_mode: bool = False,
     ) -> tuple[str, dict]:
         from openai import OpenAI
 
@@ -388,21 +426,28 @@ class GroqProvider(LLMProvider):
         self, prompt: str, schema: type[T], system_prompt: str | None = None
     ) -> T:
         import re
-        raw, usage = self._call_groq(prompt=prompt, system_prompt=system_prompt, temperature=0.1, json_mode=True)
+
+        raw, usage = self._call_groq(
+            prompt=prompt, system_prompt=system_prompt, temperature=0.1, json_mode=True
+        )
         cleaned = re.sub(r"^```(?:json)?\s*|```\s*$", "", raw.strip(), flags=re.MULTILINE)
         try:
             import json
+
             parsed = json.loads(cleaned)
             obj = schema(**parsed)
             obj._raw_json = cleaned
             obj._token_usage = usage
             return obj
         except Exception as exc:
-            logger.error("groq_structured_parse_failed", error=str(exc), raw_preview=raw[:200], cleaned_preview=cleaned[:200])
+            logger.error(
+                "groq_structured_parse_failed",
+                error=str(exc),
+                raw_preview=raw[:200],
+                cleaned_preview=cleaned[:200],
+            )
             raise
 
-    def generate_text(
-        self, prompt: str, system_prompt: str | None = None
-    ) -> str:
+    def generate_text(self, prompt: str, system_prompt: str | None = None) -> str:
         raw, _usage = self._call_groq(prompt=prompt, system_prompt=system_prompt, temperature=0.3)
         return raw

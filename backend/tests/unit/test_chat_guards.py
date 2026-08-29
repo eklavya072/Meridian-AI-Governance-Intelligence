@@ -5,6 +5,7 @@ verified QUOTED sources but never the article and recital NUMBERS it wrote
 into prose — the same failure that produced four flagged citations on a live
 EU AI Act run, one of them pointing at an article of a different regulation.
 """
+
 import ast
 import pathlib
 
@@ -29,7 +30,7 @@ class TestNarrativeCitationCheckIsWired:
     def test_document_fetch_is_lazy(self):
         """The whole-document pull must sit behind the cheap regex pass."""
         source = CHAT.read_text()
-        block = source[source.index("Narrative citation numbers"):]
+        block = source[source.index("Narrative citation numbers") :]
         block = block[: block.index('result["reply"]')]
         guard = block.index("find_unverifiable_citations")
         fetch = block.index("vector_store.collection.get")
@@ -61,7 +62,7 @@ class TestSessionContextIsBounded:
         first = chat._get_session("keep-me")
         for i in range(limit - 1):
             chat._get_session(f"filler-{i}")
-        chat._get_session("keep-me")          # touch it
+        chat._get_session("keep-me")  # touch it
         for i in range(10):
             chat._get_session(f"newer-{i}")
         assert "keep-me" in chat._session_contexts

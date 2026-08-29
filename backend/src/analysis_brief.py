@@ -75,9 +75,7 @@ def _dimension_row(gap: dict[str, Any]) -> str:
         f"risk {_fmt(gap.get('risk_level'))}",
     ]
     if present or absent:
-        parts.append(
-            f"mechanisms {len(present)} present ({binding} binding), {len(absent)} absent"
-        )
+        parts.append(f"mechanisms {len(present)} present ({binding} binding), {len(absent)} absent")
     if m2.get("priority"):
         parts.append(f"priority {m2['priority']}")
     line = "  • " + " | ".join(parts)
@@ -148,8 +146,7 @@ def build_analysis_overview_context(analysis_results: dict[str, Any] | None) -> 
         dist = analytics.get("maturity_distribution") or {}
         if dist:
             lines.append(
-                "Stage distribution: "
-                + ", ".join(f"{k} {v}" for k, v in dist.items() if v)
+                "Stage distribution: " + ", ".join(f"{k} {v}" for k, v in dist.items() if v)
             )
         if analytics.get("average_confidence") is not None:
             lines.append(f"Mean confidence across dimensions: {analytics['average_confidence']}.")
@@ -162,8 +159,7 @@ def build_analysis_overview_context(analysis_results: dict[str, Any] | None) -> 
             )
         if analytics.get("ladder_raise_review"):
             lines.append(
-                "Flagged for ladder-raise review: "
-                + ", ".join(analytics["ladder_raise_review"])
+                "Flagged for ladder-raise review: " + ", ".join(analytics["ladder_raise_review"])
             )
         lines.append("")
 

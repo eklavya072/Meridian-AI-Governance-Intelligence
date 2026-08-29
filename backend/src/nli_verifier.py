@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 import threading
+
 import structlog
-from typing import Any
 
 from src.models import CitationVerification, VerificationStatus
-from src.utils import cosine_similarity, compute_keyword_overlap, l2_normalize
+from src.utils import compute_keyword_overlap, cosine_similarity, l2_normalize
 
 logger = structlog.get_logger()
 
@@ -36,6 +36,7 @@ class NLIVerifier:
             return
         try:
             from sentence_transformers import CrossEncoder
+
             self._model = CrossEncoder(self._model_name)
             logger.info("nli_model_loaded", model=self._model_name)
         except Exception as exc:

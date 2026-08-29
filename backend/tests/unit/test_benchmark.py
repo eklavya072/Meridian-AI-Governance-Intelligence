@@ -1,7 +1,8 @@
 import pytest
-from src.benchmark import BenchmarkRunner, BenchmarkConfig
-from src.models import RetrievalMetrics
+
+from src.benchmark import BenchmarkConfig, BenchmarkRunner
 from src.evaluation import RetrievalEvaluator
+from src.models import RetrievalMetrics
 
 
 class MockVectorstore:
@@ -35,6 +36,7 @@ def test_benchmark_runner_run_empty():
             retrieval_queries = []
             retrieval_latency = 0.0
             total_candidates = 0
+
         return MockResult()
 
     config = BenchmarkConfig(name="baseline")
@@ -73,16 +75,24 @@ def test_benchmark_comparison_logging():
     m1 = RetrievalMetrics(precision_at_5=0.9)
     m2 = RetrievalMetrics(precision_at_5=0.7)
 
-    run1 = type('BenchmarkRun', (), {
-        'config': BenchmarkConfig(name="reranker"),
-        'aggregate': m1,
-        'total_latency': 5.0,
-    })()
-    run2 = type('BenchmarkRun', (), {
-        'config': BenchmarkConfig(name="baseline"),
-        'aggregate': m2,
-        'total_latency': 2.0,
-    })()
+    run1 = type(
+        "BenchmarkRun",
+        (),
+        {
+            "config": BenchmarkConfig(name="reranker"),
+            "aggregate": m1,
+            "total_latency": 5.0,
+        },
+    )()
+    run2 = type(
+        "BenchmarkRun",
+        (),
+        {
+            "config": BenchmarkConfig(name="baseline"),
+            "aggregate": m2,
+            "total_latency": 2.0,
+        },
+    )()
 
     runner._log_comparison([run1, run2])
 
@@ -99,6 +109,7 @@ def test_benchmark_last_run():
             retrieval_queries = []
             retrieval_latency = 0.0
             total_candidates = 0
+
         return MockResult()
 
     config = BenchmarkConfig(name="test")

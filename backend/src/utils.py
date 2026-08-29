@@ -81,9 +81,7 @@ def compute_keyword_overlap(text_a: str, text_b: str) -> float:
     return overlap / len(key_terms)
 
 
-def batch_fetch_chunk_metadata(
-    vectorstore: Any, chunk_ids: list[str]
-) -> dict[str, dict[str, Any]]:
+def batch_fetch_chunk_metadata(vectorstore: Any, chunk_ids: list[str]) -> dict[str, dict[str, Any]]:
     if not chunk_ids:
         return {}
     result: dict[str, dict[str, Any]] = {}
@@ -95,7 +93,7 @@ def batch_fetch_chunk_metadata(
         )
         if data and data.get("ids"):
             for i, cid in enumerate(data["ids"]):
-                md = {}
+                md: dict[str, Any] = {}
                 if data.get("metadatas") and i < len(data["metadatas"]):
                     md = data["metadatas"][i] or {}
                 text = ""

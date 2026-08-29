@@ -1,9 +1,10 @@
 import pytest
+
 from src.stability import (
+    analyze_retrieval_stability,
     jaccard_similarity,
     kendall_tau,
     score_variance,
-    analyze_retrieval_stability,
 )
 
 
@@ -80,17 +81,20 @@ def test_analyze_stability_multiple_retrievals():
 
 def test_stability_low_variance():
     import time
-    results_data = []
 
     def mock_retrieval(dim):
-        return type('R', (), {
-            'document_chunks': [
-                {'chunk_id': 'c1', 'rrf_score': 0.9},
-                {'chunk_id': 'c2', 'rrf_score': 0.8},
-                {'chunk_id': 'c3', 'rrf_score': 0.7},
-            ],
-            'framework_chunks': [],
-        })()
+        return type(
+            "R",
+            (),
+            {
+                "document_chunks": [
+                    {"chunk_id": "c1", "rrf_score": 0.9},
+                    {"chunk_id": "c2", "rrf_score": 0.8},
+                    {"chunk_id": "c3", "rrf_score": 0.7},
+                ],
+                "framework_chunks": [],
+            },
+        )()
 
     result = analyze_retrieval_stability("Transparency", mock_retrieval, num_retrievals=3)
     assert result.num_retrievals == 3

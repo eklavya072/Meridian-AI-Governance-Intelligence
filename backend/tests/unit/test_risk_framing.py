@@ -13,6 +13,7 @@ GovernanceGap.potential_consequence was declared, consumed by the executive
 brief, and never populated — so the brief silently dropped its "what follows if
 this is not fixed" line on all 64 stored gaps.
 """
+
 import pytest
 
 from src.evidence_strength import (
@@ -33,20 +34,23 @@ MECH = MechanismCoverage(
 
 def _profile(scored, commitment, institutional, binding, enforceable):
     return EvidenceProfile(
-        dimension=DIM, n_scored=scored, n_commitment=commitment,
-        n_institutional=institutional, n_binding=binding,
+        dimension=DIM,
+        n_scored=scored,
+        n_commitment=commitment,
+        n_institutional=institutional,
+        n_binding=binding,
         n_enforceable=enforceable,
     )
 
 
 # The shapes that actually occur in the live corpora.
 SHAPES = {
-    "eu_env":      ("Partial", _profile(4, 3, 2, 1, 0)),
-    "eu_privacy":  ("Covered", _profile(30, 30, 28, 26, 16)),
+    "eu_env": ("Partial", _profile(4, 3, 2, 1, 0)),
+    "eu_privacy": ("Covered", _profile(30, 30, 28, 26, 16)),
     "japan_privacy": ("Covered", _profile(5, 4, 3, 2, 0)),
     "commitment_only": ("Partial", _profile(4, 3, 0, 0, 0)),
     "named_body_no_duty": ("Partial", _profile(4, 3, 2, 0, 0)),
-    "missing":     ("Missing", _profile(1, 0, 0, 0, 0)),
+    "missing": ("Missing", _profile(1, 0, 0, 0, 0)),
 }
 
 

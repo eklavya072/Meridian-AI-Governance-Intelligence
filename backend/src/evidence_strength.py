@@ -70,8 +70,8 @@ DESIGN COMMITMENTS
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from src.utils import ocr_flexible_fragment
 
@@ -112,37 +112,115 @@ def _words(*items: str) -> re.Pattern:
 # A REGULATED party: an actor class the instrument can impose duties on. This
 # is what separates a governance obligation from an internal government plan.
 REGULATED_PARTY_RE = _words(
-    "provider", "providers", "deployer", "deployers", "operator", "operators",
-    "developer", "developers", "manufacturer", "manufacturers",
-    "importer", "importers", "distributor", "distributors",
-    "controller", "controllers", "processor", "processors",
-    "data fiduciary", "data fiduciaries", "fiduciary",
-    "company", "companies", "firm", "firms", "enterprise", "enterprises",
-    "organisation", "organisations", "organization", "organizations",
-    "entity", "entities", "business", "businesses", "actor", "actors",
-    "licensee", "licensees", "vendor", "vendors", "supplier", "suppliers",
-    "platform", "platforms", "service provider", "service providers",
-    "person", "persons", "party", "parties", "user", "users",
-    "institution", "institutions",
+    "provider",
+    "providers",
+    "deployer",
+    "deployers",
+    "operator",
+    "operators",
+    "developer",
+    "developers",
+    "manufacturer",
+    "manufacturers",
+    "importer",
+    "importers",
+    "distributor",
+    "distributors",
+    "controller",
+    "controllers",
+    "processor",
+    "processors",
+    "data fiduciary",
+    "data fiduciaries",
+    "fiduciary",
+    "company",
+    "companies",
+    "firm",
+    "firms",
+    "enterprise",
+    "enterprises",
+    "organisation",
+    "organisations",
+    "organization",
+    "organizations",
+    "entity",
+    "entities",
+    "business",
+    "businesses",
+    "actor",
+    "actors",
+    "licensee",
+    "licensees",
+    "vendor",
+    "vendors",
+    "supplier",
+    "suppliers",
+    "platform",
+    "platforms",
+    "service provider",
+    "service providers",
+    "person",
+    "persons",
+    "party",
+    "parties",
+    "user",
+    "users",
+    "institution",
+    "institutions",
 )
 
 # A GOVERNMENT / institutional actor. Naming one is necessary for T2 but is
 # deliberately NOT sufficient for T3 — see the module docstring.
 GOV_BODY_RE = _words(
-    "ministry", "ministries", "minister*", "commission", "commissions",
-    "board", "boards", "authority", "authorities", "agency", "agencies",
-    "council", "councils", "committee", "committees", "directorate",
-    "bureau", "inspectorate", "ombudsman", "ombudsmen", "regulator",
-    "regulators", "department", "departments", "office", "institute",
-    "secretariat", "task force", "taskforce", "government", "state",
-    "supervisory authority", "competent authority", "national authority",
+    "ministry",
+    "ministries",
+    "minister*",
+    "commission",
+    "commissions",
+    "board",
+    "boards",
+    "authority",
+    "authorities",
+    "agency",
+    "agencies",
+    "council",
+    "councils",
+    "committee",
+    "committees",
+    "directorate",
+    "bureau",
+    "inspectorate",
+    "ombudsman",
+    "ombudsmen",
+    "regulator",
+    "regulators",
+    "department",
+    "departments",
+    "office",
+    "institute",
+    "secretariat",
+    "task force",
+    "taskforce",
+    "government",
+    "state",
+    "supervisory authority",
+    "competent authority",
+    "national authority",
 )
 
 # ── Normative-force markers ──────────────────────────────────────────────
 # Binding modal verbs — the core signal of an imposed duty.
 OBLIGATION_RE = _words(
-    "shall", "must", "is required to", "are required to", "required to",
-    "obliged to", "obligated to", "is obliged", "shall not", "must not",
+    "shall",
+    "must",
+    "is required to",
+    "are required to",
+    "required to",
+    "obliged to",
+    "obligated to",
+    "is obliged",
+    "shall not",
+    "must not",
 )
 # Prohibition / imposition verbs used in the third person by an instrument.
 # Stemmed ("mandate*" not "mandates") because the subject is often plural
@@ -152,21 +230,65 @@ OBLIGATION_RE = _words(
 # human-in-the-loop mechanisms" scored as unowned aspiration (T0) purely
 # because "mandates" didn't match "mandate".
 IMPOSITION_RE = _words(
-    "prohibit*", "requir*", "mandate*", "impose*", "oblige*",
-    "restrict*", "forbid*", "bar*", "prescribe*", "compel*",
-    "shall ensure", "shall provide", "shall establish",
+    "prohibit*",
+    "requir*",
+    "mandate*",
+    "impose*",
+    "oblige*",
+    "restrict*",
+    "forbid*",
+    "bar*",
+    "prescribe*",
+    "compel*",
+    "shall ensure",
+    "shall provide",
+    "shall establish",
 )
 # Consequence / supervisory power — what lifts an obligation to enforceable.
 ENFORCEMENT_RE = _words(
-    "penalty", "penalties", "fine", "fines", "sanction", "sanctions",
-    "liable", "liability", "enforcement", "enforce", "enforced",
-    "audit", "audits", "audited", "auditing", "inspection", "inspections",
-    "inspect", "investigate", "investigation", "supervis*",
-    "conformity assessment", "certification", "certified", "accreditation",
-    "revocation", "suspend", "suspension", "corrective action",
-    "redress", "grievance", "complaint", "complaints", "appeal", "remedy",
-    "remedies", "compensation", "prosecut*", "offence", "offense",
-    "non-compliance", "noncompliance", "breach",
+    "penalty",
+    "penalties",
+    "fine",
+    "fines",
+    "sanction",
+    "sanctions",
+    "liable",
+    "liability",
+    "enforcement",
+    "enforce",
+    "enforced",
+    "audit",
+    "audits",
+    "audited",
+    "auditing",
+    "inspection",
+    "inspections",
+    "inspect",
+    "investigate",
+    "investigation",
+    "supervis*",
+    "conformity assessment",
+    "certification",
+    "certified",
+    "accreditation",
+    "revocation",
+    "suspend",
+    "suspension",
+    "corrective action",
+    "redress",
+    "grievance",
+    "complaint",
+    "complaints",
+    "appeal",
+    "remedy",
+    "remedies",
+    "compensation",
+    "prosecut*",
+    "offence",
+    "offense",
+    "non-compliance",
+    "noncompliance",
+    "breach",
 )
 # AUTHORITY verbs — powers that actually govern (Abbott/Snidal "delegation"
 # with real teeth). An institution earns strength credit only when it wields
@@ -175,29 +297,89 @@ ENFORCEMENT_RE = _words(
 # WITHOUT obligation — the weakest cell of the legalization cube, and the
 # genre-defining convention of national strategy implementation matrices.
 AUTHORITY_VERB_RE = _words(
-    "license", "licenses", "licence", "licences", "licensing",
-    "certify", "certifies", "certification", "accredit", "accredits",
-    "inspect", "inspects", "inspection", "audit", "audits",
-    "investigate", "investigates", "investigation",
-    "sanction", "sanctions", "penalise", "penalize", "fine", "fines",
-    "enforce", "enforces", "enforcement", "supervise", "supervises",
-    "authorise", "authorises", "authorize", "authorizes",
-    "approve", "approves", "approval", "prohibit", "prohibits",
-    "revoke", "revokes", "suspend", "suspends",
-    "require", "requires", "empowered to", "empowers", "shall have the power",
-    "adjudicate", "impose", "imposes",
+    "license",
+    "licenses",
+    "licence",
+    "licences",
+    "licensing",
+    "certify",
+    "certifies",
+    "certification",
+    "accredit",
+    "accredits",
+    "inspect",
+    "inspects",
+    "inspection",
+    "audit",
+    "audits",
+    "investigate",
+    "investigates",
+    "investigation",
+    "sanction",
+    "sanctions",
+    "penalise",
+    "penalize",
+    "fine",
+    "fines",
+    "enforce",
+    "enforces",
+    "enforcement",
+    "supervise",
+    "supervises",
+    "authorise",
+    "authorises",
+    "authorize",
+    "authorizes",
+    "approve",
+    "approves",
+    "approval",
+    "prohibit",
+    "prohibits",
+    "revoke",
+    "revokes",
+    "suspend",
+    "suspends",
+    "require",
+    "requires",
+    "empowered to",
+    "empowers",
+    "shall have the power",
+    "adjudicate",
+    "impose",
+    "imposes",
     # NOTE: a bare "order"/"orders" is deliberately excluded — "in order to"
     # is one of the commonest constructions in policy prose, and matching it
     # promoted an innovation-partnership sentence to a supervisory power.
-    "order to stop", "cease and desist",
+    "order to stop",
+    "cease and desist",
 )
 # PROMOTION verbs — coordination/advocacy mandates. Explicitly NOT strength.
 PROMOTION_VERB_RE = _words(
-    "coordinate", "coordinates", "coordination", "promote", "promotes",
-    "promotion", "facilitate", "facilitates", "encourage", "encourages",
-    "raise awareness", "advocate", "advocates", "support", "supports",
-    "convene", "convenes", "collaborate", "collaborates", "engage",
-    "champion", "champions", "spearhead", "lead", "leads",
+    "coordinate",
+    "coordinates",
+    "coordination",
+    "promote",
+    "promotes",
+    "promotion",
+    "facilitate",
+    "facilitates",
+    "encourage",
+    "encourages",
+    "raise awareness",
+    "advocate",
+    "advocates",
+    "support",
+    "supports",
+    "convene",
+    "convenes",
+    "collaborate",
+    "collaborates",
+    "engage",
+    "champion",
+    "champions",
+    "spearhead",
+    "lead",
+    "leads",
 )
 
 # A NAMED BINDING LEGAL INSTRUMENT (an Act, Law, Regulation, Decree...). A
@@ -225,12 +407,29 @@ LEGAL_INSTRUMENT_RE = re.compile(
 # present ("shall, as appropriate, endeavour to..."), so a hedged obligation
 # is demoted one tier rather than counted at full force.
 HEDGE_RE = _words(
-    "as appropriate", "where appropriate", "where feasible", "if feasible",
-    "as far as possible", "to the extent possible", "where possible",
-    "endeavour", "endeavor", "strive", "best efforts", "reasonable efforts",
-    "voluntary", "voluntarily", "non-binding", "nonbinding",
-    "encouraged to", "may wish to", "should consider", "where relevant",
-    "as necessary", "insofar as", "subject to availability",
+    "as appropriate",
+    "where appropriate",
+    "where feasible",
+    "if feasible",
+    "as far as possible",
+    "to the extent possible",
+    "where possible",
+    "endeavour",
+    "endeavor",
+    "strive",
+    "best efforts",
+    "reasonable efforts",
+    "voluntary",
+    "voluntarily",
+    "non-binding",
+    "nonbinding",
+    "encouraged to",
+    "may wish to",
+    "should consider",
+    "where relevant",
+    "as necessary",
+    "insofar as",
+    "subject to availability",
 )
 
 # Explicit non-binding self-characterisation. A document that declares itself
@@ -250,22 +449,68 @@ NONBINDING_DISCLAIMER_RE = re.compile(
 
 # Commitment to future action — T1.
 COMMITMENT_RE = _words(
-    "will establish", "will develop", "will create", "will launch",
-    "will implement", "will introduce", "will set up", "will publish",
-    "will provide", "will support", "will promote", "will ensure",
-    "shall be established", "to be established", "plans to", "intends to",
-    "commits to", "committed to", "aims to", "seeks to", "proposes",
-    "proposed", "recommends", "recommended", "recommendation",
-    "is in favour of", "in favour of", "roadmap", "action plan",
-    "will be developed", "will be implemented", "we recommend",
+    "will establish",
+    "will develop",
+    "will create",
+    "will launch",
+    "will implement",
+    "will introduce",
+    "will set up",
+    "will publish",
+    "will provide",
+    "will support",
+    "will promote",
+    "will ensure",
+    "shall be established",
+    "to be established",
+    "plans to",
+    "intends to",
+    "commits to",
+    "committed to",
+    "aims to",
+    "seeks to",
+    "proposes",
+    "proposed",
+    "recommends",
+    "recommended",
+    "recommendation",
+    "is in favour of",
+    "in favour of",
+    "roadmap",
+    "action plan",
+    "will be developed",
+    "will be implemented",
+    "we recommend",
 )
 # Pure principle / value language — T0.
 ASPIRATION_RE = _words(
-    "should", "encourage", "encouraged", "encourages", "promote", "promotes",
-    "foster", "fosters", "recognise", "recognises", "recognize", "recognizes",
-    "acknowledge", "acknowledges", "importance", "principle", "principles",
-    "value", "values", "vision", "mission", "aspire", "strive", "believe",
-    "may", "could", "can",
+    "should",
+    "encourage",
+    "encouraged",
+    "encourages",
+    "promote",
+    "promotes",
+    "foster",
+    "fosters",
+    "recognise",
+    "recognises",
+    "recognize",
+    "recognizes",
+    "acknowledge",
+    "acknowledges",
+    "importance",
+    "principle",
+    "principles",
+    "value",
+    "values",
+    "vision",
+    "mission",
+    "aspire",
+    "strive",
+    "believe",
+    "may",
+    "could",
+    "can",
 )
 
 # ── Exclusion 1: third-party jurisdiction attribution ────────────────────
@@ -291,25 +536,84 @@ FOREIGN_MARKER_RE = re.compile(
 # comparative UNLESS it is this document's own jurisdiction (passed in at call
 # time, so no jurisdiction is privileged in the code itself).
 JURISDICTION_NAMES = (
-    "european union", "eu", "european commission", "european parliament",
-    "united states", "usa", "u.s.", "america", "american",
-    "united kingdom", "uk", "britain", "british",
-    "china", "chinese", "japan", "japanese", "korea", "korean",
-    "singapore", "singaporean", "australia", "australian",
-    "canada", "canadian", "india", "indian", "brazil", "brazilian",
-    "germany", "german", "france", "french", "netherlands", "dutch",
-    "rwanda", "rwandan", "kenya", "kenyan", "nigeria", "nigerian",
-    "zambia", "zambian", "ghana", "ghanaian", "south africa",
-    "estonia", "estonian", "finland", "finnish", "norway", "norwegian",
-    "oecd", "unesco", "african union", "asean", "g7", "g20",
+    "european union",
+    "eu",
+    "european commission",
+    "european parliament",
+    "united states",
+    "usa",
+    "u.s.",
+    "america",
+    "american",
+    "united kingdom",
+    "uk",
+    "britain",
+    "british",
+    "china",
+    "chinese",
+    "japan",
+    "japanese",
+    "korea",
+    "korean",
+    "singapore",
+    "singaporean",
+    "australia",
+    "australian",
+    "canada",
+    "canadian",
+    "india",
+    "indian",
+    "brazil",
+    "brazilian",
+    "germany",
+    "german",
+    "france",
+    "french",
+    "netherlands",
+    "dutch",
+    "rwanda",
+    "rwandan",
+    "kenya",
+    "kenyan",
+    "nigeria",
+    "nigerian",
+    "zambia",
+    "zambian",
+    "ghana",
+    "ghanaian",
+    "south africa",
+    "estonia",
+    "estonian",
+    "finland",
+    "finnish",
+    "norway",
+    "norwegian",
+    "oecd",
+    "unesco",
+    "african union",
+    "asean",
+    "g7",
+    "g20",
 )
 
 # Instrument nouns that, next to a jurisdiction name, mark an external
 # framework reference ("Australia's 2021 AI Action Plan", "the EU AI Act").
 FOREIGN_INSTRUMENT_RE = _words(
-    "act", "regulation", "directive", "law", "strategy", "framework",
-    "guidelines", "policy", "plan", "code", "standard", "recommendation",
-    "principles", "approach", "model",
+    "act",
+    "regulation",
+    "directive",
+    "law",
+    "strategy",
+    "framework",
+    "guidelines",
+    "policy",
+    "plan",
+    "code",
+    "standard",
+    "recommendation",
+    "principles",
+    "approach",
+    "model",
 )
 
 # ── Exclusion 2: structural / non-provision text ─────────────────────────
@@ -356,9 +660,9 @@ class EvidenceProfile:
     tier_counts: dict[int, int] = field(default_factory=dict)
     max_tier: int = -1
     n_enforceable: int = 0
-    n_binding: int = 0       # tier >= 3
+    n_binding: int = 0  # tier >= 3
     n_institutional: int = 0  # tier >= 2
-    n_commitment: int = 0     # tier >= 1
+    n_commitment: int = 0  # tier >= 1
     n_scored: int = 0
     n_excluded_foreign: int = 0
     n_excluded_structural: int = 0
@@ -389,9 +693,7 @@ class EvidenceProfile:
         if self.n_enforceable:
             parts.append(f"{self.n_enforceable} enforceable")
         if self.n_excluded_foreign:
-            parts.append(
-                f"{self.n_excluded_foreign} excluded as another jurisdiction's framework"
-            )
+            parts.append(f"{self.n_excluded_foreign} excluded as another jurisdiction's framework")
         return "; ".join(parts) + "."
 
 
@@ -456,7 +758,7 @@ def is_third_party_attribution(sentence: str, own_jurisdiction: str = "") -> boo
             continue
         # Possessive ("Australia's ... Plan") or a nearby instrument noun is
         # conclusive on its own.
-        window = s[m.start(): m.end() + 90]
+        window = s[m.start() : m.end() + 90]
         if "'s" in m.group(0) or "’s" in m.group(0):
             return True
         if FOREIGN_INSTRUMENT_RE.search(window):
@@ -732,15 +1034,12 @@ def meets_force_bar(profile: EvidenceProfile) -> bool:
     sentence also lifts every weaker counter — pairing a single duty with
     ENFORCEMENT is the one genuinely independent signal available.
     """
-    return (
-        profile.n_binding >= 2
-        or (profile.n_binding >= 1 and profile.n_enforceable >= 1)
-    )
+    return profile.n_binding >= 2 or (profile.n_binding >= 1 and profile.n_enforceable >= 1)
 
 
 def coverage_from_profile(
     profile: EvidenceProfile,
-    mechanisms: "MechanismCoverage | None" = None,
+    mechanisms: MechanismCoverage | None = None,
     mechanism_floor: float = 1 / 3,
 ) -> tuple[str, str]:
     """Map an evidence profile to a Coverage level. Returns (level, rationale).
@@ -787,15 +1086,21 @@ def coverage_from_profile(
                 f"({profile.n_binding} binding provision(s)), but provides only "
                 f"{mechanisms.met} of {mechanisms.total} governance mechanisms "
                 "the dimension calls for"
-                + (f" — not addressed: {', '.join(mechanisms.absent[:4])}."
-                   if mechanisms.absent else ".")
+                + (
+                    f" — not addressed: {', '.join(mechanisms.absent[:4])}."
+                    if mechanisms.absent
+                    else "."
+                )
             )
     if force_bar:
         return "Covered", (
             f"The document imposes binding requirements for this dimension "
             f"({profile.n_binding} binding provision(s)"
-            + (f", {profile.n_enforceable} backed by enforcement or oversight"
-               if profile.n_enforceable else "")
+            + (
+                f", {profile.n_enforceable} backed by enforcement or oversight"
+                if profile.n_enforceable
+                else ""
+            )
             + ")."
         )
     # A "breadth" path to Covered — many commitment-tier sentences, no
@@ -824,8 +1129,7 @@ def coverage_from_profile(
     if profile.n_institutional >= 1 or profile.n_commitment >= 1:
         return "Partial", (
             "The document commits to acting on this dimension"
-            + (" and assigns it to a named institution"
-               if profile.n_institutional else "")
+            + (" and assigns it to a named institution" if profile.n_institutional else "")
             + ", but imposes no binding requirement on anyone."
         )
     if profile.n_scored >= 4:
@@ -845,7 +1149,7 @@ def coverage_from_profile(
 def describe_risk_basis(
     coverage: str,
     profile: EvidenceProfile,
-    mechanisms: "MechanismCoverage | None" = None,
+    mechanisms: MechanismCoverage | None = None,
 ) -> tuple[str, str]:
     """Say WHY this dimension carries risk, and what follows if it is not fixed.
 
@@ -967,15 +1271,12 @@ def maturity_from_profile(
     # dimension that is merely mentioned inside a strong regulation cannot ride
     # the document's regime to the top stage. See detect_enforcement_regime.
     if profile.n_binding >= 2 and (
-        profile.n_enforceable >= 2
-        or (document_enforcement_regime and profile.n_enforceable >= 1)
+        profile.n_enforceable >= 2 or (document_enforcement_regime and profile.n_enforceable >= 1)
     ):
         backing = (
-            f"{profile.n_enforceable} provision(s) carry supervisory or "
-            "consequence language"
+            f"{profile.n_enforceable} provision(s) carry supervisory or consequence language"
             if profile.n_enforceable >= 2
-            else "the instrument's own supervisory and penalty machinery applies "
-                 "to these duties"
+            else "the instrument's own supervisory and penalty machinery applies to these duties"
         )
         return "Institutionalized", (
             f"Binding requirements are paired with enforcement, oversight or "
@@ -1082,62 +1383,189 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
     "Transparency": {
         "user disclosure": ("inform", "notify", "disclos", "made aware", "label"),
         "decision explanation": ("explain", "explanab", "explanation", "rationale", "interpretab"),
-        "model documentation": ("technical documentation", "model card", "datasheet", "document the", "documentation"),
-        "audit trail / logging": ("logging", "logged", "log of", "record keeping", "records", "audit trail", "traceab"),
+        "model documentation": (
+            "technical documentation",
+            "model card",
+            "datasheet",
+            "document the",
+            "documentation",
+        ),
+        "audit trail / logging": (
+            "logging",
+            "logged",
+            "log of",
+            "record keeping",
+            "records",
+            "audit trail",
+            "traceab",
+        ),
         "public registry": ("registry", "register", "publicly available", "publish"),
-        "capability & limitation disclosure": ("limitation", "capabilit", "intended purpose", "performance"),
+        "capability & limitation disclosure": (
+            "limitation",
+            "capabilit",
+            "intended purpose",
+            "performance",
+        ),
     },
     "Accountability": {
-        "liability allocation": ("liabilit", "liable", "responsib", "accountable for", "answerable"),
+        "liability allocation": (
+            "liabilit",
+            "liable",
+            "responsib",
+            "accountable for",
+            "answerable",
+        ),
         "grievance / redress": ("grievance", "redress", "complaint", "appeal", "remedy"),
         "named responsible body": ("authority", "commission", "board", "regulator", "supervisory"),
         "incident reporting": ("incident", "report serious", "notify the authorit", "malfunction"),
         "audit requirement": ("audit", "inspect", "conformity assessment", "certification"),
-        "sanctions / penalties": ("penalt", "sanction", "fines", "administrative fine", "enforcement action"),
+        "sanctions / penalties": (
+            "penalt",
+            "sanction",
+            "fines",
+            "administrative fine",
+            "enforcement action",
+        ),
     },
     "Privacy": {
         "consent": ("consent", "opt-in", "permission"),
         "data minimisation": ("minimis", "minimiz", "only the data", "necessary data"),
         "purpose limitation": ("purpose limitation", "specified purpose", "compatible purpose"),
-        "anonymisation / PETs": ("anonymis", "anonymiz", "pseudonym", "differential privacy", "encryption", "privacy-enhancing", "privacy-preserving"),
-        "data subject rights": ("data subject", "right to erasure", "rectification", "access their", "portab"),
+        "anonymisation / PETs": (
+            "anonymis",
+            "anonymiz",
+            "pseudonym",
+            "differential privacy",
+            "encryption",
+            "privacy-enhancing",
+            "privacy-preserving",
+        ),
+        "data subject rights": (
+            "data subject",
+            "right to erasure",
+            "rectification",
+            "access their",
+            "portab",
+        ),
         "privacy by design": ("privacy by design", "data protection by design", "by default"),
         "impact assessment": ("impact assessment", "dpia", "privacy assessment"),
     },
     "Safety": {
-        "risk assessment": ("risk assessment", "risk management", "impact assessment", "identify risk"),
+        "risk assessment": (
+            "risk assessment",
+            "risk management",
+            "impact assessment",
+            "identify risk",
+        ),
         "pre-deployment testing": ("testing", "test", "validat", "evaluat", "red team", "trial"),
         "robustness requirement": ("robust", "resilien", "accuracy", "reliab"),
         "incident monitoring": ("incident", "monitor", "malfunction", "failure"),
-        "post-market monitoring": ("post-market", "after deployment", "ongoing monitoring", "continuous"),
-        "human failsafe / shutdown": ("fail-safe", "failsafe", "shutdown", "circuit breaker", "stop button", "kill switch"),
+        "post-market monitoring": (
+            "post-market",
+            "after deployment",
+            "ongoing monitoring",
+            "continuous",
+        ),
+        "human failsafe / shutdown": (
+            "fail-safe",
+            "failsafe",
+            "shutdown",
+            "circuit breaker",
+            "stop button",
+            "kill switch",
+        ),
     },
     "Human Autonomy": {
-        "human-in-the-loop": ("human-in-the-loop", "human in the loop", "human oversight", "human review of"),
-        "right to human review": ("right to human", "request human", "human intervention", "contest"),
+        "human-in-the-loop": (
+            "human-in-the-loop",
+            "human in the loop",
+            "human oversight",
+            "human review of",
+        ),
+        "right to human review": (
+            "right to human",
+            "request human",
+            "human intervention",
+            "contest",
+        ),
         "override capability": ("override", "intervene", "disregard", "reverse the decision"),
         "prohibition of manipulation": ("manipulat", "subvert", "exploit vulnerab", "deceptive"),
-        "meaningful control": ("meaningful control", "human control", "human agency", "final decision"),
+        "meaningful control": (
+            "meaningful control",
+            "human control",
+            "human agency",
+            "final decision",
+        ),
     },
     "Inclusivity": {
-        "disability accessibility": ("persons with disabilities", "accessibility for", "accessible design", "universal design"),
-        "demographic representation": ("representat", "underrepresent", "demographic", "diverse group"),
+        "disability accessibility": (
+            "persons with disabilities",
+            "accessibility for",
+            "accessible design",
+            "universal design",
+        ),
+        "demographic representation": (
+            "representat",
+            "underrepresent",
+            "demographic",
+            "diverse group",
+        ),
         "stakeholder participation": ("stakeholder", "consultation", "participat", "civil society"),
         "digital divide": ("digital divide", "underserved", "rural", "marginalis", "marginaliz"),
         "language / localisation": ("language", "local language", "linguistic", "translat"),
     },
     "Fairness": {
-        "bias testing": ("bias test", "bias assessment", "bias audit", "test for bias", "detect bias", "bias detection"),
-        "protected characteristics": ("protected characteristic", "racial", "gender", "ethnicit", "disabilit", "age group", "older persons"),
-        "fairness metrics": ("demographic parity", "equalis", "disparate impact", "fairness metric", "equal opportunity"),
+        "bias testing": (
+            "bias test",
+            "bias assessment",
+            "bias audit",
+            "test for bias",
+            "detect bias",
+            "bias detection",
+        ),
+        "protected characteristics": (
+            "protected characteristic",
+            "racial",
+            "gender",
+            "ethnicit",
+            "disabilit",
+            "age group",
+            "older persons",
+        ),
+        "fairness metrics": (
+            "demographic parity",
+            "equalis",
+            "disparate impact",
+            "fairness metric",
+            "equal opportunity",
+        ),
         "non-discrimination duty": ("discriminat", "non-discriminat", "equal treatment"),
         "bias mitigation": ("mitigat", "correct", "remediat", "debias"),
     },
     "Environmental Sustainability": {
-        "energy reporting": ("energy consumption", "energy use", "energy efficiency", "power consumption"),
+        "energy reporting": (
+            "energy consumption",
+            "energy use",
+            "energy efficiency",
+            "power consumption",
+        ),
         "carbon disclosure": ("carbon", "emission", "co2", "greenhouse", "footprint"),
-        "compute efficiency": ("computational", "compute", "resource efficien", "model size", "optimis", "optimiz"),
-        "e-waste / hardware lifecycle": ("e-waste", "electronic waste", "hardware", "lifecycle", "disposal", "recycl"),
+        "compute efficiency": (
+            "computational",
+            "compute",
+            "resource efficien",
+            "model size",
+            "optimis",
+            "optimiz",
+        ),
+        "e-waste / hardware lifecycle": (
+            "e-waste",
+            "electronic waste",
+            "hardware",
+            "lifecycle",
+            "disposal",
+            "recycl",
+        ),
         "green procurement / energy": ("renewable", "green energy", "clean energy", "procurement"),
     },
 }
@@ -1148,7 +1576,7 @@ class MechanismCoverage:
     """Which framework-required mechanisms the document actually provides."""
 
     dimension: str = ""
-    present: dict[str, int] = field(default_factory=dict)   # mechanism -> best tier
+    present: dict[str, int] = field(default_factory=dict)  # mechanism -> best tier
     absent: list[str] = field(default_factory=list)
 
     @property

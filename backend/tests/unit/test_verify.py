@@ -2,13 +2,14 @@
 Unit tests for citation verification.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.verify import (
-    verify_citation,
-    CitationVerificationResult,
     Citation,
+    CitationVerificationResult,
+    verify_citation,
 )
 
 
@@ -101,7 +102,8 @@ class TestPageExistsCheck:
         claimed page really can't exist in a document that short."""
         vs = MockVectorStore()
         vs.add_chunk(
-            "chunk_own_doc", "Some text",
+            "chunk_own_doc",
+            "Some text",
             {"page_number": "50", "workspace_id": "ws-123"},
         )
         result = verify_citation(
@@ -124,7 +126,8 @@ class TestPageExistsCheck:
         policy it has nothing to do with."""
         vs = MockVectorStore()
         vs.add_chunk(
-            "chunk_framework", "Some text",
+            "chunk_framework",
+            "Some text",
             {"page_number": "89", "framework": "EU AI Act"},
         )
         result = verify_citation(
@@ -136,7 +139,9 @@ class TestPageExistsCheck:
             document_total_pages=20,
         )
         assert result.page_exists is True
-        assert result.failure_reason is None or "exceeds document length" not in result.failure_reason
+        assert (
+            result.failure_reason is None or "exceeds document length" not in result.failure_reason
+        )
 
 
 class TestTextSupportsClaim:
@@ -224,6 +229,7 @@ class TestCitationSeverity:
 
     def test_real_but_unretrieved_citation_is_unsupported_not_fabricated(self):
         from src.verify import classify_narrative_citations
+
         out = classify_narrative_citations(
             ["Article 10 requires examination for biases."],
             self.RETRIEVED,
@@ -235,13 +241,13 @@ class TestCitationSeverity:
     def test_ocr_split_headings_do_not_read_as_fabrication(self):
         """The document says "Ar ticle 10"; a naive check calls that invented."""
         from src.verify import classify_narrative_citations
-        out = classify_narrative_citations(
-            ["Article 10 applies."], self.RETRIEVED, self.DOCUMENT
-        )
+
+        out = classify_narrative_citations(["Article 10 applies."], self.RETRIEVED, self.DOCUMENT)
         assert "Article 10" not in out["fabricated"]
 
     def test_recital_parenthesised_form_is_recognised(self):
         from src.verify import classify_narrative_citations
+
         out = classify_narrative_citations(
             ["Recital 71 underscores traceability."], self.RETRIEVED, self.DOCUMENT
         )
@@ -249,6 +255,7 @@ class TestCitationSeverity:
 
     def test_number_absent_from_the_document_is_fabricated(self):
         from src.verify import classify_narrative_citations
+
         out = classify_narrative_citations(
             ["Article 999 mandates carbon reporting."], self.RETRIEVED, self.DOCUMENT
         )
@@ -258,14 +265,14 @@ class TestCitationSeverity:
     def test_without_a_document_nothing_is_called_invented(self):
         """No document to check against must not produce false accusations."""
         from src.verify import classify_narrative_citations
-        out = classify_narrative_citations(
-            ["Article 10 applies."], self.RETRIEVED, ""
-        )
+
+        out = classify_narrative_citations(["Article 10 applies."], self.RETRIEVED, "")
         assert out["fabricated"] == []
         assert out["unsupported"] == ["Article 10"]
 
     def test_citation_backed_by_retrieved_evidence_is_not_flagged(self):
         from src.verify import classify_narrative_citations
+
         out = classify_narrative_citations(
             ["Article 10 requires data governance."],
             "Article 10 requires data governance measures.",

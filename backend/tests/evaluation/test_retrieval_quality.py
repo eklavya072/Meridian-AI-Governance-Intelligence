@@ -7,8 +7,9 @@ This test requires:
 - sentence-transformers
 """
 
-import pytest
 import os
+
+import pytest
 
 from src.vectorstore import VectorStore
 
@@ -26,8 +27,7 @@ class TestRetrievalQuality:
 
         transparency_terms = ["transparency", "explainab", "explain", "open"]
         found_terms = any(
-            any(term in r["text"].lower() for term in transparency_terms)
-            for r in results
+            any(term in r["text"].lower() for term in transparency_terms) for r in results
         )
         assert found_terms, "Transparency query did not retrieve transparency-related chunks"
 
@@ -37,10 +37,7 @@ class TestRetrievalQuality:
         assert len(results) > 0
 
         terms = ["accountab", "responsib", "oversight", "audit"]
-        found = any(
-            any(term in r["text"].lower() for term in terms)
-            for r in results
-        )
+        found = any(any(term in r["text"].lower() for term in terms) for r in results)
         assert found, "Accountability query did not retrieve accountability-related chunks"
 
     def test_multi_framework_retrieval(self):
@@ -49,9 +46,7 @@ class TestRetrievalQuality:
         assert len(frameworks) > 0, "No frameworks indexed"
 
         results = vs.retrieve("AI ethics principles", top_k=10)
-        retrieved_frameworks = set(
-            r["metadata"].get("framework", "") for r in results
-        )
+        retrieved_frameworks = {r["metadata"].get("framework", "") for r in results}
         assert len(retrieved_frameworks) >= 1, "Retrieved from no frameworks"
 
     def test_top_k_returns_correct_count(self):

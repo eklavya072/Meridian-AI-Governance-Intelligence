@@ -5,16 +5,16 @@ import os
 import random
 import threading
 import time
-import structlog
 from pathlib import Path
 from typing import Any
 
+import structlog
 from pydantic import ValidationError
 
 from src.llm_provider import (
-    LLMProvider,
     GeminiProvider,
     GroqProvider,
+    LLMProvider,
     QuotaExceededError,
     RetryableError,
 )
@@ -35,6 +35,7 @@ def _jittered_wait(base: float, spread: float = 0.5) -> float:
     low = base * (1.0 - spread)
     high = max(base * (1.0 + spread), low + 0.01)
     return random.uniform(low, high)
+
 
 GROQ_TPM_LIMIT = int(os.getenv("GROQ_TPM_LIMIT", "12000"))
 GROQ_TPM_WINDOW = float(os.getenv("GROQ_TPM_WINDOW", "60"))
@@ -235,8 +236,7 @@ def _gemini_throttles() -> list[RequestThrottle]:
         n = len(provider.api_keys)
     if len(_gemini_rpm_throttles) != n:
         _gemini_rpm_throttles = [
-            RequestThrottle(limit=GEMINI_RPM_LIMIT, window=GEMINI_RPM_WINDOW)
-            for _ in range(n)
+            RequestThrottle(limit=GEMINI_RPM_LIMIT, window=GEMINI_RPM_WINDOW) for _ in range(n)
         ]
     return _gemini_rpm_throttles
 
@@ -270,6 +270,7 @@ def _check_gemini_daily_budget() -> None:
             f"[WARN] Gemini daily request budget at {pct:.0%}: "
             f"{_daily_gemini_requests}/{GEMINI_RPD_LIMIT} used today."
         )
+
 
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 DEV_TOKEN_CAP = int(os.getenv("DEV_TOKEN_CAP", "20000"))
@@ -337,7 +338,8 @@ def _estimate_tokens(text: str) -> int:
 def _extract_retry_delay(error_str: str) -> float | None:
     """Extract 'retry in X seconds' from a Gemini 429 error."""
     import re
-    m = re.search(r'retry\s+in\s+([\d.]+)\s*s', error_str, re.IGNORECASE)
+
+    m = re.search(r"retry\s+in\s+([\d.]+)\s*s", error_str, re.IGNORECASE)
     if m:
         return float(m.group(1))
     return None
@@ -358,9 +360,7 @@ def _try_groq_fallback(
         )
     print(f"[DEBUG] Falling back to Groq for '{operation}'")
     _debug_stats["fallbacks"] += 1
-    return fallback.generate_structured(
-        prompt=prompt, schema=schema, system_prompt=system_prompt
-    )
+    return fallback.generate_structured(prompt=prompt, schema=schema, system_prompt=system_prompt)
 
 
 def generate_with_retry(
@@ -379,7 +379,9 @@ def generate_with_retry(
         debug_ctx = {}
 
     if provider.tier != "primary":
-        print(f"[DEBUG] REQ #{req_num} | {operation} | Using {provider.model_name} (tier={provider.tier}) directly")
+        print(
+            f"[DEBUG] REQ #{req_num} | {operation} | Using {provider.model_name} (tier={provider.tier}) directly"
+        )
         return provider.generate_structured(
             prompt=prompt, schema=schema, system_prompt=system_prompt
         )
@@ -429,8 +431,7 @@ def generate_with_retry(
     # clear "all keys exhausted" error.
     max_attempts = max(
         MAX_RETRIES,
-        len(getattr(provider, "api_keys", [1]))
-        if isinstance(provider, GeminiProvider) else 1,
+        len(getattr(provider, "api_keys", [1])) if isinstance(provider, GeminiProvider) else 1,
     )
 
     for attempt in range(1, max_attempts + 1):
@@ -461,7 +462,9 @@ def generate_with_retry(
             start = time.time()
             if isinstance(provider, GeminiProvider):
                 result = provider.generate_structured(
-                    prompt=prompt, schema=schema, system_prompt=system_prompt,
+                    prompt=prompt,
+                    schema=schema,
+                    system_prompt=system_prompt,
                     key_index=key_index,
                 )
             else:
@@ -526,9 +529,7 @@ def generate_with_retry(
             if isinstance(provider, GroqProvider) and token_usage:
                 actual = token_usage.get("total_tokens", 0)
                 _groq_throttle.record(actual)
-                print(
-                    f"[THROTTLE] Groq TPM window: {_groq_throttle.total_used}/{GROQ_TPM_LIMIT}"
-                )
+                print(f"[THROTTLE] Groq TPM window: {_groq_throttle.total_used}/{GROQ_TPM_LIMIT}")
 
             return result
 
@@ -627,7 +628,7 @@ def generate_with_retry(
                 _debug_stats["primary_requests"].append(request_info)
                 raise RuntimeError(
                     f"LLM call '{operation}' failed after {MAX_RETRIES} retries: {error_str[:200]}"
-                )
+                ) from exc
 
         # ── Unexpected Error ──────────────────────────────────────────
         except Exception as exc:
@@ -651,8 +652,7 @@ def generate_with_retry(
                 and "KEEPING IT SHORT AND VALID" not in prompt
             ):
                 prompt = (
-                    prompt
-                    + "\n\nIMPORTANT: your previous response failed JSON schema "
+                    prompt + "\n\nIMPORTANT: your previous response failed JSON schema "
                     "validation because it was incomplete or malformed. Return "
                     "the JSON object now, KEEPING IT SHORT AND VALID: trim the "
                     "verbatim quotes to at most 2-3 passages, drop the least "
@@ -697,30 +697,16 @@ def print_debug_summary() -> None:
     retries = _debug_stats["retries"]
     fallbacks = _debug_stats["fallbacks"]
 
-    total_input_tokens = sum(
-        r.get("estimated_input_tokens", 0) for r in primary_reqs
-    )
+    total_input_tokens = sum(r.get("estimated_input_tokens", 0) for r in primary_reqs)
     total_output_tokens = sum(
         r.get("output_tokens", 0) for r in primary_reqs if r.get("output_tokens")
     )
-    total_actual_input_tokens = sum(
-        r.get("prompt_tokens_actual", 0) for r in primary_reqs
-    )
-    total_actual_output_tokens = sum(
-        r.get("completion_tokens_actual", 0) for r in primary_reqs
-    )
-    total_actual_tokens = sum(
-        r.get("total_tokens_actual", 0) for r in primary_reqs
-    )
-    prompt_chars_list = [
-        r.get("prompt_chars", 0) for r in primary_reqs if r.get("prompt_chars")
-    ]
-    avg_prompt_size = (
-        sum(prompt_chars_list) // len(prompt_chars_list) if prompt_chars_list else 0
-    )
-    latencies = [
-        r.get("latency", 0) for r in primary_reqs if r.get("latency") is not None
-    ]
+    total_actual_input_tokens = sum(r.get("prompt_tokens_actual", 0) for r in primary_reqs)
+    total_actual_output_tokens = sum(r.get("completion_tokens_actual", 0) for r in primary_reqs)
+    total_actual_tokens = sum(r.get("total_tokens_actual", 0) for r in primary_reqs)
+    prompt_chars_list = [r.get("prompt_chars", 0) for r in primary_reqs if r.get("prompt_chars")]
+    avg_prompt_size = sum(prompt_chars_list) // len(prompt_chars_list) if prompt_chars_list else 0
+    latencies = [r.get("latency", 0) for r in primary_reqs if r.get("latency") is not None]
     avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
 
     print()
@@ -804,8 +790,7 @@ def generate_text_with_retry(
     # functions duplicate this logic; where they do, they must at least agree.
     attempts = max_attempts or max(
         MAX_RETRIES,
-        len(getattr(provider, "api_keys", [1]))
-        if isinstance(provider, GeminiProvider) else 1,
+        len(getattr(provider, "api_keys", [1])) if isinstance(provider, GeminiProvider) else 1,
     )
     last_error: Exception | None = None
 
@@ -849,7 +834,9 @@ def generate_text_with_retry(
             start = time.time()
             if isinstance(provider, GeminiProvider):
                 text = provider.generate_text(
-                    prompt=prompt, system_prompt=system_prompt, key_index=key_index,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    key_index=key_index,
                     max_output_tokens=CHAT_MAX_OUTPUT_TOKENS,
                 )
             else:
@@ -897,7 +884,9 @@ def generate_text_with_retry(
                 retry_delay = _extract_retry_delay(str(exc))
                 if retry_delay is not None and retry_delay <= 120.0 and attempt < attempts:
                     wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
-                    print(f"[DEBUG] Chat Gemini retry delay {retry_delay:.0f}s — waiting {wait:.0f}s")
+                    print(
+                        f"[DEBUG] Chat Gemini retry delay {retry_delay:.0f}s — waiting {wait:.0f}s"
+                    )
                     if not _sleep_within_budget(wait):
                         raise ChatDeadlineExceeded(
                             f"Chat '{operation}' out of budget: provider asked for "
@@ -921,7 +910,7 @@ def generate_text_with_retry(
                 continue
             raise RuntimeError(
                 f"Chat '{operation}' failed after {attempts} attempts: {str(exc)[:200]}"
-            )
+            ) from exc
 
         except Exception as exc:
             last_error = exc

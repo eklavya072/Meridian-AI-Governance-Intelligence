@@ -1,19 +1,19 @@
 import pytest
 
 from src.deterministic import (
+    DIMENSION_TOPIC_KEYWORDS,
+    LEVEL_LABELS,
+    LEVEL_TO_COVERAGE,
     DeterministicFrameworkMatcher,
     DeterministicPlausibilityValidator,
+    FrameworkMatchResult,
+    PlausibilityResult,
+    _chunk_matches_dimension,
     detect_document_type,
     detect_explicit_commitment,
     detect_implementation_commitment,
-    FrameworkMatchResult,
-    PlausibilityResult,
-    validate_coverage_deterministic,
-    LEVEL_LABELS,
-    LEVEL_TO_COVERAGE,
-    DIMENSION_TOPIC_KEYWORDS,
-    _chunk_matches_dimension,
     is_low_information_fragment,
+    validate_coverage_deterministic,
 )
 from src.models import CoverageLevel
 
@@ -50,9 +50,11 @@ class TestDeterministicFrameworkMatcher:
     def matcher(self):
         def mock_embed(text: str) -> list[float]:
             import hashlib
+
             h = hashlib.md5(text.encode()).digest()
             norm = sum(b * b for b in h) ** 0.5
             return [b / norm if norm > 0 else 0.0 for b in h[:16]]
+
         return DeterministicFrameworkMatcher(mock_embed)
 
     def test_empty_framework_returns_empty_result(self, matcher):
@@ -118,6 +120,7 @@ class TestDeterministicFrameworkMatcher:
     def test_multi_factor_scoring(self):
         def exact_match_embed(text: str) -> list[float]:
             return [1.0, 0.0, 0.0, 0.0]
+
         matcher = DeterministicFrameworkMatcher(exact_match_embed)
         score = matcher._compute_match_score(
             max_sim=0.8,
@@ -131,6 +134,7 @@ class TestDeterministicFrameworkMatcher:
     def test_low_score_classification(self):
         def low_embed(text: str) -> list[float]:
             return [0.01, 0.01, 0.01, 0.01]
+
         matcher = DeterministicFrameworkMatcher(low_embed)
         score = matcher._compute_match_score(
             max_sim=0.1,
@@ -185,7 +189,10 @@ class TestDeterministicPlausibilityValidator:
         )
         assert result.validated_maturity_level >= 1
         assert result.validated_coverage == "Partial"
-        assert "doc_type" in result.maturity_trace.lower() or "strategy" in result.maturity_trace.lower()
+        assert (
+            "doc_type" in result.maturity_trace.lower()
+            or "strategy" in result.maturity_trace.lower()
+        )
 
     def test_level_0_with_evidence_raises(self, validator):
         result = validator.validate(
@@ -359,62 +366,78 @@ class TestDetectImplementationCommitment:
         # mechanism alongside it is not a concrete implementation
         # commitment (the same co-occurrence standard the chunk path
         # applies — a body alone never fires R2).
-        assert detect_implementation_commitment(
-            ["National AI Ethics Board (named body)"], []
-        ) is False
+        assert (
+            detect_implementation_commitment(["National AI Ethics Board (named body)"], []) is False
+        )
 
     def test_lone_reporting_keyword_alone_does_not_raise(self):
         # The exact India Transparency false positive: a lone reporting
         # keyword ("disclosure"/"reporting") with NO named body must not
         # fire R2's mechanism-report path.
-        assert detect_implementation_commitment(
-            ["Annual transparency reporting"], []
-        ) is False
-        assert detect_implementation_commitment(
-            ["Labeling and disclosure mechanism for AI-generated virtual content"], []
-        ) is False
+        assert detect_implementation_commitment(["Annual transparency reporting"], []) is False
+        assert (
+            detect_implementation_commitment(
+                ["Labeling and disclosure mechanism for AI-generated virtual content"], []
+            )
+            is False
+        )
 
     def test_named_body_co_occurring_with_reporting_raises(self):
         # The tightened minimum: a named body AND a reporting mechanism
         # together are a concrete implementation commitment.
-        assert detect_implementation_commitment(
-            ["The AI Safety Committee publishes an annual transparency report"], []
-        ) is True
+        assert (
+            detect_implementation_commitment(
+                ["The AI Safety Committee publishes an annual transparency report"], []
+            )
+            is True
+        )
 
     def test_named_body_co_occurring_with_enforcement_raises(self):
         # Enforcement alongside a named body exceeds the minimum bar.
-        assert detect_implementation_commitment(
-            ["The AI Ethics Board imposes penalties for non-compliance"], []
-        ) is True
+        assert (
+            detect_implementation_commitment(
+                ["The AI Ethics Board imposes penalties for non-compliance"], []
+            )
+            is True
+        )
 
     def test_enforcement_keyword_alone_does_not_raise(self):
         # Same discipline as the lone reporting keyword: a single
         # enforcement keyword with no named body is not co-occurrence.
-        assert detect_implementation_commitment(
-            ["Penalties for non-compliance"], []
-        ) is False
+        assert detect_implementation_commitment(["Penalties for non-compliance"], []) is False
 
     def test_empty_mechanisms_but_commitment_chunk_with_named_body(self):
         # R2's strong-phrase path requires a named-body/institution keyword
         # to co-occur in the SAME chunk — a bare "programme" mention is no
         # longer enough (that is the stricter bar that stopped the off-topic
         # false positives). With a named body present, the chunk counts.
-        assert detect_implementation_commitment(
-            [],
-            ["The government will establish an Explainable AI (XAI) programme under the national AI office."],
-        ) is True
+        assert (
+            detect_implementation_commitment(
+                [],
+                [
+                    "The government will establish an Explainable AI (XAI) programme under the national AI office."
+                ],
+            )
+            is True
+        )
 
     def test_strong_phrase_without_named_body_does_not_raise(self):
         # The co-occurrence bar: a strong phrase alone ("will establish an
         # XAI programme") with NO named-body keyword in the chunk must NOT
         # satisfy R2 — this is what let an AI-security passage fire R2 on
         # the bare noun "programme".
-        assert detect_implementation_commitment(
-            [], ["The government will establish an Explainable AI (XAI) programme."]
-        ) is False
-        assert detect_implementation_commitment(
-            [], ["The strategy sets out a roadmap for data governance."]
-        ) is False
+        assert (
+            detect_implementation_commitment(
+                [], ["The government will establish an Explainable AI (XAI) programme."]
+            )
+            is False
+        )
+        assert (
+            detect_implementation_commitment(
+                [], ["The strategy sets out a roadmap for data governance."]
+            )
+            is False
+        )
 
     def test_commitment_phrase_variants(self):
         for text in [
@@ -427,9 +450,12 @@ class TestDetectImplementationCommitment:
             assert detect_implementation_commitment([], [text]), text
 
     def test_no_commitment_signal(self):
-        assert detect_implementation_commitment(
-            [], ["The document discusses the black box phenomenon in passing."]
-        ) is False
+        assert (
+            detect_implementation_commitment(
+                [], ["The document discusses the black box phenomenon in passing."]
+            )
+            is False
+        )
         assert detect_implementation_commitment([], []) is False
 
     def test_case_insensitive(self):
@@ -440,15 +466,24 @@ class TestDetectImplementationCommitment:
         # "programming"/"programme"; "roadmap" must not match inside
         # "roadmapping". These are the exact substring holes that let an
         # events-calendar paragraph fire R2 on "AI-related programming".
-        assert detect_implementation_commitment(
-            [], ["AI-related programming events and hackathons for the community"]
-        ) is False
-        assert detect_implementation_commitment(
-            [], ["the roadmapping exercise covers next year's priorities"]
-        ) is False
-        assert detect_implementation_commitment(
-            [], ["a national programme for AI education"], dimension="Inclusivity"
-        ) is False
+        assert (
+            detect_implementation_commitment(
+                [], ["AI-related programming events and hackathons for the community"]
+            )
+            is False
+        )
+        assert (
+            detect_implementation_commitment(
+                [], ["the roadmapping exercise covers next year's priorities"]
+            )
+            is False
+        )
+        assert (
+            detect_implementation_commitment(
+                [], ["a national programme for AI education"], dimension="Inclusivity"
+            )
+            is False
+        )
 
     def test_single_weak_phrase_alone_is_not_conclusive(self):
         # A lone weak phrase ("budget"/"dedicated"/"mandate") is too noisy
@@ -457,19 +492,27 @@ class TestDetectImplementationCommitment:
         # like "program" — "no dedicated program exists" does contain
         # "program", and a negative mention is a known detector limitation,
         # not a weak-tier case.)
-        assert detect_implementation_commitment([], ["budget constraints remain a challenge"]) is False
+        assert (
+            detect_implementation_commitment([], ["budget constraints remain a challenge"]) is False
+        )
         assert detect_implementation_commitment([], ["the mandate is still under debate"]) is False
 
     def test_weak_phrase_with_named_body_co_occurrence_counts(self):
-        assert detect_implementation_commitment(
-            [], ["the national AI council was allocated a dedicated budget"]
-        ) is True
+        assert (
+            detect_implementation_commitment(
+                [], ["the national AI council was allocated a dedicated budget"]
+            )
+            is True
+        )
 
     def test_two_weak_hits_across_chunks_count(self):
-        assert detect_implementation_commitment(
-            [],
-            ["the strategy notes a budget for AI", "funding allocation is committed"],
-        ) is True
+        assert (
+            detect_implementation_commitment(
+                [],
+                ["the strategy notes a budget for AI", "funding allocation is committed"],
+            )
+            is True
+        )
 
     def test_strong_phrase_single_hit_counts(self):
         assert detect_implementation_commitment([], ["will establish a national AI board"]) is True
@@ -479,9 +522,18 @@ class TestDetectImplementationCommitment:
         # recall on common inflected forms — "continuous monitoring" and
         # "auditing" are everyday mechanism-report phrases.
         from src.deterministic import classify_mechanisms
-        assert classify_mechanisms(["continuous monitoring of AI systems"])["has_enforcement"] is True
-        assert classify_mechanisms(["independent auditing of AI deployments"])["has_enforcement"] is True
-        assert classify_mechanisms(["routine inspections of high-risk systems"])["has_enforcement"] is True
+
+        assert (
+            classify_mechanisms(["continuous monitoring of AI systems"])["has_enforcement"] is True
+        )
+        assert (
+            classify_mechanisms(["independent auditing of AI deployments"])["has_enforcement"]
+            is True
+        )
+        assert (
+            classify_mechanisms(["routine inspections of high-risk systems"])["has_enforcement"]
+            is True
+        )
         assert classify_mechanisms(["penalties for non-compliance"])["has_enforcement"] is True
         assert classify_mechanisms(["liabilities for AI-caused harms"])["has_enforcement"] is True
         assert classify_mechanisms(["annual registry of AI systems"])["has_reporting"] is True
@@ -490,7 +542,8 @@ class TestDetectImplementationCommitment:
         # The Korea Act assigns duties to "the Minister of Science and ICT" —
         # a named body the literal "ministry" keyword cannot match under
         # word-boundary matching. The stem form "minister*" must credit it.
-        from src.deterministic import classify_mechanisms, _has_keyword, NAMED_BODY_KEYWORDS
+        from src.deterministic import NAMED_BODY_KEYWORDS, _has_keyword, classify_mechanisms
+
         out = classify_mechanisms(
             ["Minister of Science and ICT confirmation procedure for high-impact AI"]
         )
@@ -507,6 +560,7 @@ class TestDetectImplementationCommitment:
         # notification duty", "labeling and indication requirement") that the
         # verb keyword "notify" cannot match — the noun stems must credit them.
         from src.deterministic import classify_mechanisms
+
         out = classify_mechanisms(
             ["Advance user notification duty for high-impact AI and GenAI products"]
         )
@@ -520,7 +574,8 @@ class TestDetectImplementationCommitment:
     def test_stem_keywords_do_not_match_unrelated_words(self):
         # False-positive spot checks: the stem entries must keep the same
         # boundary discipline as the earlier program/programming fix.
-        from src.deterministic import _has_keyword, NAMED_BODY_KEYWORDS, REPORTING_KEYWORDS
+        from src.deterministic import NAMED_BODY_KEYWORDS, REPORTING_KEYWORDS, _has_keyword
+
         # "minister*" must not reach inside "administration"/"administrative"
         # (no word boundary before "minist").
         assert not _has_keyword("administration of the national AI plan", NAMED_BODY_KEYWORDS)
@@ -563,8 +618,10 @@ class TestFunctionalEquivalenceGate:
         # "transparency/disclosure/explainability" vocabulary) — this is the
         # exact false-negative the semantic gate fixes.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.KOREA_TRANSPARENCY_CHUNK],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.KOREA_TRANSPARENCY_CHUNK],
             dimension="Transparency",
         )
         assert cov == CoverageLevel.MISSING
@@ -577,8 +634,10 @@ class TestFunctionalEquivalenceGate:
         # named body, so R2's co-occurrence bar stays unsatisfied — matching
         # the model's own reasoning on the Korean Act.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.KOREA_TRANSPARENCY_CHUNK],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.KOREA_TRANSPARENCY_CHUNK],
             dimension="Transparency",
             dimension_match_fn=lambda t, d: True,
         )
@@ -600,8 +659,10 @@ class TestFunctionalEquivalenceGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Accountability",
             dimension_match_fn=lambda t, d: False,
         )
@@ -621,8 +682,10 @@ class TestFunctionalEquivalenceGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Privacy",
             dimension_match_fn=lambda t, d: True,
         )
@@ -641,8 +704,10 @@ class TestFunctionalEquivalenceGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Privacy",
             dimension_match_fn=lambda t, d: True,
         )
@@ -650,36 +715,45 @@ class TestFunctionalEquivalenceGate:
         assert any("R1" in r for r in rules)
 
     def test_obligation_language_is_a_mechanism_signal(self):
-        assert detect_explicit_commitment(
-            [],
-            ["AI operators shall notify users in advance of high-impact AI deployment."],
-            dimension="Transparency",
-            dimension_match_fn=lambda t, d: True,
-        ) is True
+        assert (
+            detect_explicit_commitment(
+                [],
+                ["AI operators shall notify users in advance of high-impact AI deployment."],
+                dimension="Transparency",
+                dimension_match_fn=lambda t, d: True,
+            )
+            is True
+        )
         # Bare acknowledgment: no obligation → not a mechanism.
-        assert detect_explicit_commitment(
-            [],
-            ["The policy recognizes the importance of transparency."],
-            dimension="Transparency",
-            dimension_match_fn=lambda t, d: True,
-        ) is False
+        assert (
+            detect_explicit_commitment(
+                [],
+                ["The policy recognizes the importance of transparency."],
+                dimension="Transparency",
+                dimension_match_fn=lambda t, d: True,
+            )
+            is False
+        )
 
     def test_text_contains_mechanism(self):
         from src.deterministic import text_contains_mechanism
-        assert text_contains_mechanism(
-            "The Ministry shall publish an annual transparency report"
-        ) is True
-        assert text_contains_mechanism(
-            "AI operators must ensure safe deployment of high-risk systems"
-        ) is True
-        assert text_contains_mechanism(
-            "The policy recognizes the importance of fairness"
-        ) is False
+
+        assert (
+            text_contains_mechanism("The Ministry shall publish an annual transparency report")
+            is True
+        )
+        assert (
+            text_contains_mechanism("AI operators must ensure safe deployment of high-risk systems")
+            is True
+        )
+        assert text_contains_mechanism("The policy recognizes the importance of fairness") is False
 
 
 class TestValidateCoverageDeterministic:
     DOC = [{"chunk_id": "c1", "text": "policy passage about the dimension"}]
-    COMMITMENT_VERB_DOC = [{"chunk_id": "c1", "text": "The government commits to improving AI transparency."}]
+    COMMITMENT_VERB_DOC = [
+        {"chunk_id": "c1", "text": "The government commits to improving AI transparency."}
+    ]
 
     def test_r1_bare_acknowledgment_no_commitment_stays_missing(self):
         # Tightened floor: a bare risk acknowledgment with no proposed
@@ -688,8 +762,10 @@ class TestValidateCoverageDeterministic:
         # Missing. (Old behavior floored this to Partial; that inflation is
         # exactly what the tightening removes.)
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=self.DOC,
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=self.DOC,
         )
         assert cov == CoverageLevel.MISSING
         assert rules == []
@@ -699,8 +775,10 @@ class TestValidateCoverageDeterministic:
         # Missing -> Partial. It is NOT a concrete implementation
         # commitment, so R2 does not fire — the result stays Partial.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=self.COMMITMENT_VERB_DOC,
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=self.COMMITMENT_VERB_DOC,
         )
         assert cov == CoverageLevel.PARTIAL
         assert any("R1" in r for r in rules)
@@ -713,7 +791,8 @@ class TestValidateCoverageDeterministic:
         # implementation commitment, so the final verdict is Partial, not
         # Covered (Missing -> Partial; R2 does not fire).
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
             operational_mechanisms=["AI Ethics Board (named body)"],
             document_chunks=self.DOC,
         )
@@ -725,8 +804,10 @@ class TestValidateCoverageDeterministic:
         # Commitment/acknowledgment without any retrieved document evidence
         # is ungrounded — never raise on it.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[],
         )
         assert cov == CoverageLevel.MISSING
         assert rules == []
@@ -736,10 +817,15 @@ class TestValidateCoverageDeterministic:
         # commitment — the phrase "committed to" MATCHES contiguously but is
         # preceded by "not", so it must NOT floor Missing -> Partial.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
             operational_mechanisms=[],
-            document_chunks=[{"chunk_id": "c1",
-                              "text": "The government is not committed to improving AI transparency."}],
+            document_chunks=[
+                {
+                    "chunk_id": "c1",
+                    "text": "The government is not committed to improving AI transparency.",
+                }
+            ],
         )
         assert cov == CoverageLevel.MISSING
         assert rules == []
@@ -749,10 +835,15 @@ class TestValidateCoverageDeterministic:
         # strong phrase "establishment of" contiguously but is negated, so
         # it must not raise a Partial verdict to Covered.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
             operational_mechanisms=[],
-            document_chunks=[{"chunk_id": "c1",
-                              "text": "The strategy proposes no establishment of additional AI bodies."}],
+            document_chunks=[
+                {
+                    "chunk_id": "c1",
+                    "text": "The strategy proposes no establishment of additional AI bodies.",
+                }
+            ],
         )
         assert cov == CoverageLevel.PARTIAL
         assert rules == []
@@ -763,51 +854,62 @@ class TestValidateCoverageDeterministic:
         # ("commits to") floors Missing -> Partial but does NOT raise a
         # Partial verdict to Covered.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=self.COMMITMENT_VERB_DOC,
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=self.COMMITMENT_VERB_DOC,
         )
         assert cov == CoverageLevel.PARTIAL
         assert rules == []
 
-    def test_floor_disabled_missing_with_commitment_stays_missing(
-        self, monkeypatch
-    ):
+    def test_floor_disabled_missing_with_commitment_stays_missing(self, monkeypatch):
         # LADDER_FLOOR_ENABLED=0: R1 never fires and R2 only operates on
         # Partial verdicts, so even a document with explicit commitment
         # language stays Missing — the honest "no floor" baseline.
         import src.deterministic as det
+
         monkeypatch.setattr(det, "LADDER_FLOOR_ENABLED", False)
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
             operational_mechanisms=["AI Ethics Board (named body)"],
             document_chunks=self.COMMITMENT_VERB_DOC,
         )
         assert cov == CoverageLevel.MISSING
         assert rules == []
 
-    def test_floor_disabled_partial_with_commitment_still_raises_to_covered(
-        self, monkeypatch
-    ):
+    def test_floor_disabled_partial_with_commitment_still_raises_to_covered(self, monkeypatch):
         # R2 is unaffected by the floor toggle: a Partial verdict with a
         # concrete implementation commitment (named body + strong phrase in
         # the same chunk) still raises to Covered.
         import src.deterministic as det
+
         monkeypatch.setattr(det, "LADDER_FLOOR_ENABLED", False)
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
             operational_mechanisms=[],
-            document_chunks=[{"chunk_id": "c1",
-                              "text": "The government will establish an XAI programme under a new national AI authority."}],
+            document_chunks=[
+                {
+                    "chunk_id": "c1",
+                    "text": "The government will establish an XAI programme under a new national AI authority.",
+                }
+            ],
         )
         assert cov == CoverageLevel.COVERED
         assert any("R2" in r for r in rules)
 
     def test_r2_partial_with_commitment_raises_to_covered(self):
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
             operational_mechanisms=[],
-            document_chunks=[{"chunk_id": "c1",
-                              "text": "The government will establish an XAI programme under a new national AI authority."}],
+            document_chunks=[
+                {
+                    "chunk_id": "c1",
+                    "text": "The government will establish an XAI programme under a new national AI authority.",
+                }
+            ],
         )
         assert cov == CoverageLevel.COVERED
         assert any("R2" in r for r in rules)
@@ -817,7 +919,8 @@ class TestValidateCoverageDeterministic:
         # enforcement co-occurrence (tightened): a body that also reports
         # is a concrete implementation commitment.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
             operational_mechanisms=["AI Safety Committee publishes annual transparency reports"],
             document_chunks=self.DOC,
         )
@@ -833,7 +936,8 @@ class TestValidateCoverageDeterministic:
         consistent with the model's own reasoning (explicit gaps listed: no
         explainability, documentation, or logging standards)."""
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
             operational_mechanisms=[
                 "Advance notification requirement for high-impact AI and Generative AI",
                 "Labeling and disclosure mechanism for AI-generated virtual content",
@@ -845,34 +949,42 @@ class TestValidateCoverageDeterministic:
 
     def test_r2_not_fired_without_commitment(self):
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
             operational_mechanisms=[],
-            document_chunks=[{"chunk_id": "c1",
-                              "text": "The document mentions fairness as a principle."}],
+            document_chunks=[
+                {"chunk_id": "c1", "text": "The document mentions fairness as a principle."}
+            ],
         )
         assert cov == CoverageLevel.PARTIAL
         assert rules == []
 
     def test_r2_not_fired_without_document_evidence(self):
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[],
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[],
         )
         assert cov == CoverageLevel.PARTIAL
         assert rules == []
 
     def test_covered_untouched(self):
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.COVERED, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=self.DOC,
+            CoverageLevel.COVERED,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=self.DOC,
         )
         assert cov == CoverageLevel.COVERED
         assert rules == []
 
     def test_insufficient_evidence_untouched(self):
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.INSUFFICIENT_EVIDENCE, principle_acknowledged=False,
-            operational_mechanisms=[], document_chunks=[],
+            CoverageLevel.INSUFFICIENT_EVIDENCE,
+            principle_acknowledged=False,
+            operational_mechanisms=[],
+            document_chunks=[],
         )
         assert cov == CoverageLevel.INSUFFICIENT_EVIDENCE
         assert rules == []
@@ -882,10 +994,12 @@ class TestValidateCoverageDeterministic:
         # lifts Missing to Partial (R1 floor), then the concrete
         # implementation commitment lifts Partial to Covered (R2 raise).
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
             operational_mechanisms=[],
-            document_chunks=[{"chunk_id": "c1",
-                              "text": "We will establish a national AI oversight board."}],
+            document_chunks=[
+                {"chunk_id": "c1", "text": "We will establish a national AI oversight board."}
+            ],
         )
         assert cov == CoverageLevel.COVERED
         assert any("R1" in r for r in rules) and any("R2" in r for r in rules)
@@ -968,8 +1082,10 @@ class TestDimensionGrounding:
         # "will support" (verb) would have floored Missing -> Partial under
         # the old matcher. Grounding keeps it Missing.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.UN_ADVISORY_CHUNK],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.UN_ADVISORY_CHUNK],
             dimension="Accountability",
         )
         assert cov == CoverageLevel.MISSING
@@ -979,8 +1095,10 @@ class TestDimensionGrounding:
         # Even a Partial verdict must not be raised by the UN body: no
         # named body keyword in-chunk AND not dimension-topical.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.UN_ADVISORY_CHUNK],
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.UN_ADVISORY_CHUNK],
             dimension="Accountability",
         )
         assert cov == CoverageLevel.PARTIAL
@@ -990,8 +1108,10 @@ class TestDimensionGrounding:
         # "program" (inside "programming") and "intends to" were the old
         # triggers. Word boundaries + grounding keep it Missing.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.EVENTS_CALENDAR_CHUNK],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.EVENTS_CALENDAR_CHUNK],
             dimension="Inclusivity",
         )
         assert cov == CoverageLevel.MISSING
@@ -1004,8 +1124,10 @@ class TestDimensionGrounding:
         # not an Inclusivity topic keyword; only "public participation" is.
         assert not _chunk_matches_dimension(self.TALENT_ECOSYSTEM_CHUNK["text"], "Inclusivity")
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.TALENT_ECOSYSTEM_CHUNK],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.TALENT_ECOSYSTEM_CHUNK],
             dimension="Inclusivity",
         )
         assert cov == CoverageLevel.MISSING
@@ -1023,8 +1145,10 @@ class TestDimensionGrounding:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Accountability",
         )
         assert cov == CoverageLevel.COVERED
@@ -1075,8 +1199,10 @@ class TestSubstantiveSpecificityGate:
         # substantive gate rejects the chunk: no environmental governance
         # requirement. R1 must NOT floor Missing -> Partial.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.KOREA_ENV_PROCEDURAL],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.KOREA_ENV_PROCEDURAL],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
             substantive_match_fn=lambda t, d: False,
@@ -1087,8 +1213,10 @@ class TestSubstantiveSpecificityGate:
     def test_procedural_authority_does_not_raise_partial_to_covered(self):
         # Same passage on a Partial verdict: R2 must not raise to Covered.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.KOREA_ENV_PROCEDURAL],
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.KOREA_ENV_PROCEDURAL],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
             substantive_match_fn=lambda t, d: False,
@@ -1100,8 +1228,10 @@ class TestSubstantiveSpecificityGate:
         # The Korea Privacy pool passage (public-institution decision-making)
         # must stay inert for Privacy despite obligation language.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.KOREA_PRIV_PROCEDURAL],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.KOREA_PRIV_PROCEDURAL],
             dimension="Privacy",
             dimension_match_fn=lambda t, d: True,
             substantive_match_fn=lambda t, d: False,
@@ -1122,8 +1252,10 @@ class TestSubstantiveSpecificityGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
             substantive_match_fn=lambda t, d: True,
@@ -1146,8 +1278,10 @@ class TestSubstantiveSpecificityGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
             substantive_match_fn=lambda t, d: True,
@@ -1169,8 +1303,10 @@ class TestSubstantiveSpecificityGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Transparency",
             dimension_match_fn=lambda t, d: True,
             substantive_match_fn=lambda t, d: True,
@@ -1185,13 +1321,14 @@ class TestSubstantiveSpecificityGate:
         chunk = {
             "chunk_id": "c-env",
             "text": (
-                "AI data centres shall report their annual energy consumption "
-                "and carbon emissions."
+                "AI data centres shall report their annual energy consumption and carbon emissions."
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
         )
@@ -1223,13 +1360,13 @@ class TestSubstantiveSpecificityGate:
         # the old code raised Partial -> Covered on the co-located
         # institute sentence. The sentence-level gate keeps it Partial.
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[self.MIXED_ENV_CHUNK],
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[self.MIXED_ENV_CHUNK],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
-            substantive_match_fn=(
-                lambda t, d: "energy" in t.lower() or "carbon" in t.lower()
-            ),
+            substantive_match_fn=(lambda t, d: "energy" in t.lower() or "carbon" in t.lower()),
         )
         assert cov == CoverageLevel.PARTIAL
         assert rules == []
@@ -1250,13 +1387,13 @@ class TestSubstantiveSpecificityGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
-            substantive_match_fn=(
-                lambda t, d: "energy" in t.lower() or "carbon" in t.lower()
-            ),
+            substantive_match_fn=(lambda t, d: "energy" in t.lower() or "carbon" in t.lower()),
         )
         assert cov == CoverageLevel.COVERED
         assert any("R2" in r for r in rules)
@@ -1274,8 +1411,10 @@ class TestSubstantiveSpecificityGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.PARTIAL, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.PARTIAL,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
             substantive_match_fn=lambda t, d: True,
@@ -1300,21 +1439,26 @@ class TestSubstantiveSpecificityGate:
             ),
         }
         cov, rules = validate_coverage_deterministic(
-            CoverageLevel.MISSING, principle_acknowledged=True,
-            operational_mechanisms=[], document_chunks=[chunk],
+            CoverageLevel.MISSING,
+            principle_acknowledged=True,
+            operational_mechanisms=[],
+            document_chunks=[chunk],
             dimension="Environmental Sustainability",
             dimension_match_fn=lambda t, d: True,
-            substantive_match_fn=(
-                lambda t, d: "environment" in t.lower() or "energy" in t.lower()
-            ),
+            substantive_match_fn=(lambda t, d: "environment" in t.lower() or "energy" in t.lower()),
         )
         assert cov == CoverageLevel.MISSING
         assert rules == []
 
     def test_all_dimensions_have_topic_keywords(self):
         for dim in (
-            "Transparency", "Accountability", "Privacy", "Safety",
-            "Human Autonomy", "Inclusivity", "Fairness",
+            "Transparency",
+            "Accountability",
+            "Privacy",
+            "Safety",
+            "Human Autonomy",
+            "Inclusivity",
+            "Fairness",
             "Environmental Sustainability",
         ):
             assert DIMENSION_TOPIC_KEYWORDS.get(dim), dim
@@ -1339,16 +1483,21 @@ class TestLowInformationFragment:
         assert is_low_information_fragment(None) is True
 
     def test_real_sentences_pass(self):
-        assert is_low_information_fragment(
-            "The policy establishes a National AI Ethics Board with a "
-            "human-in-the-loop review mandate for high-impact deployments."
-        ) is False
-        assert is_low_information_fragment(
-            "The government will ensure algorithmic transparency in public services."
-        ) is False
-        assert is_low_information_fragment(
-            "Published in 2024, the framework sets out obligations."
-        ) is False
-        assert is_low_information_fragment(
-            "The policy establishes an ethics board."
-        ) is False
+        assert (
+            is_low_information_fragment(
+                "The policy establishes a National AI Ethics Board with a "
+                "human-in-the-loop review mandate for high-impact deployments."
+            )
+            is False
+        )
+        assert (
+            is_low_information_fragment(
+                "The government will ensure algorithmic transparency in public services."
+            )
+            is False
+        )
+        assert (
+            is_low_information_fragment("Published in 2024, the framework sets out obligations.")
+            is False
+        )
+        assert is_low_information_fragment("The policy establishes an ethics board.") is False

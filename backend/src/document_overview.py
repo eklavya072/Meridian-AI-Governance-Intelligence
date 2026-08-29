@@ -30,8 +30,9 @@ Anti-fabrication (the core rule of this mode):
 from __future__ import annotations
 
 import re
-import structlog
 from typing import Any
+
+import structlog
 
 from src.vectorstore import VectorStore
 
@@ -84,8 +85,13 @@ def _is_preamble(text: str, page: int | None) -> bool:
     if (page or 0) <= 1 and len(text_lower) < 400:
         return True
     markers = (
-        "intentionally left blank", "acknowledgment", "acknowledgement",
-        "table of contents", "contents", "copyright", "all rights reserved",
+        "intentionally left blank",
+        "acknowledgment",
+        "acknowledgement",
+        "table of contents",
+        "contents",
+        "copyright",
+        "all rights reserved",
     )
     if len(text_lower) < 400 and any(m in text_lower for m in markers):
         return True
@@ -144,14 +150,16 @@ def retrieve_document_overview(
                 if _is_preamble(text, page):
                     continue
                 section = (md.get("section") or "").strip() or "(unsectioned)"
-                by_section.setdefault(section, []).append({
-                    "chunk_id": cid,
-                    "text": text,
-                    "page_number": page,
-                    "section_title": section,
-                    "document_name": (md.get("document_name") or ""),
-                    "similarity_score": None,
-                })
+                by_section.setdefault(section, []).append(
+                    {
+                        "chunk_id": cid,
+                        "text": text,
+                        "page_number": page,
+                        "section_title": section,
+                        "document_name": (md.get("document_name") or ""),
+                        "similarity_score": None,
+                    }
+                )
             for chunks in by_section.values():
                 # One representative chunk per section when possible; two when
                 # the section is long (recursive splitting produces many).
@@ -182,14 +190,16 @@ def retrieve_document_overview(
                 page = None
             if _is_preamble(text, page):
                 continue
-            sweep.append({
-                "chunk_id": r.get("chunk_id") or r.get("id"),
-                "text": text,
-                "page_number": page,
-                "section_title": (md.get("section") or r.get("section_title") or ""),
-                "document_name": (md.get("document_name") or ""),
-                "similarity_score": r.get("similarity_score") or r.get("similarity", 0.0),
-            })
+            sweep.append(
+                {
+                    "chunk_id": r.get("chunk_id") or r.get("id"),
+                    "text": text,
+                    "page_number": page,
+                    "section_title": (md.get("section") or r.get("section_title") or ""),
+                    "document_name": (md.get("document_name") or ""),
+                    "similarity_score": r.get("similarity_score") or r.get("similarity", 0.0),
+                }
+            )
 
     # ── Fuse: interleave section picks (structural coverage) with the
     #    similarity-ranked sweep so the user's question still shapes selection.
@@ -316,20 +326,53 @@ def build_overview_prompt(
 # Document-specific intent markers: questions that clearly target the active
 # workspace's uploaded document rather than the general knowledge base.
 DOC_SPECIFIC_MARKERS = (
-    "this document", "the document", "this policy", "the policy",
-    "this strategy", "the strategy", "this report", "the report",
+    "this document",
+    "the document",
+    "this policy",
+    "the policy",
+    "this strategy",
+    "the strategy",
+    "this report",
+    "the report",
     # The uploaded file is a PDF and people say so — "does this pdf deal with
     # accountability" is as document-anchored as a question gets, and it was
     # falling through to the unscoped corpus for want of the word.
-    "this pdf", "the pdf", "this file", "the file", "uploaded",
-    "this guideline", "the guideline", "this act", "this bill", "this law",
-    "this framework", "this paper",
-    "summarize", "summarise", "overview", "main focus", "focus on",
-    "what does the policy", "what does this", "what is in the",
-    "does this", "does the document", "where in", "where does",
-    "mentioned in", "mention", "say about", "cover", "covered in",
-    "approach to", "key themes", "main themes", "priorities of",
-    "what are the main", "about the document", "tell me about this",
+    "this pdf",
+    "the pdf",
+    "this file",
+    "the file",
+    "uploaded",
+    "this guideline",
+    "the guideline",
+    "this act",
+    "this bill",
+    "this law",
+    "this framework",
+    "this paper",
+    "summarize",
+    "summarise",
+    "overview",
+    "main focus",
+    "focus on",
+    "what does the policy",
+    "what does this",
+    "what is in the",
+    "does this",
+    "does the document",
+    "where in",
+    "where does",
+    "mentioned in",
+    "mention",
+    "say about",
+    "cover",
+    "covered in",
+    "approach to",
+    "key themes",
+    "main themes",
+    "priorities of",
+    "what are the main",
+    "about the document",
+    "tell me about this",
 )
 
 

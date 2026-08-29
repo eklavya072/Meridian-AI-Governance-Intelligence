@@ -23,6 +23,7 @@ These are not three bugs. They are one bug three times, and it recurs for as
 long as duplicate computations are allowed to exist. This module fails the
 build when a second call site appears.
 """
+
 import ast
 import pathlib
 
@@ -49,8 +50,10 @@ def _call_sites(tree):
             continue
         func = node.func
         name = (
-            func.id if isinstance(func, ast.Name)
-            else func.attr if isinstance(func, ast.Attribute)
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr
+            if isinstance(func, ast.Attribute)
             else None
         )
         if name:
@@ -77,13 +80,19 @@ def test_verdict_inputs_have_exactly_one_call_site(func, expected):
 def test_determined_dict_exposes_everything_downstream_needs():
     """The read-back path only works if the verdict actually carries these."""
     from src.gap_analyzer import GapAnalyzer  # noqa: F401
+
     source = SRC.read_text()
     start = source.index("def _compute_deterministic_verdict")
     end = source.index("def _analyze_dimension_combined")
     returned = source[start:end]
     for key in (
-        "profile", "scoring_pool", "coverage_label", "coverage_note",
-        "maturity_label", "maturity_note", "mechanisms",
+        "profile",
+        "scoring_pool",
+        "coverage_label",
+        "coverage_note",
+        "maturity_label",
+        "maturity_note",
+        "mechanisms",
     ):
         assert f'"{key}"' in returned, (
             f"_compute_deterministic_verdict must return '{key}' — downstream "
@@ -101,9 +110,10 @@ class TestCoveredNeverShipsUnderGapProse:
 
     def test_real_shipped_contradictions_are_detected(self):
         from src.consistency import (
-            detect_ladder_raise_contradiction,
             LADDER_RAISE_REVIEW_THRESHOLD,
+            detect_ladder_raise_contradiction,
         )
+
         for text in (
             "The strategy highlights principles of inclusion, diversity, and "
             "non-discrimination and commits to a foresight study on vulnerable "
@@ -120,9 +130,10 @@ class TestCoveredNeverShipsUnderGapProse:
     def test_clean_covered_prose_is_left_alone(self):
         """The reconciliation must not rewrite text that says nothing wrong."""
         from src.consistency import (
-            detect_ladder_raise_contradiction,
             LADDER_RAISE_REVIEW_THRESHOLD,
+            detect_ladder_raise_contradiction,
         )
+
         score, _ = detect_ladder_raise_contradiction(
             "The regulation establishes comprehensive obligations across the "
             "AI lifecycle, backed by market surveillance authorities."
@@ -133,14 +144,11 @@ class TestCoveredNeverShipsUnderGapProse:
         """It used to sit inside `if coverage_rules:`, which the winning path
         clears — so the guard existed but never ran on a real verdict."""
         source = SRC.read_text()
-        block = source[source.index("Covered verdicts never ship under gap prose"):]
+        block = source[source.index("Covered verdicts never ship under gap prose") :]
         block = block[: block.index("gap_detected = coverage")]
         # Comments in this block explain the old gating on purpose, so strip
         # them: the assertion is about what executes, not what is documented.
-        code = "\n".join(
-            line for line in block.splitlines()
-            if not line.lstrip().startswith("#")
-        )
+        code = "\n".join(line for line in block.splitlines() if not line.lstrip().startswith("#"))
         assert "coverage_rules" not in code, (
             "The Covered/reason_flagged reconciliation must not depend on "
             "coverage_rules — the evidence-profile path clears it before "

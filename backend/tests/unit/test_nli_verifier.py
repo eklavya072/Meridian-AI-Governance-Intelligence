@@ -1,6 +1,7 @@
 import pytest
-from src.nli_verifier import NLIVerifier
+
 from src.models import VerificationStatus
+from src.nli_verifier import NLIVerifier
 
 
 def test_nli_verifier_init():
@@ -31,11 +32,10 @@ def test_nli_verifier_fallback_to_embedding():
         return [0.9, 0.1, 0.0]
 
     verifier = NLIVerifier(embed_function=mock_embed)
-    result = verifier.verify("test claim about AI",
-                             "test document about artificial intelligence",
-                             "c1")
-    assert result.status in (VerificationStatus.SUPPORTS,
-                             VerificationStatus.PARTIALLY_SUPPORTS)
+    result = verifier.verify(
+        "test claim about AI", "test document about artificial intelligence", "c1"
+    )
+    assert result.status in (VerificationStatus.SUPPORTS, VerificationStatus.PARTIALLY_SUPPORTS)
     assert len(embed_calls) > 0
 
 
@@ -49,9 +49,9 @@ def test_nli_verifier_irrelevant_text():
         return [0.0, 0.0, 1.0]
 
     verifier = NLIVerifier(embed_function=mock_embed)
-    result = verifier.verify("privacy claim about data protection",
-                             "weather report for Monday",
-                             "c1")
+    result = verifier.verify(
+        "privacy claim about data protection", "weather report for Monday", "c1"
+    )
     assert result.confidence < 0.5
 
 
@@ -71,6 +71,7 @@ def test_nli_verifier_method_string():
 
 def test_verify_citation_nli_function():
     from src.nli_verifier import verify_citation_nli
+
     result = verify_citation_nli("test claim", "test chunk")
     assert result.chunk_id == ""
     assert result.claim == "test claim"

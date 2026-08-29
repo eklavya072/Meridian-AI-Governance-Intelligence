@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import structlog
 from functools import lru_cache
-from typing import Any
+
+import structlog
 
 from src.framework_sync import load_frameworks_config
 
@@ -37,24 +37,85 @@ CORE_FRAMEWORKS: list[str] = [
 # "Cote d'Ivoire", etc. resolve without fuzzy matching.
 REGION_COUNTRIES: dict[str, set[str]] = {
     "ASEAN": {
-        "brunei", "brunei darussalam", "cambodia", "indonesia", "laos",
-        "lao pdr", "lao people's democratic republic", "malaysia", "myanmar",
-        "philippines", "singapore", "thailand", "vietnam", "viet nam",
-        "timor-leste", "timor leste",
+        "brunei",
+        "brunei darussalam",
+        "cambodia",
+        "indonesia",
+        "laos",
+        "lao pdr",
+        "lao people's democratic republic",
+        "malaysia",
+        "myanmar",
+        "philippines",
+        "singapore",
+        "thailand",
+        "vietnam",
+        "viet nam",
+        "timor-leste",
+        "timor leste",
     },
     "AU": {
-        "algeria", "angola", "benin", "botswana", "burkina faso", "burundi",
-        "cabo verde", "cape verde", "cameroon", "central african republic",
-        "chad", "comoros", "congo", "republic of the congo", "democratic republic of the congo",
-        "drc", "côte d'ivoire", "cote d'ivoire", "ivory coast", "djibouti",
-        "egypt", "equatorial guinea", "eritrea", "eswatini", "swaziland",
-        "ethiopia", "gabon", "gambia", "ghana", "guinea", "guinea-bissau",
-        "kenya", "lesotho", "liberia", "libya", "madagascar", "malawi", "mali",
-        "mauritania", "mauritius", "morocco", "mozambique", "namibia", "niger",
-        "nigeria", "rwanda", "são tomé and príncipe", "sao tome and principe",
-        "senegal", "seychelles", "sierra leone", "somalia", "south africa",
-        "south sudan", "sudan", "tanzania", "togo", "tunisia", "uganda",
-        "zambia", "zimbabwe",
+        "algeria",
+        "angola",
+        "benin",
+        "botswana",
+        "burkina faso",
+        "burundi",
+        "cabo verde",
+        "cape verde",
+        "cameroon",
+        "central african republic",
+        "chad",
+        "comoros",
+        "congo",
+        "republic of the congo",
+        "democratic republic of the congo",
+        "drc",
+        "côte d'ivoire",
+        "cote d'ivoire",
+        "ivory coast",
+        "djibouti",
+        "egypt",
+        "equatorial guinea",
+        "eritrea",
+        "eswatini",
+        "swaziland",
+        "ethiopia",
+        "gabon",
+        "gambia",
+        "ghana",
+        "guinea",
+        "guinea-bissau",
+        "kenya",
+        "lesotho",
+        "liberia",
+        "libya",
+        "madagascar",
+        "malawi",
+        "mali",
+        "mauritania",
+        "mauritius",
+        "morocco",
+        "mozambique",
+        "namibia",
+        "niger",
+        "nigeria",
+        "rwanda",
+        "são tomé and príncipe",
+        "sao tome and principe",
+        "senegal",
+        "seychelles",
+        "sierra leone",
+        "somalia",
+        "south africa",
+        "south sudan",
+        "sudan",
+        "tanzania",
+        "togo",
+        "tunisia",
+        "uganda",
+        "zambia",
+        "zimbabwe",
     },
 }
 
@@ -80,7 +141,9 @@ def resolve_regions(country: str | None) -> list[str]:
 
 
 @lru_cache(maxsize=1)
-def _routing_metadata() -> tuple[dict[str, tuple[tuple[str, tuple[str, ...]], ...]], dict[str, tuple[str, ...]]]:
+def _routing_metadata() -> tuple[
+    dict[str, tuple[tuple[str, tuple[str, ...]], ...]], dict[str, tuple[str, ...]]
+]:
     """Build dimension → (framework name, roles) and region → framework names
     from config/frameworks.yaml routing tags. Roles are kept so dimension-
     tagged Module 2/3 sources can be resolved separately from Module 1
@@ -94,9 +157,9 @@ def _routing_metadata() -> tuple[dict[str, tuple[tuple[str, tuple[str, ...]], ..
         if not name:
             continue
         roles = tuple(fw.get("roles") or [])
-        for d in (fw.get("dimensions") or []):
+        for d in fw.get("dimensions") or []:
             dim_map.setdefault(d, []).append((name, roles))
-        for r in (fw.get("regions") or []):
+        for r in fw.get("regions") or []:
             if r and r != "Global":
                 region_map.setdefault(r, []).append(name)
     return (
@@ -105,9 +168,7 @@ def _routing_metadata() -> tuple[dict[str, tuple[tuple[str, tuple[str, ...]], ..
     )
 
 
-def resolve_dimension_frameworks(
-    dimension: str, roles: list[str] | None = None
-) -> list[str]:
+def resolve_dimension_frameworks(dimension: str, roles: list[str] | None = None) -> list[str]:
     """Dimension-tagged frameworks, optionally restricted to specific roles.
 
     Module 1 routing filters to module_1_normative (see resolve_frameworks).
@@ -123,6 +184,7 @@ def resolve_dimension_frameworks(
         if not role_set or (role_set & set(fw_roles)):
             names.append(name)
     return names
+
 
 def resolve_regional_frameworks(country: str | None = None) -> list[str]:
     """The region-routed frameworks for a country (subset of resolve_frameworks).
@@ -167,9 +229,7 @@ def resolve_frameworks(dimension: str, country: str | None = None) -> list[str]:
     # must never be added to Module 1's framework list (it has no normative
     # chunks, and its role is served by the Module 2/3 reserve instead).
     selected.extend(
-        name
-        for name, fw_roles in dim_map.get(dimension, ())
-        if "module_1_normative" in fw_roles
+        name for name, fw_roles in dim_map.get(dimension, ()) if "module_1_normative" in fw_roles
     )
     for region in regions:
         selected.extend(region_map.get(region, ()))

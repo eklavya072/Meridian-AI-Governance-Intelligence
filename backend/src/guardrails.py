@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-import structlog
-from typing import Any
 
+import structlog
 from pydantic import BaseModel
 
 from src.vectorstore import VectorStore
@@ -72,7 +71,9 @@ class Guardrails:
                 )
 
             results = self.vector_store.retrieve(
-                query=query, top_k=5, workspace_filter=workspace_filter,
+                query=query,
+                top_k=5,
+                workspace_filter=workspace_filter,
             )
             if not results:
                 logger.info("guardrail_no_retrieval_results", query=query[:100])
@@ -83,8 +84,7 @@ class Guardrails:
                 )
 
             high_similarity = [
-                r for r in results
-                if (r.get("similarity_score") or 0) >= MIN_RETRIEVAL_SIMILARITY
+                r for r in results if (r.get("similarity_score") or 0) >= MIN_RETRIEVAL_SIMILARITY
             ]
             if len(high_similarity) < MIN_RETRIEVAL_CHUNKS:
                 logger.info(

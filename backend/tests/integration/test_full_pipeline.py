@@ -7,15 +7,16 @@ This test requires:
 - A configured LLM provider (Gemini or Groq), or a mock
 """
 
-import pytest
 import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
+from src.brief_generator import generate_executive_brief_text
+from src.gap_analyzer import GOVERNANCE_DIMENSIONS, GapAnalyzer
 from src.ingestion import ingest_document
 from src.vectorstore import VectorStore
-from src.gap_analyzer import GapAnalyzer, GOVERNANCE_DIMENSIONS
-from src.brief_generator import generate_executive_brief_text
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_INTEGRATION_TESTS"),
@@ -25,8 +26,9 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def sample_pdf():
-    from pypdf import PdfWriter
     import io
+
+    from pypdf import PdfWriter
 
     writer = PdfWriter()
     page = writer.add_blank_page(200, 200)
@@ -63,8 +65,10 @@ def sample_pdf():
     """.strip()
 
     from io import BytesIO
+
     packet = BytesIO()
     from reportlab.pdfgen import canvas
+
     c = canvas.Canvas(packet)
     y = 750
     for line in text_content.split("\n"):
@@ -74,6 +78,7 @@ def sample_pdf():
     packet.seek(0)
 
     from pypdf import PdfReader
+
     overlay = PdfReader(packet)
     page.merge_page(overlay.pages[0])
 

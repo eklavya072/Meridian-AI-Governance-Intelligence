@@ -2,10 +2,19 @@ import pytest
 from pydantic import ValidationError
 
 from src.models import (
-    GovernanceMaturityLevel, EvidenceStrength, CoverageLevel, RiskLevel,
-    EvidenceInterpretation, MaturityAssessment, FrameworkSynthesisResult,
-    PlausibilityReview, PolicyRecommendation, GovernanceGap,
-    CalibratedConfidence, RetrievedEvidence, FrameworkPositionRaw,
+    CalibratedConfidence,
+    CoverageLevel,
+    EvidenceInterpretation,
+    EvidenceStrength,
+    FrameworkPositionRaw,
+    FrameworkSynthesisResult,
+    GovernanceGap,
+    GovernanceMaturityLevel,
+    MaturityAssessment,
+    PlausibilityReview,
+    PolicyRecommendation,
+    RetrievedEvidence,
+    RiskLevel,
 )
 
 
@@ -39,7 +48,10 @@ class TestEvidenceStrength:
 
     def test_from_string(self):
         assert EvidenceStrength("Not Demonstrated") == EvidenceStrength.NOT_DEMONSTRATED
-        assert EvidenceStrength("Strongly Operationalised") == EvidenceStrength.STRONGLY_OPERATIONALISED
+        assert (
+            EvidenceStrength("Strongly Operationalised")
+            == EvidenceStrength.STRONGLY_OPERATIONALISED
+        )
 
 
 class TestEvidenceInterpretation:
@@ -114,7 +126,9 @@ class TestMaturityAssessment:
             (GovernanceMaturityLevel.CONTINUOUS_MONITORING_AND_ENFORCEMENT, CoverageLevel.COVERED),
         ]
         for level, expected_coverage in cases:
-            ma = MaturityAssessment(dimension="Test", maturity_level=level, coverage=expected_coverage)
+            ma = MaturityAssessment(
+                dimension="Test", maturity_level=level, coverage=expected_coverage
+            )
             assert ma.maturity_level == level
             assert ma.coverage == expected_coverage
 
@@ -358,5 +372,7 @@ class TestRetrievedEvidence:
         assert ev.verified is True
 
     def test_semantic_score(self):
-        ev = RetrievedEvidence(chunk_id="c1", text="text", source_framework="OECD", semantic_score=0.88)
+        ev = RetrievedEvidence(
+            chunk_id="c1", text="text", source_framework="OECD", semantic_score=0.88
+        )
         assert ev.semantic_score == 0.88

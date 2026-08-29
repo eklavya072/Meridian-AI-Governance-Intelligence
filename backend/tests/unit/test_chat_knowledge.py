@@ -26,33 +26,42 @@ from src.meridian_facts import (
 
 
 class TestMethodQuestions:
-    @pytest.mark.parametrize("q", [
-        "Why do you use 8 dimensions and not more?",
-        "why not add more dimensions",
-        "How do you decide something is Covered rather than Partial?",
-        "what does binding force mean",
-        "what is your methodology",
-        "do you rank countries against each other",
-        "what are your limitations",
-        "how is the maturity index calculated",
-    ])
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "Why do you use 8 dimensions and not more?",
+            "why not add more dimensions",
+            "How do you decide something is Covered rather than Partial?",
+            "what does binding force mean",
+            "what is your methodology",
+            "do you rank countries against each other",
+            "what are your limitations",
+            "how is the maturity index calculated",
+        ],
+    )
     def test_self_referential_questions_are_method_questions(self, q):
         assert is_method_question(q)
 
-    @pytest.mark.parametrize("q", [
-        "What is transparency in AI?",
-        "How does the EU AI Act classify high-risk AI?",
-        "What does NIST say about bias?",
-        "summarize this policy",
-    ])
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "What is transparency in AI?",
+            "How does the EU AI Act classify high-risk AI?",
+            "What does NIST say about bias?",
+            "summarize this policy",
+        ],
+    )
     def test_subject_matter_questions_are_not(self, q):
         assert not is_method_question(q)
 
-    @pytest.mark.parametrize("q", [
-        "What frameworks do you use?",
-        "why not add more frameworks",
-        "which frameworks are indexed",
-    ])
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "What frameworks do you use?",
+            "why not add more frameworks",
+            "which frameworks are indexed",
+        ],
+    )
     def test_corpus_questions_want_the_roster(self, q):
         # Corpus questions are a subset of method questions — both need the
         # method brief, only these pay for the roster lookup.
@@ -83,23 +92,29 @@ class TestMethodQuestions:
 
 
 class TestFullAnalysisReferral:
-    @pytest.mark.parametrize("q", [
-        "How does this fair with the EU AI Act?",
-        "How does this policy compare with the EU AI Act?",
-        "What should improve?",
-        "whats the best implementation plan",
-        "is this policy compliant",
-        "are these guidelines adequate",
-    ])
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "How does this fair with the EU AI Act?",
+            "How does this policy compare with the EU AI Act?",
+            "What should improve?",
+            "whats the best implementation plan",
+            "is this policy compliant",
+            "are these guidelines adequate",
+        ],
+    )
     def test_scoring_questions_are_referred(self, q):
         assert needs_full_analysis(q)
 
-    @pytest.mark.parametrize("q", [
-        "does this pdf deal with ai accountability",
-        "where in the pdf does it mention environment rules",
-        "summarize this document",
-        "what does this say about privacy",
-    ])
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "does this pdf deal with ai accountability",
+            "where in the pdf does it mention environment rules",
+            "summarize this document",
+            "what does this say about privacy",
+        ],
+    )
     def test_plain_document_questions_are_answered_not_referred(self, q):
         assert not needs_full_analysis(q)
         # And they must still reach the document, which is the marker list's
@@ -108,20 +123,26 @@ class TestFullAnalysisReferral:
 
 
 class TestAnalysisOverview:
-    @pytest.mark.parametrize("q", [
-        "Which is the strongest dimension and why?",
-        "what are the main gaps in this analysis",
-        "how many dimensions are covered",
-        "what is the coverage index",
-        "rank the dimensions",
-    ])
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "Which is the strongest dimension and why?",
+            "what are the main gaps in this analysis",
+            "how many dimensions are covered",
+            "what is the coverage index",
+            "rank the dimensions",
+        ],
+    )
     def test_cross_dimension_questions_want_the_whole_run(self, q):
         assert is_analysis_overview_question(q)
 
-    @pytest.mark.parametrize("q", [
-        "why is safety partial",
-        "what does NIST say about bias",
-    ])
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "why is safety partial",
+            "what does NIST say about bias",
+        ],
+    )
     def test_single_dimension_questions_do_not(self, q):
         # The per-dimension generator handles these and does it better; the
         # overview would just be noise in the prompt.
@@ -133,10 +154,15 @@ class TestAnalysisOverview:
             "policy_title": "AI Strategy",
             "documents": ["strategy.pdf"],
             "decision_analytics": {
-                "covered": 6, "partial": 2, "missing": 0,
-                "coverage_index": 71.1, "maturity_index": 78.4,
-                "binding_share": 28.1, "mechanisms_met": 32,
-                "mechanisms_total": 45, "mechanisms_binding": 9,
+                "covered": 6,
+                "partial": 2,
+                "missing": 0,
+                "coverage_index": 71.1,
+                "maturity_index": 78.4,
+                "binding_share": 28.1,
+                "mechanisms_met": 32,
+                "mechanisms_total": 45,
+                "mechanisms_binding": 9,
                 "strongest_dimension": "Accountability",
             },
             "gaps": {
@@ -168,8 +194,8 @@ class TestAnalysisOverview:
         # Binding is tier >= 3: Accountability's two both qualify, Privacy's
         # single T1 does not — which is exactly why one is Covered and the
         # other Partial.
-        assert "2 present (2 binding)" in ctx   # Accountability
-        assert "1 present (0 binding)" in ctx   # Privacy
+        assert "2 present (2 binding)" in ctx  # Accountability
+        assert "1 present (0 binding)" in ctx  # Privacy
         assert "purpose limitation" in ctx
 
     def test_no_analysis_yields_no_context(self):

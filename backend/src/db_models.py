@@ -1,24 +1,25 @@
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import (
+    JSON,
+    Boolean,
     Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
     String,
     Text,
-    DateTime,
-    Integer,
-    Float,
-    Boolean,
-    ForeignKey,
-    JSON,
+)
+from sqlalchemy import (
     Enum as SAEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
-import enum
 
 
 class Base(DeclarativeBase):
@@ -60,7 +61,9 @@ class Workspace(Base):
 
     analyses = relationship("Analysis", back_populates="workspace", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="workspace", cascade="all, delete-orphan")
-    chat_sessions = relationship("ChatSession", back_populates="workspace", cascade="all, delete-orphan")
+    chat_sessions = relationship(
+        "ChatSession", back_populates="workspace", cascade="all, delete-orphan"
+    )
 
 
 class Analysis(Base):
@@ -148,8 +151,12 @@ class ChatSession(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     workspace = relationship("Workspace", back_populates="chat_sessions")
-    messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan",
-                            order_by="ChatMessage.created_at")
+    messages = relationship(
+        "ChatMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ChatMessage.created_at",
+    )
 
 
 class ChatMessage(Base):

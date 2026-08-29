@@ -2,25 +2,21 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from functools import lru_cache
-from typing import Any, Callable
-
-from src.utils import ocr_flexible_fragment
+from typing import Any
 
 from src.models import (
     CoverageLevel,
-    EvidenceStrength,
     GovernanceMaturity,
-    GovernanceMaturityLevel,
 )
+from src.utils import ocr_flexible_fragment
 
 # When "0", Rule R1 (the Missing→Partial floor) is disabled entirely:
 # Missing is never raised by acknowledgment/commitment language alone, only
 # Rule R2 may raise a dimension to Covered. Used for before/after
 # comparisons of floor impact (see README Methodology).
-LADDER_FLOOR_ENABLED = os.getenv("LADDER_FLOOR_ENABLED", "1").lower() not in (
-    "0", "false", "no"
-)
+LADDER_FLOOR_ENABLED = os.getenv("LADDER_FLOOR_ENABLED", "1").lower() not in ("0", "false", "no")
 
 
 def detect_document_type(chunks_text: list[str]) -> str:
@@ -78,10 +74,26 @@ def detect_document_type(chunks_text: list[str]) -> str:
 # produce (agencies/ministries/authorities/ombudsmen) so plural body names
 # still earn the named-body co-occurrence credit.
 NAMED_BODY_KEYWORDS = (
-    "commission", "board", "authority", "ministry", "agency", "council",
-    "task force", "committee", "directorate", "office", "institute",
-    "centre", "center", "department", "ombudsman", "inspectorate",
-    "agencies", "ministries", "authorities", "ombudsmen",
+    "commission",
+    "board",
+    "authority",
+    "ministry",
+    "agency",
+    "council",
+    "task force",
+    "committee",
+    "directorate",
+    "office",
+    "institute",
+    "centre",
+    "center",
+    "department",
+    "ombudsman",
+    "inspectorate",
+    "agencies",
+    "ministries",
+    "authorities",
+    "ombudsmen",
     # Stem form: Korean-style body names assign duties to "the Minister of
     # Science and ICT" (not "the ministry"), which the literal "ministry"
     # entry cannot match. "minister*" → \bminister\w*\b covers minister,
@@ -90,10 +102,24 @@ NAMED_BODY_KEYWORDS = (
     "minister*",
 )
 REPORTING_KEYWORDS = (
-    "report", "reporting", "reported", "register", "registered", "registry",
-    "registries", "publication", "annual report", "disclosure",
-    "transparency report", "publish", "published", "publishing",
-    "notify", "records", "documentation requirement", "audit trail",
+    "report",
+    "reporting",
+    "reported",
+    "register",
+    "registered",
+    "registry",
+    "registries",
+    "publication",
+    "annual report",
+    "disclosure",
+    "transparency report",
+    "publish",
+    "published",
+    "publishing",
+    "notify",
+    "records",
+    "documentation requirement",
+    "audit trail",
     # Noun stems: the Korea Act's duties are phrased as "advance notification
     # duty" and "labeling/indication requirement", which the verb keyword
     # "notify" misses under word-boundary matching. "notif*" → \bnotif\w*\b
@@ -101,15 +127,40 @@ REPORTING_KEYWORDS = (
     # "indicatio*" covers indication(s) only — never "indicator" or
     # "indicative" (stems diverge after "indicat"), so a performance-
     # indicator mention is not credited as a reporting duty.
-    "notif*", "label*", "indicatio*",
+    "notif*",
+    "label*",
+    "indicatio*",
 )
 ENFORCEMENT_KEYWORDS = (
-    "enforce", "enforcement", "enforcing", "redress", "grievance",
-    "complaint", "appeal", "sanction", "penalty", "penalties", "fine",
-    "remedy", "remedies", "liability", "liabilities", "audit", "auditing",
-    "inspect", "inspecting", "inspection", "inspections", "monitor",
-    "monitoring", "oversight", "supervision", "compliance check",
-    "corrective action", "revocation", "order to stop",
+    "enforce",
+    "enforcement",
+    "enforcing",
+    "redress",
+    "grievance",
+    "complaint",
+    "appeal",
+    "sanction",
+    "penalty",
+    "penalties",
+    "fine",
+    "remedy",
+    "remedies",
+    "liability",
+    "liabilities",
+    "audit",
+    "auditing",
+    "inspect",
+    "inspecting",
+    "inspection",
+    "inspections",
+    "monitor",
+    "monitoring",
+    "oversight",
+    "supervision",
+    "compliance check",
+    "corrective action",
+    "revocation",
+    "order to stop",
 )
 
 
@@ -122,9 +173,7 @@ ENFORCEMENT_KEYWORDS = (
 # the small per-dimension budgets. A chunk is a low-information fragment when
 # it has no real sentence structure: a capitalized term followed by digits
 # (the glossary artifact), or a short term/heading-only line.
-GLOSSARY_ENTRY_RE = re.compile(
-    r"^[A-Z][A-Za-z&'\- ]{1,80}?\s*\d{1,3}(\s*,\s*\d{1,3})*\s*\.?\s*$"
-)
+GLOSSARY_ENTRY_RE = re.compile(r"^[A-Z][A-Za-z&'\- ]{1,80}?\s*\d{1,3}(\s*,\s*\d{1,3})*\s*\.?\s*$")
 
 
 def is_low_information_fragment(text: str | None) -> bool:
@@ -157,8 +206,7 @@ def is_low_information_fragment(text: str | None) -> bool:
         if not any(ch in norm for ch in ".!?;:"):
             words = norm.split()
             if words and all(
-                w.isupper() or not w[:1].islower() or len(w) <= 3 or w.isdigit()
-                for w in words
+                w.isupper() or not w[:1].islower() or len(w) <= 3 or w.isdigit() for w in words
             ):
                 return True
     return False
@@ -195,13 +243,9 @@ def _word_pattern(phrase: str) -> re.Pattern:
     if cached is not None:
         return cached
     if stem_key:
-        pattern = re.compile(
-            r"\b" + re.escape(phrase[:-1]) + r"\w*\b", re.IGNORECASE
-        )
+        pattern = re.compile(r"\b" + re.escape(phrase[:-1]) + r"\w*\b", re.IGNORECASE)
     else:
-        pattern = re.compile(
-            r"\b" + re.escape(phrase) + r"(?:s)?\b", re.IGNORECASE
-        )
+        pattern = re.compile(r"\b" + re.escape(phrase) + r"(?:s)?\b", re.IGNORECASE)
     _KEYWORD_PATTERN_CACHE[phrase] = pattern
     return pattern
 
@@ -423,18 +467,48 @@ LEVEL_LABELS = {
 #     count when they co-occur with a named-body keyword in the same chunk
 #     or appear in at least two distinct chunks.
 STRONG_COMMITMENT_PHRASES = (
-    "will establish", "shall establish", "will set up", "shall set up",
-    "setting up", "establishment of", "establish a", "establish an",
-    "establish the", "will create", "shall create", "will launch",
-    "shall launch", "will develop", "shall develop", "will implement",
-    "shall implement", "will invest", "shall invest", "to establish",
-    "to set up", "to create", "to launch", "to develop", "roadmap",
-    "action plan", "program", "programme", "initiative", "mission",
-    "task force", "pledge", "mandatory",
+    "will establish",
+    "shall establish",
+    "will set up",
+    "shall set up",
+    "setting up",
+    "establishment of",
+    "establish a",
+    "establish an",
+    "establish the",
+    "will create",
+    "shall create",
+    "will launch",
+    "shall launch",
+    "will develop",
+    "shall develop",
+    "will implement",
+    "shall implement",
+    "will invest",
+    "shall invest",
+    "to establish",
+    "to set up",
+    "to create",
+    "to launch",
+    "to develop",
+    "roadmap",
+    "action plan",
+    "program",
+    "programme",
+    "initiative",
+    "mission",
+    "task force",
+    "pledge",
+    "mandatory",
 )
 WEAK_COMMITMENT_PHRASES = (
-    "commitment", "mandate", "mandated", "dedicated",
-    "allocate", "allocation", "budget",
+    "commitment",
+    "mandate",
+    "mandated",
+    "dedicated",
+    "allocate",
+    "allocation",
+    "budget",
 )
 
 # Explicit commitment verbs — the R1 floor bar. These signal the document
@@ -443,9 +517,19 @@ WEAK_COMMITMENT_PHRASES = (
 # "will ensure"). Broader than the R2 bar: a commitment verb alone floors to
 # Partial but does not raise to Covered.
 EXPLICIT_COMMITMENT_VERBS = (
-    "commits to", "committed to", "pledge", "pledges", "pledged",
-    "plans to", "intends to", "will ensure", "working towards",
-    "aims to", "seeks to", "will address", "will promote",
+    "commits to",
+    "committed to",
+    "pledge",
+    "pledges",
+    "pledged",
+    "plans to",
+    "intends to",
+    "will ensure",
+    "working towards",
+    "aims to",
+    "seeks to",
+    "will address",
+    "will promote",
     "will support",
 )
 
@@ -463,10 +547,24 @@ EXPLICIT_COMMITMENT_VERBS = (
 # "does not require") are handled by the shared negation guard; a
 # prohibition ("shall not discriminate") still counts — it is a mechanism.
 OBLIGATION_VERBS = (
-    "shall", "must", "requires", "is required to", "are required to",
-    "obligated", "obliges", "mandates", "establishes", "sets out",
-    "provides for", "lays down", "prohibits", "ensures that",
-    "guarantees", "directs", "instructs", "imposes",
+    "shall",
+    "must",
+    "requires",
+    "is required to",
+    "are required to",
+    "obligated",
+    "obliges",
+    "mandates",
+    "establishes",
+    "sets out",
+    "provides for",
+    "lays down",
+    "prohibits",
+    "ensures that",
+    "guarantees",
+    "directs",
+    "instructs",
+    "imposes",
 )
 
 # Negation words that make a phrase a DENIAL rather than a commitment. When
@@ -478,16 +576,32 @@ OBLIGATION_VERBS = (
 # documented residual limitation: a negation embedded further back — e.g.
 # "lacks a dedicated programme" — is not caught; the detector stays
 # conservative rather than over-clever.)
-NEGATION_WORDS = frozenset({
-    "not", "no", "never", "unable", "fails", "failed", "won't",
-    "doesn't", "cannot", "can't", "isn't", "aren't", "without",
-    "lacks", "refuses", "declines", "against",
-})
+NEGATION_WORDS = frozenset(
+    {
+        "not",
+        "no",
+        "never",
+        "unable",
+        "fails",
+        "failed",
+        "won't",
+        "doesn't",
+        "cannot",
+        "can't",
+        "isn't",
+        "aren't",
+        "without",
+        "lacks",
+        "refuses",
+        "declines",
+        "against",
+    }
+)
 
 
 def _is_negated_occurrence(text: str, idx: int) -> bool:
     """True when the match at `idx` in `text` is preceded by a negation word."""
-    window = text[max(0, idx - 16):idx].split()
+    window = text[max(0, idx - 16) : idx].split()
     if not window:
         return False
     return any(tok in NEGATION_WORDS for tok in window[-2:])
@@ -539,48 +653,142 @@ def text_contains_mechanism(text: str) -> bool:
 # content was actually about Accountability / Inclusivity governance.
 DIMENSION_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "Transparency": (
-        "transparen", "disclos", "explainab", "documentation", "audit trail",
-        "logging", "open", "public report", "inform", "opacity", "opaque",
-        "black box", "decision-making", "interpretab",
+        "transparen",
+        "disclos",
+        "explainab",
+        "documentation",
+        "audit trail",
+        "logging",
+        "open",
+        "public report",
+        "inform",
+        "opacity",
+        "opaque",
+        "black box",
+        "decision-making",
+        "interpretab",
     ),
     "Accountability": (
-        "accountab", "liabilit", "redress", "grievance", "complaint",
-        "oversight", "audit", "enforce", "enforcement", "responsib",
-        "sanction", "penalty", "remedy", "remedies", "answerable", "blame",
-        "consequence", "governance structure", "ownership", "obligation", "duty",
+        "accountab",
+        "liabilit",
+        "redress",
+        "grievance",
+        "complaint",
+        "oversight",
+        "audit",
+        "enforce",
+        "enforcement",
+        "responsib",
+        "sanction",
+        "penalty",
+        "remedy",
+        "remedies",
+        "answerable",
+        "blame",
+        "consequence",
+        "governance structure",
+        "ownership",
+        "obligation",
+        "duty",
     ),
     "Privacy": (
-        "privacy", "personal data", "consent", "anonymiz", "pseudonymiz",
-        "data protection", "data minimiz", "purpose limitation", "data subject",
-        "breach", "confidential", "data security",
+        "privacy",
+        "personal data",
+        "consent",
+        "anonymiz",
+        "pseudonymiz",
+        "data protection",
+        "data minimiz",
+        "purpose limitation",
+        "data subject",
+        "breach",
+        "confidential",
+        "data security",
     ),
     "Safety": (
-        "safety", "safe", "robust", "fail-safe", "failsafe", "adversarial",
-        "monitor", "monitoring", "incident", "emergency", "shut-off",
-        "certification", "harm", "reliability", "test", "testing", "validation",
+        "safety",
+        "safe",
+        "robust",
+        "fail-safe",
+        "failsafe",
+        "adversarial",
+        "monitor",
+        "monitoring",
+        "incident",
+        "emergency",
+        "shut-off",
+        "certification",
+        "harm",
+        "reliability",
+        "test",
+        "testing",
+        "validation",
         "red team",
     ),
     "Human Autonomy": (
-        "autonomy", "human control", "human oversight", "opt-out",
-        "human-in-the-loop", "human in the loop", "self-determination",
-        "non-automated", "manipulation", "nudge", "nudging", "human agency",
-        "override", "meaningful control",
+        "autonomy",
+        "human control",
+        "human oversight",
+        "opt-out",
+        "human-in-the-loop",
+        "human in the loop",
+        "self-determination",
+        "non-automated",
+        "manipulation",
+        "nudge",
+        "nudging",
+        "human agency",
+        "override",
+        "meaningful control",
     ),
     "Inclusivity": (
-        "inclusiv", "inclusion", "accessib", "digital divide",
-        "multi-stakeholder", "multistakeholder", "public participation",
-        "diversity", "diverse", "disabilit", "linguistic", "cultural",
-        "represent", "underserved", "marginalis", "equitab", "equity",
-        "non-discriminat", "gender", "persons with disabilities",
+        "inclusiv",
+        "inclusion",
+        "accessib",
+        "digital divide",
+        "multi-stakeholder",
+        "multistakeholder",
+        "public participation",
+        "diversity",
+        "diverse",
+        "disabilit",
+        "linguistic",
+        "cultural",
+        "represent",
+        "underserved",
+        "marginalis",
+        "equitab",
+        "equity",
+        "non-discriminat",
+        "gender",
+        "persons with disabilities",
     ),
     "Fairness": (
-        "fair", "fairness", "bias", "discrimina", "equitab", "demographic parity",
-        "protected characteristics", "prejudice", "stereotype", "parity",
+        "fair",
+        "fairness",
+        "bias",
+        "discrimina",
+        "equitab",
+        "demographic parity",
+        "protected characteristics",
+        "prejudice",
+        "stereotype",
+        "parity",
     ),
     "Environmental Sustainability": (
-        "environment", "environmental", "sustainab", "energy efficiency",
-        "carbon", "footprint", "climate", "lifecycle", "e-waste", "emissions",
-        "green", "computational resource", "resource consumption",
+        "environment",
+        "environmental",
+        "sustainab",
+        "energy efficiency",
+        "carbon",
+        "footprint",
+        "climate",
+        "lifecycle",
+        "e-waste",
+        "emissions",
+        "green",
+        "computational resource",
+        "resource consumption",
         "energy consumption",
     ),
 }
@@ -622,26 +830,44 @@ DIMENSION_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
 # stem used in its governance sense elsewhere in the sentence still counts.
 DIMENSION_TERM_EXCLUSIONS: dict[str, tuple[str, ...]] = {
     "Transparency": (
-        "transparent financing", "transparent funding", "transparent pricing",
-        "transparent procurement", "transparent market", "transparent tax",
-        "financial transparency", "fiscal transparency", "budget transparency",
-        "transparency in financing", "transparency of markets",
+        "transparent financing",
+        "transparent funding",
+        "transparent pricing",
+        "transparent procurement",
+        "transparent market",
+        "transparent tax",
+        "financial transparency",
+        "fiscal transparency",
+        "budget transparency",
+        "transparency in financing",
+        "transparency of markets",
     ),
     "Inclusivity": (
         # "inclusive growth/economy" is an economic-development claim, not a
         # demographic-inclusion governance mechanism.
-        "inclusive growth", "inclusive economy", "inclusive economic",
-        "financial inclusion", "inclusive development",
+        "inclusive growth",
+        "inclusive economy",
+        "inclusive economic",
+        "financial inclusion",
+        "inclusive development",
     ),
     "Fairness": (
         # "fair market"/"fair competition"/"fair trade" are competition-policy
         # senses, not algorithmic fairness.
-        "fair market", "fair competition", "fair trade", "fair value",
-        "fair price", "fair pricing", "fair share",
+        "fair market",
+        "fair competition",
+        "fair trade",
+        "fair value",
+        "fair price",
+        "fair pricing",
+        "fair share",
     ),
     "Safety": (
         # Occupational/road/food safety are different policy domains.
-        "food safety", "road safety", "occupational safety", "public safety net",
+        "food safety",
+        "road safety",
+        "occupational safety",
+        "public safety net",
     ),
 }
 
@@ -652,21 +878,28 @@ def _exclusion_pattern(dimension: str) -> re.Pattern | None:
     phrases = DIMENSION_TERM_EXCLUSIONS.get(dimension)
     if not phrases:
         return None
-    return re.compile(
-        "|".join(ocr_flexible_fragment(p) for p in phrases), re.IGNORECASE
-    )
+    return re.compile("|".join(ocr_flexible_fragment(p) for p in phrases), re.IGNORECASE)
 
 
 DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
     "Transparency": (
-        "transparen", "disclos", "explainab", "interpretab", "documentation",
-        "audit trail", "black box", "black-box",
+        "transparen",
+        "disclos",
+        "explainab",
+        "interpretab",
+        "documentation",
+        "audit trail",
+        "black box",
+        "black-box",
         # Real-world equivalents of "transparency" in a country's own
         # legal terminology (e.g. Korea's AI Basic Act phrases its
         # transparency duty as "advance notification" + "labeling", never
         # the word "transparency" itself) — the gate must recognize the
         # MECHANISM, not just the abstract vocabulary.
-        "notif", "label", "inform users", "inform individuals",
+        "notif",
+        "label",
+        "inform users",
+        "inform individuals",
     ),
     "Accountability": (
         # Incident-reporting vocabulary is included because
@@ -677,23 +910,54 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         # present in the retrieved pool — was reported as "incident reporting:
         # not addressed". A mechanism the table expects must have vocabulary
         # the gate admits.
-        "accountab", "liabilit", "liable", "redress", "sanction", "penalt",
-        "fine", "grievance", "complaint mechanism", "answerable", "duty of care",
-        "serious incident", "incident report", "report an incident",
-        "notify the authorit", "report to the market surveillance",
+        "accountab",
+        "liabilit",
+        "liable",
+        "redress",
+        "sanction",
+        "penalt",
+        "fine",
+        "grievance",
+        "complaint mechanism",
+        "answerable",
+        "duty of care",
+        "serious incident",
+        "incident report",
+        "report an incident",
+        "notify the authorit",
+        "report to the market surveillance",
     ),
     "Privacy": (
-        "privacy", "personal data", "personal information", "data protection",
-        "anonymiz", "pseudonymiz", "data subject", "confidential",
+        "privacy",
+        "personal data",
+        "personal information",
+        "data protection",
+        "anonymiz",
+        "pseudonymiz",
+        "data subject",
+        "confidential",
     ),
     "Safety": (
-        "safety", "safe design", "risk management", "fail-safe", "failsafe",
-        "red team", "red-team", "adversarial test", "robustness",
+        "safety",
+        "safe design",
+        "risk management",
+        "fail-safe",
+        "failsafe",
+        "red team",
+        "red-team",
+        "adversarial test",
+        "robustness",
     ),
     "Human Autonomy": (
-        "human oversight", "human control", "human-in-the-loop",
-        "human in the loop", "override", "human agency", "autonomy",
-        "meaningful control", "opt-out",
+        "human oversight",
+        "human control",
+        "human-in-the-loop",
+        "human in the loop",
+        "override",
+        "human agency",
+        "autonomy",
+        "meaningful control",
+        "opt-out",
         # "human oversight" is EU drafting. Other traditions express the same
         # binding duty in their own words, and matching only the EU phrasing
         # silently reports the duty as absent. Korea's AI Framework Act,
@@ -707,8 +971,13 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         # All bigrams beginning with "human", deliberately: bare "supervision"
         # and "management" collide with regulatory supervision and corporate
         # management throughout these documents.
-        "human management", "human supervision", "human intervention",
-        "human review", "human monitoring", "human judgment", "human judgement",
+        "human management",
+        "human supervision",
+        "human intervention",
+        "human review",
+        "human monitoring",
+        "human judgment",
+        "human judgement",
     ),
     "Inclusivity": (
         # Bare "accessib" is deliberately NOT listed (removed after a
@@ -722,15 +991,29 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         # Genuine disability-accessibility content is still caught via
         # "persons with disabilities", "disabilit", and "digital divide"
         # below, so nothing is lost by anchoring the compound instead.
-        "inclusiv", "inclusion", "accessibility for persons with disabilities",
-        "digital accessibility", "accessible design", "web accessibility",
-        "disabilit", "digital divide", "underserved",
-        "marginalis", "persons with disabilities", "multi-stakeholder",
-        "multistakeholder", "public participation",
+        "inclusiv",
+        "inclusion",
+        "accessibility for persons with disabilities",
+        "digital accessibility",
+        "accessible design",
+        "web accessibility",
+        "disabilit",
+        "digital divide",
+        "underserved",
+        "marginalis",
+        "persons with disabilities",
+        "multi-stakeholder",
+        "multistakeholder",
+        "public participation",
     ),
     "Fairness": (
-        "fair", "fairness", "bias", "discrimina", "demographic parity",
-        "protected characteristics", "stereotype",
+        "fair",
+        "fairness",
+        "bias",
+        "discrimina",
+        "demographic parity",
+        "protected characteristics",
+        "stereotype",
     ),
     "Environmental Sustainability": (
         # NOTE: a bare "sustainab" stem is deliberately NOT listed. In policy
@@ -753,13 +1036,27 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         # a real, binding Article 73 SAFETY provision, misclassified as
         # environmental-sustainability governance purely because its last
         # six words happened to contain the bare stem.
-        "environmentally sustainable", "environmental sustainability",
-        "sustainable development", "ecological", "natural ecosystem",
-        "ecosystems and biodiversity", "biodiversity",
-        "carbon", "emission", "e-waste", "electronic waste",
-        "energy efficiency", "energy consumption", "power consumption",
-        "climate", "footprint", "green computing", "green energy",
-        "resource consumption", "resource-efficient", "resource efficiency",
+        "environmentally sustainable",
+        "environmental sustainability",
+        "sustainable development",
+        "ecological",
+        "natural ecosystem",
+        "ecosystems and biodiversity",
+        "biodiversity",
+        "carbon",
+        "emission",
+        "e-waste",
+        "electronic waste",
+        "energy efficiency",
+        "energy consumption",
+        "power consumption",
+        "climate",
+        "footprint",
+        "green computing",
+        "green energy",
+        "resource consumption",
+        "resource-efficient",
+        "resource efficiency",
         "renewable",
     ),
 }
@@ -771,9 +1068,7 @@ def _core_term_pattern(dimension: str) -> re.Pattern | None:
     terms = DIMENSION_CORE_TERMS.get(dimension)
     if not terms:
         return None
-    return re.compile(
-        "|".join(ocr_flexible_fragment(t) for t in terms), re.IGNORECASE
-    )
+    return re.compile("|".join(ocr_flexible_fragment(t) for t in terms), re.IGNORECASE)
 
 
 def _sentence_has_core_term(text: str, dimension: str) -> bool:
@@ -952,8 +1247,11 @@ def detect_explicit_commitment(
     Negated occurrences ("will not support", "not committed to") never count.
     """
     fired, _ = detect_explicit_commitment_evidence(
-        operational_mechanisms, document_chunk_texts, dimension,
-        dimension_match_fn, substantive_match_fn,
+        operational_mechanisms,
+        document_chunk_texts,
+        dimension,
+        dimension_match_fn,
+        substantive_match_fn,
     )
     return fired
 
@@ -1054,8 +1352,11 @@ def detect_implementation_commitment(
     safety provision).
     """
     fired, _ = detect_implementation_commitment_evidence(
-        operational_mechanisms, document_chunk_texts, dimension,
-        dimension_match_fn, substantive_match_fn,
+        operational_mechanisms,
+        document_chunk_texts,
+        dimension,
+        dimension_match_fn,
+        substantive_match_fn,
     )
     return fired
 
@@ -1093,9 +1394,8 @@ def detect_implementation_commitment_evidence(
             ):
                 continue
             lower = sentence.lower()
-            if (
-                _contains_commitment_phrase(lower, STRONG_COMMITMENT_PHRASES)
-                and _has_keyword(sentence, NAMED_BODY_KEYWORDS)
+            if _contains_commitment_phrase(lower, STRONG_COMMITMENT_PHRASES) and _has_keyword(
+                sentence, NAMED_BODY_KEYWORDS
             ):
                 return True, sentence
             if _contains_commitment_phrase(lower, WEAK_COMMITMENT_PHRASES):
@@ -1147,7 +1447,8 @@ def validate_coverage_deterministic(
 
     # Real document evidence = chunks actually retrieved for this dimension.
     chunk_texts = [
-        (c.get("text") or "") for c in (document_chunks or [])
+        (c.get("text") or "")
+        for c in (document_chunks or [])
         if isinstance(c, dict) and c.get("chunk_id")
     ]
     has_doc_evidence = bool(chunk_texts)
@@ -1163,7 +1464,9 @@ def validate_coverage_deterministic(
     r1_fired = False
     if LADDER_FLOOR_ENABLED and cov == CoverageLevel.MISSING and has_doc_evidence:
         r1_fired, r1_sentence = detect_explicit_commitment_evidence(
-            operational_mechanisms, chunk_texts, dimension=dimension,
+            operational_mechanisms,
+            chunk_texts,
+            dimension=dimension,
             dimension_match_fn=dimension_match_fn,
             substantive_match_fn=substantive_match_fn,
         )
@@ -1188,7 +1491,9 @@ def validate_coverage_deterministic(
     # Partial by R1 first (when enabled) and then to Covered here.
     if cov == CoverageLevel.PARTIAL and has_doc_evidence:
         r2_fired, r2_sentence = detect_implementation_commitment_evidence(
-            operational_mechanisms, chunk_texts, dimension=dimension,
+            operational_mechanisms,
+            chunk_texts,
+            dimension=dimension,
             dimension_match_fn=dimension_match_fn,
             substantive_match_fn=substantive_match_fn,
         )
@@ -1331,8 +1636,11 @@ class DeterministicFrameworkMatcher:
         aspect_groups: list[Any] | None = None,
     ) -> FrameworkMatchResult:
         evidence_items = self._build_matched_evidence(
-            explicit_evidence, implicit_evidence, strong_evidence,
-            weak_evidence, policy_evidence_texts,
+            explicit_evidence,
+            implicit_evidence,
+            strong_evidence,
+            weak_evidence,
+            policy_evidence_texts,
         )
         fw_embeddings = self._compute_embeddings([t for _, t in framework_evidence_texts])
         ev_embeddings = self._compute_embeddings([e["text"] for e in evidence_items])
@@ -1413,9 +1721,7 @@ class DeterministicFrameworkMatcher:
             beyond_count = strong_count - len(all_implemented)
             all_beyond = [f"Policy exceeds framework expectations on {beyond_count} mechanism(s)"]
 
-        universal = list(set(
-            r for r in all_implemented + all_partial + all_missing
-        ))
+        universal = list(set(all_implemented + all_partial + all_missing))
 
         return FrameworkMatchResult(
             universal_requirements=universal,
@@ -1453,7 +1759,13 @@ class DeterministicFrameworkMatcher:
         implicit_signal = best_implicit_sim * 0.10
         corroboration_signal = min(corroboration_count / 4.0, 1.0) * 0.15
         strength_signal = (strength_multiplier - 0.5) * 0.15
-        raw = semantic_signal + explicit_signal + implicit_signal + corroboration_signal + strength_signal
+        raw = (
+            semantic_signal
+            + explicit_signal
+            + implicit_signal
+            + corroboration_signal
+            + strength_signal
+        )
         return max(0.0, min(1.0, raw))
 
     def _compute_embeddings(self, texts: list[str]) -> list[list[float]]:
@@ -1463,6 +1775,7 @@ class DeterministicFrameworkMatcher:
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
         import math
+
         dot = sum(x * y for x, y in zip(a, b))
         na = math.sqrt(sum(x * x for x in a))
         nb = math.sqrt(sum(x * x for x in b))
@@ -1645,9 +1958,7 @@ class DeterministicPlausibilityValidator:
                 f"Governance ladder: Level {level} maps to '{expected_cov}', "
                 f"was '{cov}'. Corrected."
             )
-            adjustments.append(
-                f"Level {level} -> coverage '{cov}' corrected to '{expected_cov}'"
-            )
+            adjustments.append(f"Level {level} -> coverage '{cov}' corrected to '{expected_cov}'")
             cov = expected_cov
             rule_triggers.append("ladder")
 
@@ -1664,14 +1975,10 @@ class DeterministicPlausibilityValidator:
 
         # Check 4: Level 0 safeguard (final Missing check)
         if cov == "Missing" and has_any_evidence:
-            checks.append(
-                "Level 0 safeguard: evidence exists. Overriding Missing to Partial."
-            )
+            checks.append("Level 0 safeguard: evidence exists. Overriding Missing to Partial.")
             level = max(level, 1)
             cov = "Partial"
-            adjustments.append(
-                f"Missing overridden to Partial due to existing evidence"
-            )
+            adjustments.append("Missing overridden to Partial due to existing evidence")
             rule_triggers.append("level0")
 
         # Check 5: Level 5 safeguard
@@ -1683,14 +1990,10 @@ class DeterministicPlausibilityValidator:
                 )
                 level = 4
                 cov = "Covered"
-                adjustments.append(
-                    f"Level 5 -> Level 4 (evidence strength too weak)"
-                )
+                adjustments.append("Level 5 -> Level 4 (evidence strength too weak)")
                 rule_triggers.append("level5")
             elif not has_strong:
-                checks.append(
-                    "Level 5 safeguard: no strong evidence items. Lowering to Level 4."
-                )
+                checks.append("Level 5 safeguard: no strong evidence items. Lowering to Level 4.")
                 level = 4
                 cov = "Covered"
                 adjustments.append("Level 5 -> Level 4 (no strong evidence)")
@@ -1704,34 +2007,26 @@ class DeterministicPlausibilityValidator:
             )
             level = max(level, 2)
             cov = "Partial"
-            adjustments.append(
-                f"Level raised to {level} via distributed governance rule"
-            )
+            adjustments.append(f"Level raised to {level} via distributed governance rule")
             rule_triggers.append("distributed")
 
         # Check 7: Missing final check
         if cov == "Missing":
             if demonstrated_capability and demonstrated_capability != "None":
                 checks.append(
-                    "Missing final check: demonstrated capability exists. "
-                    "Overriding to Partial."
+                    "Missing final check: demonstrated capability exists. Overriding to Partial."
                 )
                 level = max(level, 1)
                 cov = "Partial"
-                adjustments.append(
-                    "Missing -> Partial (demonstrated capability exists)"
-                )
+                adjustments.append("Missing -> Partial (demonstrated capability exists)")
                 rule_triggers.append("missing_final")
             elif has_implicit:
                 checks.append(
-                    "Missing final check: implicit evidence exists. "
-                    "Overriding to Partial."
+                    "Missing final check: implicit evidence exists. Overriding to Partial."
                 )
                 level = max(level, 1)
                 cov = "Partial"
-                adjustments.append(
-                    "Missing -> Partial (implicit evidence exists)"
-                )
+                adjustments.append("Missing -> Partial (implicit evidence exists)")
 
         # Confidence calibration
         confidence = self._calibrate_confidence(
@@ -1752,7 +2047,9 @@ class DeterministicPlausibilityValidator:
         if document_type == "strategy" and cov == "Missing":
             uncertainty.append("Strategy document may address this through future actions")
         if "distributed" in rule_triggers:
-            uncertainty.append("Governance capability may be distributed across multiple mechanisms")
+            uncertainty.append(
+                "Governance capability may be distributed across multiple mechanisms"
+            )
 
         trace = self._build_trace(
             dimension=dimension,
@@ -1833,7 +2130,11 @@ class DeterministicPlausibilityValidator:
         }.get(document_type, document_type.capitalize())
 
         fn_findings = "Functional equivalence: "
-        if "functional_equiv" in rule_triggers or "level0" in rule_triggers or "missing_final" in rule_triggers:
+        if (
+            "functional_equiv" in rule_triggers
+            or "level0" in rule_triggers
+            or "missing_final" in rule_triggers
+        ):
             fn_findings += "Evidence found despite level 0/Missing classification. Overridden."
         else:
             fn_findings += "No functional equivalence issues detected."
@@ -1868,4 +2169,8 @@ def assemble_framework_context(
         combined = "\n".join(texts[:3])[:2000]
         parts.append(f"[Framework: {fw}]\n{combined}")
 
-    return "\n\n---\n\n".join(parts) if parts else "No framework requirements retrieved for this dimension."
+    return (
+        "\n\n---\n\n".join(parts)
+        if parts
+        else "No framework requirements retrieved for this dimension."
+    )

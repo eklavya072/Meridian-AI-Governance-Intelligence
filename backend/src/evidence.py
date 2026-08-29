@@ -3,14 +3,10 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import numpy as np
-
 from src.models import AspectGroup, EvidenceGraph, EvidenceItem
 from src.utils import cosine_similarity, l2_normalize
 
-EVIDENCE_SIMILARITY_THRESHOLD = float(
-    os.getenv("EVIDENCE_SIMILARITY_THRESHOLD", "0.88")
-)
+EVIDENCE_SIMILARITY_THRESHOLD = float(os.getenv("EVIDENCE_SIMILARITY_THRESHOLD", "0.88"))
 MIN_EVIDENCE_TEXT_LENGTH = int(os.getenv("MIN_EVIDENCE_TEXT_LENGTH", "30"))
 
 
@@ -40,9 +36,7 @@ class EvidenceGraphBuilder:
                 total_chunks_after_synthesis=0,
             )
 
-        all_items = self._build_evidence_items(
-            dimension, document_chunks, framework_chunks
-        )
+        all_items = self._build_evidence_items(dimension, document_chunks, framework_chunks)
         deduped = self._deduplicate(all_items)
         aspect_groups = self._cluster_by_aspect(dimension, deduped)
         missing_aspects = self._find_missing_aspects(dimension, aspect_groups)
@@ -56,9 +50,7 @@ class EvidenceGraphBuilder:
         )
         source_div = self._compute_source_diversity(all_items)
         redundancy = self._compute_redundancy(len(all_items), len(deduped))
-        completeness = self._compute_coverage_completeness(
-            dimension, aspect_groups
-        )
+        completeness = self._compute_coverage_completeness(dimension, aspect_groups)
 
         return EvidenceGraph(
             dimension=dimension,
@@ -97,7 +89,9 @@ class EvidenceGraphBuilder:
                     page_number=chunk.get("page_number"),
                     section_title=chunk.get("section_title"),
                     source_framework=chunk.get("source_framework", "document"),
-                    similarity_score=chunk.get("reranker_score") or chunk.get("rrf_score") or chunk.get("similarity_score"),
+                    similarity_score=chunk.get("reranker_score")
+                    or chunk.get("rrf_score")
+                    or chunk.get("similarity_score"),
                     is_document=True,
                 )
             )
@@ -117,7 +111,9 @@ class EvidenceGraphBuilder:
                     page_number=chunk.get("page_number"),
                     section_title=chunk.get("section_title"),
                     source_framework=chunk.get("source_framework", "framework"),
-                    similarity_score=chunk.get("reranker_score") or chunk.get("rrf_score") or chunk.get("similarity_score"),
+                    similarity_score=chunk.get("reranker_score")
+                    or chunk.get("rrf_score")
+                    or chunk.get("similarity_score"),
                     is_document=False,
                 )
             )
@@ -146,9 +142,7 @@ class EvidenceGraphBuilder:
 
         return [items[i] for i in range(len(items)) if keep[i]]
 
-    def _merge_evidence(
-        self, a: EvidenceItem, b: EvidenceItem, similarity: float
-    ) -> EvidenceItem:
+    def _merge_evidence(self, a: EvidenceItem, b: EvidenceItem, similarity: float) -> EvidenceItem:
         longer = a if len(a.text) >= len(b.text) else b
         shorter = b if len(a.text) >= len(b.text) else a
         if longer.page_number is None:
@@ -159,14 +153,10 @@ class EvidenceGraphBuilder:
             longer.similarity_score = max(longer.similarity_score, shorter.similarity_score)
         return longer
 
-    def _cluster_by_aspect(
-        self, dimension: str, items: list[EvidenceItem]
-    ) -> list[AspectGroup]:
+    def _cluster_by_aspect(self, dimension: str, items: list[EvidenceItem]) -> list[AspectGroup]:
         profile = self._profiles.get(dimension, {})
         aspects = profile.get("aspects", [dimension])
-        aspect_embeddings = {
-            asp: l2_normalize(self._embed(asp)) for asp in aspects
-        }
+        aspect_embeddings = {asp: l2_normalize(self._embed(asp)) for asp in aspects}
 
         group_map: dict[str, list[EvidenceItem]] = {asp: [] for asp in aspects}
         unclustered: list[EvidenceItem] = []
@@ -191,14 +181,10 @@ class EvidenceGraphBuilder:
             group_map.setdefault(aspects[0], []).extend(unclustered)
 
         return [
-            AspectGroup(aspect=asp, evidence=items)
-            for asp, items in group_map.items()
-            if items
+            AspectGroup(aspect=asp, evidence=items) for asp, items in group_map.items() if items
         ]
 
-    def _find_missing_aspects(
-        self, dimension: str, aspect_groups: list[AspectGroup]
-    ) -> list[str]:
+    def _find_missing_aspects(self, dimension: str, aspect_groups: list[AspectGroup]) -> list[str]:
         profile = self._profiles.get(dimension, {})
         aspects = profile.get("aspects", [])
         covered = {g.aspect for g in aspect_groups}
@@ -210,18 +196,15 @@ class EvidenceGraphBuilder:
             group.coverage_estimate = "missing"
             return
 
-        scores = [
-            e.semantic_relevance
-            for e in group.evidence
-            if e.semantic_relevance > 0
-        ]
+        scores = [e.semantic_relevance for e in group.evidence if e.semantic_relevance > 0]
         avg_relevance = sum(scores) / len(scores) if scores else 0.0
 
         has_multiple_sources = len({e.source_framework for e in group.evidence}) > 1
         has_verification = any(e.verified for e in group.evidence)
         text_density = sum(len(e.text) for e in group.evidence)
         reranker_scores = [
-            e.similarity_score for e in group.evidence
+            e.similarity_score
+            for e in group.evidence
             if e.similarity_score is not None and e.similarity_score > 1.0
         ]
         has_reranker = len(reranker_scores) > 0
@@ -259,14 +242,10 @@ class EvidenceGraphBuilder:
         if not aspect_groups:
             return 0.0, {"no_aspect_groups": 1.0}
 
-        avg_group_quality = (
-            sum(g.coverage_quality for g in aspect_groups) / len(aspect_groups)
-        )
+        avg_group_quality = sum(g.coverage_quality for g in aspect_groups) / len(aspect_groups)
 
         total_aspects = len(aspect_groups) + len(missing_aspects)
-        coverage_ratio = (
-            len(aspect_groups) / total_aspects if total_aspects > 0 else 0.0
-        )
+        coverage_ratio = len(aspect_groups) / total_aspects if total_aspects > 0 else 0.0
 
         all_evidence = [e for g in aspect_groups for e in g.evidence]
         doc_sources = len({e.source_framework for e in all_evidence if e.is_document})
@@ -280,8 +259,7 @@ class EvidenceGraphBuilder:
         reranker_bonus = 0.0
         if all_evidence:
             has_reranker = any(
-                e.similarity_score is not None and e.similarity_score > 1.0
-                for e in all_evidence
+                e.similarity_score is not None and e.similarity_score > 1.0 for e in all_evidence
             )
             if has_reranker:
                 reranker_bonus = 0.05

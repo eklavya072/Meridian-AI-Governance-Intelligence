@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
-import structlog
 from typing import Any
+
+import structlog
 
 from src.models import CoverageLevel, DimensionGraph, GovernanceGap, RiskLevel
 
@@ -223,9 +224,7 @@ _LADDER_RAISE_GAP_PHRASES: tuple[str, ...] = (
 )
 
 # Weight 1: softer gap vocabulary (word-bounded).
-_LADDER_RAISE_GAP_SOFT_RE = re.compile(
-    r"\b(missing|gap|insufficient|deficient)\b", re.IGNORECASE
-)
+_LADDER_RAISE_GAP_SOFT_RE = re.compile(r"\b(missing|gap|insufficient|deficient)\b", re.IGNORECASE)
 
 # Flag for review when the weighted score reaches this threshold — a single
 # strong gap assertion ("does not establish") is enough.
@@ -406,22 +405,25 @@ class ConsistencyValidator:
                 child_gap = gap_by_dim.get(child_keyword)
                 if child_gap is not None:
                     if child_gap.coverage == CoverageLevel.COVERED and parent_gap.coverage in (
-                        CoverageLevel.MISSING, CoverageLevel.PARTIAL
+                        CoverageLevel.MISSING,
+                        CoverageLevel.PARTIAL,
                     ):
-                        violations.append(ConsistencyViolation(
-                            dimension=parent_dim,
-                            violation_type="subset_inconsistency",
-                            description=(
-                                f"'{child_keyword}' is {child_gap.coverage.value} "
-                                f"but its parent dimension '{parent_dim}' is {parent_gap.coverage.value}. "
-                                f"'{child_keyword}' is conceptually part of '{parent_dim}'."
-                            ),
-                            severity="error",
-                            suggestion=(
-                                f"Review whether '{parent_dim}' coverage should be elevated "
-                                f"since '{child_keyword}' is addressed."
-                            ),
-                        ))
+                        violations.append(
+                            ConsistencyViolation(
+                                dimension=parent_dim,
+                                violation_type="subset_inconsistency",
+                                description=(
+                                    f"'{child_keyword}' is {child_gap.coverage.value} "
+                                    f"but its parent dimension '{parent_dim}' is {parent_gap.coverage.value}. "
+                                    f"'{child_keyword}' is conceptually part of '{parent_dim}'."
+                                ),
+                                severity="error",
+                                suggestion=(
+                                    f"Review whether '{parent_dim}' coverage should be elevated "
+                                    f"since '{child_keyword}' is addressed."
+                                ),
+                            )
+                        )
 
         for parent_dim, child_keywords in SUBSET_DIMENSIONS.items():
             parent_gap = gap_by_dim.get(parent_dim)
@@ -437,21 +439,24 @@ class ConsistencyValidator:
 
                 if not all_children_covered:
                     missing_children = [
-                        ck for ck in child_keywords
+                        ck
+                        for ck in child_keywords
                         if gap_by_dim.get(ck) and gap_by_dim[ck].coverage != CoverageLevel.COVERED
                     ]
-                    violations.append(ConsistencyViolation(
-                        dimension=parent_dim,
-                        violation_type="missing_sub_elements",
-                        description=(
-                            f"'{parent_dim}' is {parent_gap.coverage.value} but sub-elements "
-                            f"{missing_children} are not. Coverage may be overestimated."
-                        ),
-                        severity="warning",
-                        suggestion=(
-                            f"Ensure sub-elements {missing_children} reflect the parent dimension coverage."
-                        ),
-                    ))
+                    violations.append(
+                        ConsistencyViolation(
+                            dimension=parent_dim,
+                            violation_type="missing_sub_elements",
+                            description=(
+                                f"'{parent_dim}' is {parent_gap.coverage.value} but sub-elements "
+                                f"{missing_children} are not. Coverage may be overestimated."
+                            ),
+                            severity="warning",
+                            suggestion=(
+                                f"Ensure sub-elements {missing_children} reflect the parent dimension coverage."
+                            ),
+                        )
+                    )
 
         return violations
 
@@ -476,22 +481,27 @@ class ConsistencyValidator:
                     continue
                 processed_pairs.add(pair)
 
-                if gap.coverage == CoverageLevel.COVERED and child_gap.coverage != CoverageLevel.COVERED:
-                    desc = self.dimension_graph.nodes.get(dim_name)
-                    child_desc = self.dimension_graph.nodes.get(child)
-                    violations.append(ConsistencyViolation(
-                        dimension=dim_name,
-                        violation_type="graph_child_not_covered",
-                        description=(
-                            f"'{dim_name}' is {gap.coverage.value} but child dimension "
-                            f"'{child}' is {child_gap.coverage.value}. "
-                        ),
-                        severity="warning",
-                        suggestion=(
-                            f"Review if '{child}' coverage should be elevated "
-                            f"to match parent '{dim_name}'."
-                        ),
-                    ))
+                if (
+                    gap.coverage == CoverageLevel.COVERED
+                    and child_gap.coverage != CoverageLevel.COVERED
+                ):
+                    self.dimension_graph.nodes.get(dim_name)
+                    self.dimension_graph.nodes.get(child)
+                    violations.append(
+                        ConsistencyViolation(
+                            dimension=dim_name,
+                            violation_type="graph_child_not_covered",
+                            description=(
+                                f"'{dim_name}' is {gap.coverage.value} but child dimension "
+                                f"'{child}' is {child_gap.coverage.value}. "
+                            ),
+                            severity="warning",
+                            suggestion=(
+                                f"Review if '{child}' coverage should be elevated "
+                                f"to match parent '{dim_name}'."
+                            ),
+                        )
+                    )
 
             for parent in node.parents:
                 parent_gap = gap_by_dim.get(parent)
@@ -503,21 +513,24 @@ class ConsistencyValidator:
                 processed_pairs.add(pair)
 
                 if gap.coverage == CoverageLevel.COVERED and parent_gap.coverage in (
-                    CoverageLevel.MISSING, CoverageLevel.PARTIAL
+                    CoverageLevel.MISSING,
+                    CoverageLevel.PARTIAL,
                 ):
-                    violations.append(ConsistencyViolation(
-                        dimension=dim_name,
-                        violation_type="graph_child_covered_but_parent_missing",
-                        description=(
-                            f"'{dim_name}' is {gap.coverage.value} but parent dimension "
-                            f"'{parent}' is {parent_gap.coverage.value}. "
-                            f"A child dimension cannot be covered if the parent is not."
-                        ),
-                        severity="error",
-                        suggestion=(
-                            f"Review '{parent}' coverage — it may need to be elevated."
-                        ),
-                    ))
+                    violations.append(
+                        ConsistencyViolation(
+                            dimension=dim_name,
+                            violation_type="graph_child_covered_but_parent_missing",
+                            description=(
+                                f"'{dim_name}' is {gap.coverage.value} but parent dimension "
+                                f"'{parent}' is {parent_gap.coverage.value}. "
+                                f"A child dimension cannot be covered if the parent is not."
+                            ),
+                            severity="error",
+                            suggestion=(
+                                f"Review '{parent}' coverage — it may need to be elevated."
+                            ),
+                        )
+                    )
 
             for required in node.requires:
                 req_gap = gap_by_dim.get(required)
@@ -528,26 +541,29 @@ class ConsistencyValidator:
                     continue
                 processed_pairs.add(pair)
 
-                if gap.coverage == CoverageLevel.COVERED and req_gap.coverage == CoverageLevel.MISSING:
-                    violations.append(ConsistencyViolation(
-                        dimension=dim_name,
-                        violation_type="missing_required_dimension",
-                        description=(
-                            f"'{dim_name}' is {gap.coverage.value} but requires "
-                            f"'{required}' which is {req_gap.coverage.value}. "
-                        ),
-                        severity="error",
-                        suggestion=(
-                            f"'{dim_name}' depends on '{required}'. "
-                            f"Address coverage for '{required}' first."
-                        ),
-                    ))
+                if (
+                    gap.coverage == CoverageLevel.COVERED
+                    and req_gap.coverage == CoverageLevel.MISSING
+                ):
+                    violations.append(
+                        ConsistencyViolation(
+                            dimension=dim_name,
+                            violation_type="missing_required_dimension",
+                            description=(
+                                f"'{dim_name}' is {gap.coverage.value} but requires "
+                                f"'{required}' which is {req_gap.coverage.value}. "
+                            ),
+                            severity="error",
+                            suggestion=(
+                                f"'{dim_name}' depends on '{required}'. "
+                                f"Address coverage for '{required}' first."
+                            ),
+                        )
+                    )
 
         return violations
 
-    def _check_risk_coherence(
-        self, gaps: list[GovernanceGap]
-    ) -> list[ConsistencyViolation]:
+    def _check_risk_coherence(self, gaps: list[GovernanceGap]) -> list[ConsistencyViolation]:
         violations: list[ConsistencyViolation] = []
 
         for g in gaps:
@@ -555,19 +571,21 @@ class ConsistencyValidator:
                 continue
             allowed_risks = RISK_COVERAGE_MAP.get(g.coverage, [])
             if allowed_risks and g.risk_level not in allowed_risks:
-                violations.append(ConsistencyViolation(
-                    dimension=g.dimension,
-                    violation_type="risk_coverage_mismatch",
-                    description=(
-                        f"Coverage is '{g.coverage.value}' but risk is '{g.risk_level.value}'. "
-                        f"Expected one of: {[r.value for r in allowed_risks]}"
-                    ),
-                    severity="error",
-                    suggestion=(
-                        f"Adjust risk level for '{g.dimension}' from {g.risk_level.value} "
-                        f"to match coverage level {g.coverage.value}."
-                    ),
-                ))
+                violations.append(
+                    ConsistencyViolation(
+                        dimension=g.dimension,
+                        violation_type="risk_coverage_mismatch",
+                        description=(
+                            f"Coverage is '{g.coverage.value}' but risk is '{g.risk_level.value}'. "
+                            f"Expected one of: {[r.value for r in allowed_risks]}"
+                        ),
+                        severity="error",
+                        suggestion=(
+                            f"Adjust risk level for '{g.dimension}' from {g.risk_level.value} "
+                            f"to match coverage level {g.coverage.value}."
+                        ),
+                    )
+                )
 
         return violations
 
@@ -584,33 +602,37 @@ class ConsistencyValidator:
 
             n_evidence = len(g.evidence)
             if n_evidence == 0:
-                violations.append(ConsistencyViolation(
-                    dimension=g.dimension,
-                    violation_type="missing_evidence",
-                    description=(
-                        f"Dimension '{g.dimension}' has coverage '{g.coverage.value}' "
-                        f"but zero evidence items."
-                    ),
-                    severity="error",
-                    suggestion="Re-run retrieval for this dimension or check ChromaDB state.",
-                ))
+                violations.append(
+                    ConsistencyViolation(
+                        dimension=g.dimension,
+                        violation_type="missing_evidence",
+                        description=(
+                            f"Dimension '{g.dimension}' has coverage '{g.coverage.value}' "
+                            f"but zero evidence items."
+                        ),
+                        severity="error",
+                        suggestion="Re-run retrieval for this dimension or check ChromaDB state.",
+                    )
+                )
                 continue
 
             fw_items = [e for e in g.evidence if e.source_framework != "unknown"]
             if g.coverage in (CoverageLevel.MISSING, CoverageLevel.PARTIAL) and not fw_items:
-                violations.append(ConsistencyViolation(
-                    dimension=g.dimension,
-                    violation_type="missing_framework_evidence",
-                    description=(
-                        f"Dimension '{g.dimension}' is '{g.coverage.value}' "
-                        f"but has no framework-level evidence to support gap analysis."
-                    ),
-                    severity="warning",
-                    suggestion=(
-                        "Framework retrieval returned no results for this dimension. "
-                        "Consider expanding the retrieval query."
-                    ),
-                ))
+                violations.append(
+                    ConsistencyViolation(
+                        dimension=g.dimension,
+                        violation_type="missing_framework_evidence",
+                        description=(
+                            f"Dimension '{g.dimension}' is '{g.coverage.value}' "
+                            f"but has no framework-level evidence to support gap analysis."
+                        ),
+                        severity="warning",
+                        suggestion=(
+                            "Framework retrieval returned no results for this dimension. "
+                            "Consider expanding the retrieval query."
+                        ),
+                    )
+                )
 
             # framework_synthesis, not framework_positions. The combined
             # Module 1+2 call emits the synthesis as prose and never fills the
@@ -618,34 +640,39 @@ class ConsistencyValidator:
             # framework_positions meant it could never fire on a real run —
             # a validator that is always silent is not a validator.
             if (g.framework_synthesis or g.framework_positions) and g.recommendation in (
-                "", "No recommendation provided."
+                "",
+                "No recommendation provided.",
             ):
-                violations.append(ConsistencyViolation(
-                    dimension=g.dimension,
-                    violation_type="recommendation_missing",
-                    description=(
-                        f"Framework positions exist but recommendation is empty "
-                        f"for '{g.dimension}'."
-                    ),
-                    severity="warning",
-                    suggestion="LLM should generate a recommendation when framework positions are available.",
-                ))
+                violations.append(
+                    ConsistencyViolation(
+                        dimension=g.dimension,
+                        violation_type="recommendation_missing",
+                        description=(
+                            f"Framework positions exist but recommendation is empty "
+                            f"for '{g.dimension}'."
+                        ),
+                        severity="warning",
+                        suggestion="LLM should generate a recommendation when framework positions are available.",
+                    )
+                )
 
         if doc_chunks_per_dimension:
             for dim, count in doc_chunks_per_dimension.items():
                 if count == 0:
                     g = next((x for x in gaps if x.dimension == dim), None)
                     if g and g.coverage != CoverageLevel.INSUFFICIENT_EVIDENCE:
-                        violations.append(ConsistencyViolation(
-                            dimension=dim,
-                            violation_type="zero_doc_retrieval",
-                            description=(
-                                f"No document chunks retrieved for '{dim}' "
-                                f"but coverage is '{g.coverage.value if g else 'N/A'}'."
-                            ),
-                            severity="warning",
-                            suggestion="Increase doc_retrieve_k or check document chunking quality.",
-                        ))
+                        violations.append(
+                            ConsistencyViolation(
+                                dimension=dim,
+                                violation_type="zero_doc_retrieval",
+                                description=(
+                                    f"No document chunks retrieved for '{dim}' "
+                                    f"but coverage is '{g.coverage.value if g else 'N/A'}'."
+                                ),
+                                severity="warning",
+                                suggestion="Increase doc_retrieve_k or check document chunking quality.",
+                            )
+                        )
 
         return violations
 
@@ -671,8 +698,7 @@ class ConsistencyValidator:
             # framework positions, not the policy — gap-filling language in
             # the overall assessment is the true tier/content drift signal.
             synthesis = (
-                (gap.module_2.framework_synthesis_overall_assessment
-                 if gap.module_2 else "")
+                (gap.module_2.framework_synthesis_overall_assessment if gap.module_2 else "")
                 or gap.framework_synthesis
                 or ""
             )
@@ -681,23 +707,25 @@ class ConsistencyValidator:
             score, phrases = detect_covered_synthesis_drift(synthesis)
             if score <= 0:
                 continue
-            violations.append(ConsistencyViolation(
-                dimension=dim,
-                violation_type="covered_synthesis_drift",
-                description=(
-                    f"'{dim}' is Covered but its framework synthesis uses "
-                    f"gap-filling/recommendation language ({', '.join(phrases[:5])}) — "
-                    "the tier classification and the generated content have "
-                    "drifted apart. The verdict may overstate compliance."
-                ),
-                severity="warning",
-                suggestion=(
-                    "Review whether this dimension should be Partial, and "
-                    "re-run the analysis after fixing the Module 2 prompt "
-                    "(framework_synthesis must justify compliance from document "
-                    "evidence, not recommend future action)."
-                ),
-            ))
+            violations.append(
+                ConsistencyViolation(
+                    dimension=dim,
+                    violation_type="covered_synthesis_drift",
+                    description=(
+                        f"'{dim}' is Covered but its framework synthesis uses "
+                        f"gap-filling/recommendation language ({', '.join(phrases[:5])}) — "
+                        "the tier classification and the generated content have "
+                        "drifted apart. The verdict may overstate compliance."
+                    ),
+                    severity="warning",
+                    suggestion=(
+                        "Review whether this dimension should be Partial, and "
+                        "re-run the analysis after fixing the Module 2 prompt "
+                        "(framework_synthesis must justify compliance from document "
+                        "evidence, not recommend future action)."
+                    ),
+                )
+            )
 
         return violations
 
@@ -708,15 +736,17 @@ class ConsistencyValidator:
 
         for dim, gap in gap_by_dim.items():
             if gap.framework_synthesis and gap.framework_synthesis == gap.recommendation:
-                violations.append(ConsistencyViolation(
-                    dimension=dim,
-                    violation_type="synthesis_recommendation_collision",
-                    description=(
-                        f"Framework synthesis and recommendation are identical for '{dim}'."
-                    ),
-                    severity="warning",
-                    suggestion="Ensure framework synthesis compares requirements vs document, "
-                               "while recommendation suggests actions.",
-                ))
+                violations.append(
+                    ConsistencyViolation(
+                        dimension=dim,
+                        violation_type="synthesis_recommendation_collision",
+                        description=(
+                            f"Framework synthesis and recommendation are identical for '{dim}'."
+                        ),
+                        severity="warning",
+                        suggestion="Ensure framework synthesis compares requirements vs document, "
+                        "while recommendation suggests actions.",
+                    )
+                )
 
         return violations

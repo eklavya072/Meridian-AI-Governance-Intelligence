@@ -12,14 +12,15 @@ reasonable move. The substance was right — "Privacy protection" is real
 document text and the neighbouring P-7 / P-4 / U-6 / U-7 codes all exist.
 The instruction was wrong.
 """
+
 import pytest
 
 from src.analysis_prompts import _citation_instruction
 from src.verify import (
-    detect_division_vocabulary,
-    classify_narrative_citations,
-    _citation_present,
     DIVISION_KINDS,
+    _citation_present,
+    classify_narrative_citations,
+    detect_division_vocabulary,
 )
 
 
@@ -46,9 +47,11 @@ class TestVocabularyDetection:
         """The EU AI Act extracts as "Ar ticle" on every page. A strict
         pattern reports its vocabulary as Paragraph/Section and misses the
         Articles the regulation is built from."""
-        texts = ["Ar ticle 6 sets classification rules.",
-                 "Ar ticle 10 covers data governance.",
-                 "Ar ticle 54 concerns representatives."]
+        texts = [
+            "Ar ticle 6 sets classification rules.",
+            "Ar ticle 10 covers data governance.",
+            "Ar ticle 54 concerns representatives.",
+        ]
         assert detect_division_vocabulary(texts)[0] == "Article"
 
     def test_most_common_form_ranks_first(self):
@@ -130,7 +133,8 @@ class TestBareOrdinalDivisions:
         """Joining a 44-section statute onto a 7-sutra note would lend the note
         ordinals it does not have."""
         split = classify_narrative_citations(
-            ["Principle 8 requires it."], "unrelated retrieved text",
+            ["Principle 8 requires it."],
+            "unrelated retrieved text",
             [self.GUIDELINES],
         )
         assert split["fabricated"] == ["Principle 8"]

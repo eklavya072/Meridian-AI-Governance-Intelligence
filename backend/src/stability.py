@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import math
 import os
-import structlog
-import time
 from typing import Any
+
+import structlog
 
 from src.models import RetrievalStability
 
@@ -80,13 +79,20 @@ def analyze_retrieval_stability(
             scores = []
             for c in result.document_chunks + result.framework_chunks:
                 cid = c.get("chunk_id", "")
-                score = c.get("reranker_score") or c.get("rrf_score") or c.get("similarity_score") or 0.0
+                score = (
+                    c.get("reranker_score")
+                    or c.get("rrf_score")
+                    or c.get("similarity_score")
+                    or 0.0
+                )
                 chunk_ids.append(cid)
                 scores.append(score)
             all_ids.append(chunk_ids)
             all_scores.append(scores)
         except Exception as exc:
-            logger.warning("stability_retrieval_failed", dimension=dimension, attempt=i, error=str(exc))
+            logger.warning(
+                "stability_retrieval_failed", dimension=dimension, attempt=i, error=str(exc)
+            )
 
     if len(all_ids) < 2:
         return RetrievalStability(dimension=dimension, num_retrievals=len(all_ids), is_stable=True)

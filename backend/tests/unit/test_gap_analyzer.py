@@ -1,14 +1,28 @@
 import pytest
+
 from src.gap_analyzer import (
-    compute_calibrated_confidence, compute_risk, build_framework_synthesis,
-    resolve_priority, compute_decision_analytics, estimate_phase_timelines,
     BEST_PRACTICES_OPENING,
-    CORE_DIMENSIONS, DIMENSION_CLUSTERS, COVERAGE_RANK,
-    GOVERNANCE_DIMENSIONS, GapAnalyzer,
+    CORE_DIMENSIONS,
+    COVERAGE_RANK,
+    DIMENSION_CLUSTERS,
+    GOVERNANCE_DIMENSIONS,
+    GapAnalyzer,
+    build_framework_synthesis,
+    compute_calibrated_confidence,
+    compute_decision_analytics,
+    compute_risk,
+    estimate_phase_timelines,
+    resolve_priority,
 )
 from src.models import (
-    RetrievedEvidence, GovernanceGap, CoverageLevel, RiskLevel, ModuleCitation,
-    Priority, GovernanceMaturity, Module2Recommendation,
+    CoverageLevel,
+    GovernanceGap,
+    GovernanceMaturity,
+    Module2Recommendation,
+    ModuleCitation,
+    Priority,
+    RetrievedEvidence,
+    RiskLevel,
 )
 
 
@@ -31,10 +45,14 @@ class TestComputeCalibratedConfidence:
         assert "No evidence" in method
 
     def test_evidence_with_scores_returns_positive(self):
-        ev = [RetrievedEvidence(
-            chunk_id="c0", text="text", source_framework="OECD",
-            similarity_score=0.85,
-        )]
+        ev = [
+            RetrievedEvidence(
+                chunk_id="c0",
+                text="text",
+                source_framework="OECD",
+                similarity_score=0.85,
+            )
+        ]
         conf, method = compute_calibrated_confidence(ev)
         assert conf > 0.0
         assert "GeoMean" in method
@@ -48,16 +66,23 @@ class TestComputeCalibratedConfidence:
 
     def test_mixed_none_and_valid_scores(self):
         ev = [
-            RetrievedEvidence(chunk_id="c0", text="t", source_framework="OECD", similarity_score=0.9),
-            RetrievedEvidence(chunk_id="c1", text="t", source_framework="OECD", similarity_score=None),
-            RetrievedEvidence(chunk_id="c2", text="t", source_framework="OECD", similarity_score=0.7),
+            RetrievedEvidence(
+                chunk_id="c0", text="t", source_framework="OECD", similarity_score=0.9
+            ),
+            RetrievedEvidence(
+                chunk_id="c1", text="t", source_framework="OECD", similarity_score=None
+            ),
+            RetrievedEvidence(
+                chunk_id="c2", text="t", source_framework="OECD", similarity_score=0.7
+            ),
         ]
         conf, _ = compute_calibrated_confidence(ev)
         assert conf > 0.0
 
     def test_single_source(self):
-        ev = [RetrievedEvidence(chunk_id="c0", text="t", source_framework="fw1",
-                                similarity_score=0.5)]
+        ev = [
+            RetrievedEvidence(chunk_id="c0", text="t", source_framework="fw1", similarity_score=0.5)
+        ]
         conf, _ = compute_calibrated_confidence(ev)
         assert 0 < conf < 1.0
 
@@ -115,17 +140,14 @@ class TestComputeRisk:
         partial_risks = set()
         missing_risks = set()
         for dim in GOVERNANCE_DIMENSIONS:
-            partial_risks.add(
-                compute_risk(CoverageLevel.PARTIAL, dim)[0].value
-            )
-            missing_risks.add(
-                compute_risk(CoverageLevel.MISSING, dim)[0].value
-            )
+            partial_risks.add(compute_risk(CoverageLevel.PARTIAL, dim)[0].value)
+            missing_risks.add(compute_risk(CoverageLevel.MISSING, dim)[0].value)
         assert partial_risks != missing_risks
 
 
 class FakeVectorStore:
     """Minimal stub: records chunk lookups, never finds chunks."""
+
     def __init__(self):
         self.lookups = []
 
@@ -141,13 +163,16 @@ class TestNoCitationSentinel:
         a.nli_verifier = None
         return a
 
-    @pytest.mark.parametrize("chunk_id", [
-        "insufficient evidence for citation",
-        "insufficient evidence",
-        "Insufficient Evidence For Citation",
-        "no citation available",
-        "no supporting passage",
-    ])
+    @pytest.mark.parametrize(
+        "chunk_id",
+        [
+            "insufficient evidence for citation",
+            "insufficient evidence",
+            "Insufficient Evidence For Citation",
+            "no citation available",
+            "no supporting passage",
+        ],
+    )
     def test_sentinel_chunk_id_never_looked_up(self, chunk_id):
         """The sentinel is an explicit 'no citation' state — it must NOT be
         run through the vector-store lookup path (which would report a
@@ -198,7 +223,12 @@ class TestNoCitationSentinel:
         store = FakeVectorStore()
         analyzer = self._analyzer(store)
         citations = analyzer._verify_module_citations(
-            [{"chunk_id": "9f3a2b1c", "quote": "Insufficient evidence exists to demonstrate compliance."}],
+            [
+                {
+                    "chunk_id": "9f3a2b1c",
+                    "quote": "Insufficient evidence exists to demonstrate compliance.",
+                }
+            ],
             default_source="Test",
             source_type="framework",
         )
@@ -287,6 +317,7 @@ class TestDimensionExceptionWiring:
         # propagate OUT of _analyze_dimension_combined so analyze()'s
         # except-handler can build the analysis_error gap.
         from src.retrieval import ModuleRetrievalResult
+
         analyzer = ga.GapAnalyzer.__new__(ga.GapAnalyzer)
         analyzer.vector_store = self._EmptyStore()
         analyzer.provider = self._RaisingProvider()
@@ -295,8 +326,12 @@ class TestDimensionExceptionWiring:
         retrieval = ModuleRetrievalResult(
             dimension="Fairness",
             document_chunks=[{"chunk_id": "d1", "text": "doc text", "module_role": "document"}],
-            module1_chunks=[{"chunk_id": "n1", "text": "norm text", "module_role": "module_1_normative"}],
-            module2_chunks=[{"chunk_id": "p1", "text": "prac text", "module_role": "module_2_practical"}],
+            module1_chunks=[
+                {"chunk_id": "n1", "text": "norm text", "module_role": "module_1_normative"}
+            ],
+            module2_chunks=[
+                {"chunk_id": "p1", "text": "prac text", "module_role": "module_2_practical"}
+            ],
         )
         retrieval.total_chunks = 3
 
@@ -315,17 +350,23 @@ class TestDimensionExceptionWiring:
         class _VS:
             def get_all_frameworks(self):
                 return ["UNESCO Recommendation on the Ethics of AI"]
+
             def get_chunk(self, chunk_id):
                 return None
 
         class _RP:
             def retrieve_module_chunks(self, **kwargs):
                 from src.retrieval import ModuleRetrievalResult
+
                 r = ModuleRetrievalResult(
                     dimension=kwargs.get("dimension"),
                     document_chunks=[{"chunk_id": "d1", "text": "t", "module_role": "document"}],
-                    module1_chunks=[{"chunk_id": "n1", "text": "t", "module_role": "module_1_normative"}],
-                    module2_chunks=[{"chunk_id": "p1", "text": "t", "module_role": "module_2_practical"}],
+                    module1_chunks=[
+                        {"chunk_id": "n1", "text": "t", "module_role": "module_1_normative"}
+                    ],
+                    module2_chunks=[
+                        {"chunk_id": "p1", "text": "t", "module_role": "module_2_practical"}
+                    ],
                 )
                 r.total_chunks = 3
                 return r
@@ -360,7 +401,7 @@ class TestDimensionExceptionWiring:
         callback per dimension, an accurate call count, and no duplicate or
         missing dimensions — regardless of which worker finishes first."""
         import src.gap_analyzer as ga
-        from src.gap_analyzer import GapAnalysisResult, GOVERNANCE_DIMENSIONS
+        from src.gap_analyzer import GOVERNANCE_DIMENSIONS, GapAnalysisResult
 
         def _fake_generate(**kwargs):
             return _FakeCombined(coverage="Covered")
@@ -370,17 +411,23 @@ class TestDimensionExceptionWiring:
         class _VS:
             def get_all_frameworks(self):
                 return ["UNESCO Recommendation on the Ethics of AI"]
+
             def get_chunk(self, chunk_id):
                 return None
 
         class _RP:
             def retrieve_module_chunks(self, **kwargs):
                 from src.retrieval import ModuleRetrievalResult
+
                 r = ModuleRetrievalResult(
                     dimension=kwargs.get("dimension"),
                     document_chunks=[{"chunk_id": "d1", "text": "t", "module_role": "document"}],
-                    module1_chunks=[{"chunk_id": "n1", "text": "t", "module_role": "module_1_normative"}],
-                    module2_chunks=[{"chunk_id": "p1", "text": "t", "module_role": "module_2_practical"}],
+                    module1_chunks=[
+                        {"chunk_id": "n1", "text": "t", "module_role": "module_1_normative"}
+                    ],
+                    module2_chunks=[
+                        {"chunk_id": "p1", "text": "t", "module_role": "module_2_practical"}
+                    ],
                 )
                 r.total_chunks = 3
                 return r
@@ -416,15 +463,24 @@ class TestDecisionAnalytics:
     """Executive decision analytics — deterministic aggregates for dashboards
     and the research paper's evaluation section."""
 
-    def _gap(self, dim, coverage, maturity=GovernanceMaturity.DEVELOPING,
-             priority=None, confidence=0.6, failed=False):
+    def _gap(
+        self,
+        dim,
+        coverage,
+        maturity=GovernanceMaturity.DEVELOPING,
+        priority=None,
+        confidence=0.6,
+        failed=False,
+    ):
         m2 = None
         if priority is not None:
             m2 = Module2Recommendation(dimension=dim, priority=priority)
         if failed:
             return GovernanceGap(
-                dimension=dim, coverage=CoverageLevel.INSUFFICIENT_EVIDENCE,
-                reason_flagged="Analysis failed", recommendation="",
+                dimension=dim,
+                coverage=CoverageLevel.INSUFFICIENT_EVIDENCE,
+                reason_flagged="Analysis failed",
+                recommendation="",
                 analysis_error="quota",
             )
         return GovernanceGap(
@@ -474,8 +530,11 @@ class TestDecisionAnalytics:
         # frontend and duplicated what this histogram already carries, so it
         # was dropped from the returned dict rather than kept as dead weight.
         assert a["maturity_distribution"] == {
-            "Unaddressed": 0, "Emerging": 0, "Delegated": 0,
-            "Operationalized": 1, "Institutionalized": 2,
+            "Unaddressed": 0,
+            "Emerging": 0,
+            "Delegated": 0,
+            "Operationalized": 1,
+            "Institutionalized": 2,
         }
 
     def test_one_weak_dimension_still_pulls_down_the_index(self):
@@ -483,8 +542,7 @@ class TestDecisionAnalytics:
         the composite index down proportionally to its stage score, even
         though it is only one of eight assessed dimensions."""
         gaps = [
-            self._gap("Transparency", "Covered", GovernanceMaturity.ESTABLISHED)
-            for _ in range(7)
+            self._gap("Transparency", "Covered", GovernanceMaturity.ESTABLISHED) for _ in range(7)
         ] + [self._gap("Privacy", "Missing", GovernanceMaturity.UNADDRESSED)]
         a = compute_decision_analytics(gaps)
         # (7*100 + 0) / 8 = 87.5
@@ -511,9 +569,15 @@ class TestDecisionAnalytics:
 
     def test_highest_priority_sorted_most_urgent_first(self):
         gaps = [
-            self._gap("Privacy", "Missing", GovernanceMaturity.UNADDRESSED, priority=Priority.CRITICAL),
-            self._gap("Transparency", "Partial", GovernanceMaturity.EMERGING, priority=Priority.HIGH),
-            self._gap("Fairness", "Partial", GovernanceMaturity.DEVELOPING, priority=Priority.MEDIUM),
+            self._gap(
+                "Privacy", "Missing", GovernanceMaturity.UNADDRESSED, priority=Priority.CRITICAL
+            ),
+            self._gap(
+                "Transparency", "Partial", GovernanceMaturity.EMERGING, priority=Priority.HIGH
+            ),
+            self._gap(
+                "Fairness", "Partial", GovernanceMaturity.DEVELOPING, priority=Priority.MEDIUM
+            ),
             self._gap("Inclusivity", "Covered", GovernanceMaturity.ESTABLISHED, priority=None),
         ]
         a = compute_decision_analytics(gaps)
@@ -558,10 +622,7 @@ class TestResolvePriority:
         assert resolve_priority(CoverageLevel.COVERED, "Transparency") is None
 
     def test_insufficient_evidence_returns_none(self):
-        assert (
-            resolve_priority(CoverageLevel.INSUFFICIENT_EVIDENCE, "Transparency")
-            is None
-        )
+        assert resolve_priority(CoverageLevel.INSUFFICIENT_EVIDENCE, "Transparency") is None
 
     def test_partial_defaults_medium(self):
         assert resolve_priority(CoverageLevel.PARTIAL, "Transparency") == Priority.MEDIUM
@@ -615,8 +676,14 @@ class _FakeCombined:
         self.coverage = coverage
         self.gap_detected = coverage != "Covered"
         self.reason_flagged = "" if coverage == "Covered" else "No transparency provisions found"
-        self.coverage_reasoning = "" if coverage == "Covered" else "Document never mentions transparency"
-        self.coverage_example = "The document establishes a National AI Ethics Board and mandates annual explainability reporting" if coverage == "Covered" else ""
+        self.coverage_reasoning = (
+            "" if coverage == "Covered" else "Document never mentions transparency"
+        )
+        self.coverage_example = (
+            "The document establishes a National AI Ethics Board and mandates annual explainability reporting"
+            if coverage == "Covered"
+            else ""
+        )
         self.principle_acknowledged = acknowledged
         if mechanisms is None:
             mechanisms = ["National AI Ethics Board (named body)"] if coverage == "Covered" else []
@@ -625,11 +692,13 @@ class _FakeCombined:
         self.framework_evidence = []
         self.recommendations = [] if coverage == "Covered" else ["rec1", "rec2"]
         self.priority = "" if coverage == "Covered" else "High"
-        self.future_strengthening_opportunities = [
-            "Extend annual report to model cards"
-        ] if coverage == "Covered" else []
+        self.future_strengthening_opportunities = (
+            ["Extend annual report to model cards"] if coverage == "Covered" else []
+        )
         self.international_examples = []
-        self.international_standard_reference = "OECD Catalogue of Tools and Metrics for Trustworthy AI"
+        self.international_standard_reference = (
+            "OECD Catalogue of Tools and Metrics for Trustworthy AI"
+        )
         self.framework_synthesis = "The policy aligns with OECD expectations..."
         self.standard_citations = []
 
@@ -650,18 +719,25 @@ class TestCoverageTierEnforcement:
 
         def _fake_generate(**kwargs):
             return _FakeCombined(
-                coverage=coverage, acknowledged=acknowledged, mechanisms=mechanisms,
+                coverage=coverage,
+                acknowledged=acknowledged,
+                mechanisms=mechanisms,
             )
 
         monkeypatch.setattr(ga, "generate_with_retry", _fake_generate)
 
         from src.retrieval import ModuleRetrievalResult
+
         analyzer = self._analyzer(FakeVectorStore())
         retrieval = ModuleRetrievalResult(
             dimension="Transparency",
             document_chunks=[{"chunk_id": "d1", "text": "doc text", "module_role": "document"}],
-            module1_chunks=[{"chunk_id": "n1", "text": "norm text", "module_role": "module_1_normative"}],
-            module2_chunks=[{"chunk_id": "p1", "text": "prac text", "module_role": "module_2_practical"}],
+            module1_chunks=[
+                {"chunk_id": "n1", "text": "norm text", "module_role": "module_1_normative"}
+            ],
+            module2_chunks=[
+                {"chunk_id": "p1", "text": "prac text", "module_role": "module_2_practical"}
+            ],
         )
         retrieval.total_chunks = 3
         return analyzer._analyze_dimension_combined("Transparency", retrieval)
@@ -713,7 +789,8 @@ class TestCoverageTierEnforcement:
         (Level 3) → raised to Covered → Best Practices tier replaces
         Recommendations, and the rule is visible in the reasoning."""
         gap = self._run(
-            monkeypatch, "Partial",
+            monkeypatch,
+            "Partial",
             mechanisms=["National AI Ethics Board with quarterly public reporting (named body)"],
         )
         assert gap.module_1.coverage == CoverageLevel.COVERED
@@ -755,12 +832,17 @@ class TestCoverageTierEnforcement:
         monkeypatch.setattr(ga, "generate_with_retry", _fake_generate)
 
         from src.retrieval import ModuleRetrievalResult
+
         analyzer = self._analyzer(FakeVectorStore())
         retrieval = ModuleRetrievalResult(
             dimension="Transparency",
             document_chunks=[{"chunk_id": "d1", "text": "doc text", "module_role": "document"}],
-            module1_chunks=[{"chunk_id": "n1", "text": "norm text", "module_role": "module_1_normative"}],
-            module2_chunks=[{"chunk_id": "p1", "text": "prac text", "module_role": "module_2_practical"}],
+            module1_chunks=[
+                {"chunk_id": "n1", "text": "norm text", "module_role": "module_1_normative"}
+            ],
+            module2_chunks=[
+                {"chunk_id": "p1", "text": "prac text", "module_role": "module_2_practical"}
+            ],
         )
         retrieval.total_chunks = 3
         gap = analyzer._analyze_dimension_combined("Transparency", retrieval)
@@ -813,12 +895,14 @@ class TestGroundModule3Citations:
         )
 
     def test_off_topic_llm_citation_is_dropped(self):
-        store = self._Store({
-            "off1": {
-                "text": "Start with a comprehensive GenAI risk assessment framework",
-                "metadata": {"framework": "AI Verify Assurance Pilot"},
-            },
-        })
+        store = self._Store(
+            {
+                "off1": {
+                    "text": "Start with a comprehensive GenAI risk assessment framework",
+                    "metadata": {"framework": "AI Verify Assurance Pilot"},
+                },
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [self._cit("off1", "generic quote", verified=True)],
@@ -830,20 +914,22 @@ class TestGroundModule3Citations:
         assert out == []
 
     def test_topical_pool_chunk_attached_as_fallback(self):
-        store = self._Store({
-            "top1": {
-                "text": (
-                    "Developers of AI systems shall report annual energy "
-                    "consumption to the Ministry, and the adoption of "
-                    "smaller, resource-efficient models is required to "
-                    "reduce environmental impact."
-                ),
-                "metadata": {
-                    "document_name": "AI Governance India",
-                    "page_number": 15,
+        store = self._Store(
+            {
+                "top1": {
+                    "text": (
+                        "Developers of AI systems shall report annual energy "
+                        "consumption to the Ministry, and the adoption of "
+                        "smaller, resource-efficient models is required to "
+                        "reduce environmental impact."
+                    ),
+                    "metadata": {
+                        "document_name": "AI Governance India",
+                        "page_number": 15,
+                    },
                 },
-            },
-        })
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [],
@@ -859,12 +945,14 @@ class TestGroundModule3Citations:
         assert out[0].verification["method"] == "deterministic_fallback"
 
     def test_topical_llm_citation_is_kept(self):
-        store = self._Store({
-            "env1": {
-                "text": "The policy mandates carbon footprint reporting for model training.",
-                "metadata": {"framework": "OECD AI Principles"},
-            },
-        })
+        store = self._Store(
+            {
+                "env1": {
+                    "text": "The policy mandates carbon footprint reporting for model training.",
+                    "metadata": {"framework": "OECD AI Principles"},
+                },
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [self._cit("env1", "carbon reporting quote", verified=True)],
@@ -889,12 +977,14 @@ class TestGroundModule3Citations:
     def test_doc_citation_source_is_normalized(self):
         # LLM cited a DOC chunk; verify path left source empty (framework
         # default). The gate must restore the document name so it renders.
-        store = self._Store({
-            "doc1": {
-                "text": "Environmental sustainability principles for AI development.",
-                "metadata": {"document_name": "AI Governance India", "page_number": 15},
-            },
-        })
+        store = self._Store(
+            {
+                "doc1": {
+                    "text": "Environmental sustainability principles for AI development.",
+                    "metadata": {"document_name": "AI Governance India", "page_number": 15},
+                },
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [self._cit("doc1", "env passage", source="", verified=True)],
@@ -910,19 +1000,21 @@ class TestGroundModule3Citations:
     def test_toc_preamble_chunk_is_skipped_in_topup(self):
         # A table-of-contents fragment passes the loose keyword gate (a
         # chapter title mentions the topic) but carries no evidence content.
-        store = self._Store({
-            "toc1": {
-                "text": (
-                    "Table of Contents\nTitle Page\nExecutive Summary 00\n"
-                    "Chapter 1 - Introduction 01\nEnvironmental Impact 12\n"
-                ),
-                "metadata": {"framework": "AI Verify Assurance Pilot"},
-            },
-            "env1": {
-                "text": "The policy mandates carbon footprint reporting for model training.",
-                "metadata": {"framework": "OECD AI Principles"},
-            },
-        })
+        store = self._Store(
+            {
+                "toc1": {
+                    "text": (
+                        "Table of Contents\nTitle Page\nExecutive Summary 00\n"
+                        "Chapter 1 - Introduction 01\nEnvironmental Impact 12\n"
+                    ),
+                    "metadata": {"framework": "AI Verify Assurance Pilot"},
+                },
+                "env1": {
+                    "text": "The policy mandates carbon footprint reporting for model training.",
+                    "metadata": {"framework": "OECD AI Principles"},
+                },
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [],
@@ -936,12 +1028,14 @@ class TestGroundModule3Citations:
         assert [c.chunk_id for c in out] == ["env1"]
 
     def test_pool_chunk_without_named_source_is_skipped(self):
-        store = self._Store({
-            "anon1": {
-                "text": "Environmental measures reduce emissions and energy use.",
-                "metadata": {},
-            },
-        })
+        store = self._Store(
+            {
+                "anon1": {
+                    "text": "Environmental measures reduce emissions and energy use.",
+                    "metadata": {},
+                },
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [],
@@ -955,12 +1049,14 @@ class TestGroundModule3Citations:
         # The LLM honestly declined, but the pool has a dimension-topical
         # chunk: the top-up supersedes the decline (showing both "no passage
         # found" and a citation would contradict itself).
-        store = self._Store({
-            "env1": {
-                "text": "The policy mandates carbon footprint reporting for model training.",
-                "metadata": {"framework": "OECD AI Principles"},
-            },
-        })
+        store = self._Store(
+            {
+                "env1": {
+                    "text": "The policy mandates carbon footprint reporting for model training.",
+                    "metadata": {"framework": "OECD AI Principles"},
+                },
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [self._cit(no_citation=True)],
@@ -974,12 +1070,14 @@ class TestGroundModule3Citations:
         assert out[0].verification["method"] == "deterministic_fallback"
 
     def test_no_topical_pool_returns_fewer_honestly(self):
-        store = self._Store({
-            "off1": {
-                "text": "Start with a comprehensive GenAI risk assessment framework",
-                "metadata": {"framework": "AI Verify"},
-            },
-        })
+        store = self._Store(
+            {
+                "off1": {
+                    "text": "Start with a comprehensive GenAI risk assessment framework",
+                    "metadata": {"framework": "AI Verify"},
+                },
+            }
+        )
         a = self._analyzer(store)
         out = a._ground_module3_citations(
             [],
@@ -1036,8 +1134,7 @@ class TestModule2AgencyReconciliation:
             self._agency(),
             "none_identified",
             [
-                "Incorporate carbon reporting into the compliance schedule to be "
-                "issued by MeitY.",
+                "Incorporate carbon reporting into the compliance schedule to be issued by MeitY.",
                 "Task standard-setting bodies such as the Bureau of Indian "
                 "Standards (BIS) with developing metrics.",
             ],
@@ -1078,16 +1175,14 @@ class TestModule2AgencyReconciliation:
         must NOT be surfaced as a body being tasked — only phrases containing
         an organizational designator qualify."""
         store = self._Store(
-            "The policy advances Digital Public Infrastructure and Generative "
-            "AI capabilities."
+            "The policy advances Digital Public Infrastructure and Generative AI capabilities."
         )
         a = self._analyzer(store)
         agency, grounding = a._reconcile_responsible_agency_with_module2(
             self._agency(),
             "none_identified",
             [
-                "Institutionalise the Digital Public Infrastructure governance "
-                "roadmap.",
+                "Institutionalise the Digital Public Infrastructure governance roadmap.",
                 "Publish guidance for Generative AI systems.",
             ],
             workspace_id="ws1",
@@ -1100,9 +1195,7 @@ class TestModule2AgencyReconciliation:
         """A multi-word phrase CONTAINING a designator still qualifies even
         when the first word alone would be ambiguous (e.g. "Standards" as the
         final word)."""
-        store = self._Store(
-            "The Atomic Energy Commission publishes AI guidance."
-        )
+        store = self._Store("The Atomic Energy Commission publishes AI guidance.")
         a = self._analyzer(store)
         agency, grounding = a._reconcile_responsible_agency_with_module2(
             self._agency(),
@@ -1153,7 +1246,10 @@ class TestEstimatePhaseTimelines:
     def test_partial_with_mechanisms_and_named_agency_is_shortest(self):
         t = estimate_phase_timelines(
             coverage=CoverageLevel.PARTIAL,
-            operational_mechanisms=["National AI Ethics Board (named body)", "Annual transparency report"],
+            operational_mechanisms=[
+                "National AI Ethics Board (named body)",
+                "Annual transparency report",
+            ],
             maturity=GovernanceMaturity.ESTABLISHED,
             agency_grounding="document_named",
             step_counts=[2, 2],
@@ -1167,12 +1263,12 @@ class TestEstimatePhaseTimelines:
         assert "responsible agency already named" in t[0]["reasoning"]
 
     def test_missing_always_longer_than_partial_ceteris_paribus(self):
-        common = dict(
-            operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEVELOPING,
-            agency_grounding="document_implied",
-            step_counts=[3, 3],
-        )
+        common = {
+            "operational_mechanisms": [],
+            "maturity": GovernanceMaturity.DEVELOPING,
+            "agency_grounding": "document_implied",
+            "step_counts": [3, 3],
+        }
         missing = estimate_phase_timelines(coverage=CoverageLevel.MISSING, **common)
         partial = estimate_phase_timelines(coverage=CoverageLevel.PARTIAL, **common)
         m_upper = int(missing[1]["timeline"].split("-")[1].split()[0])
@@ -1181,13 +1277,17 @@ class TestEstimatePhaseTimelines:
 
     def test_large_scope_widens_timeline(self):
         small = estimate_phase_timelines(
-            coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
+            coverage=CoverageLevel.PARTIAL,
+            operational_mechanisms=[],
+            maturity=GovernanceMaturity.DEVELOPING,
+            agency_grounding="document_implied",
             step_counts=[2, 2],
         )
         large = estimate_phase_timelines(
-            coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
+            coverage=CoverageLevel.PARTIAL,
+            operational_mechanisms=[],
+            maturity=GovernanceMaturity.DEVELOPING,
+            agency_grounding="document_implied",
             step_counts=[6, 6],
         )
         assert int(large[0]["timeline"].split("-")[1].split()[0]) > int(
@@ -1197,16 +1297,20 @@ class TestEstimatePhaseTimelines:
 
     def test_reasoning_mentions_maturity_adjustment(self):
         t = estimate_phase_timelines(
-            coverage=CoverageLevel.MISSING, operational_mechanisms=[],
-            maturity=GovernanceMaturity.EMERGING, agency_grounding="none_identified",
+            coverage=CoverageLevel.MISSING,
+            operational_mechanisms=[],
+            maturity=GovernanceMaturity.EMERGING,
+            agency_grounding="none_identified",
             step_counts=[4, 4],
         )
         assert "low maturity (Emerging)" in t[0]["reasoning"]
 
     def test_returns_one_timeline_per_phase_up_to_two(self):
         t = estimate_phase_timelines(
-            coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
+            coverage=CoverageLevel.PARTIAL,
+            operational_mechanisms=[],
+            maturity=GovernanceMaturity.DEVELOPING,
+            agency_grounding="document_implied",
             step_counts=[3],
         )
         # One entry per phase present (single-phase roadmaps stay valid).
@@ -1214,8 +1318,10 @@ class TestEstimatePhaseTimelines:
         assert t[0]["timeline"] != ""
         assert "Phase 1" in t[0]["reasoning"]
         both = estimate_phase_timelines(
-            coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="document_implied",
+            coverage=CoverageLevel.PARTIAL,
+            operational_mechanisms=[],
+            maturity=GovernanceMaturity.DEVELOPING,
+            agency_grounding="document_implied",
             step_counts=[3, 3],
         )
         assert len(both) == 2
@@ -1228,8 +1334,10 @@ class TestEstimatePhaseTimelines:
         # bound == Phase 1's upper bound), so the designation time propagates
         # through the chain without being double-counted.
         t = estimate_phase_timelines(
-            coverage=CoverageLevel.PARTIAL, operational_mechanisms=[],
-            maturity=GovernanceMaturity.DEVELOPING, agency_grounding="none_identified",
+            coverage=CoverageLevel.PARTIAL,
+            operational_mechanisms=[],
+            maturity=GovernanceMaturity.DEVELOPING,
+            agency_grounding="none_identified",
             step_counts=[3, 3],
         )
         assert "no responsible agency named" in t[0]["reasoning"]
@@ -1245,8 +1353,18 @@ class _FakeModule34:
 
     def __init__(self):
         self.phases = [
-            {"phase": "Phase 1", "timeline": "0-12 months", "objective": "Establish foundation", "steps": ["s1", "s2", "s3"]},
-            {"phase": "Phase 2", "timeline": "12-24 months", "objective": "Operationalise", "steps": ["s4", "s5", "s6"]},
+            {
+                "phase": "Phase 1",
+                "timeline": "0-12 months",
+                "objective": "Establish foundation",
+                "steps": ["s1", "s2", "s3"],
+            },
+            {
+                "phase": "Phase 2",
+                "timeline": "12-24 months",
+                "objective": "Operationalise",
+                "steps": ["s4", "s5", "s6"],
+            },
         ]
         self.responsible_agency = "A plausible-sounding agency"
         self.responsible_agency_grounding = "none_identified"
@@ -1303,7 +1421,9 @@ class TestModule34TimelineOverride:
 
     def test_llm_timeline_never_leaks_into_phases(self, monkeypatch):
         gap = self._run_module34(
-            monkeypatch, coverage="Partial", mechanisms=["Annual privacy report"],
+            monkeypatch,
+            coverage="Partial",
+            mechanisms=["Annual privacy report"],
         )
         assert gap.module_3 is not None
         assert len(gap.module_3.phases) == 2
@@ -1344,22 +1464,38 @@ class TestBuildFrameworkSynthesis:
 
     def test_unknown_chunk_omitted(self):
         from src.models import FrameworkPositionRaw
+
         positions = [
-            FrameworkPositionRaw(framework="OECD", position="requires X", chunk_id="nonexistent", supporting_text="X")
+            FrameworkPositionRaw(
+                framework="OECD", position="requires X", chunk_id="nonexistent", supporting_text="X"
+            )
         ]
         evidence = [
-            RetrievedEvidence(chunk_id="real1", text="t", source_framework="OECD", similarity_score=0.8)
+            RetrievedEvidence(
+                chunk_id="real1", text="t", source_framework="OECD", similarity_score=0.8
+            )
         ]
         result = build_framework_synthesis(positions, evidence)
         assert result == ""
 
     def test_valid_position_included(self):
         from src.models import FrameworkPositionRaw
+
         positions = [
-            FrameworkPositionRaw(framework="OECD AI Principles", position="requires transparency", chunk_id="c1", supporting_text="organisations should provide meaningful information")
+            FrameworkPositionRaw(
+                framework="OECD AI Principles",
+                position="requires transparency",
+                chunk_id="c1",
+                supporting_text="organisations should provide meaningful information",
+            )
         ]
         evidence = [
-            RetrievedEvidence(chunk_id="c1", text="organisations should provide meaningful information", source_framework="OECD AI Principles", similarity_score=0.8)
+            RetrievedEvidence(
+                chunk_id="c1",
+                text="organisations should provide meaningful information",
+                source_framework="OECD AI Principles",
+                similarity_score=0.8,
+            )
         ]
         result = build_framework_synthesis(positions, evidence)
         assert "OECD AI Principles" in result
@@ -1367,13 +1503,31 @@ class TestBuildFrameworkSynthesis:
 
     def test_multiple_frameworks_joined(self):
         from src.models import FrameworkPositionRaw
+
         positions = [
-            FrameworkPositionRaw(framework="OECD AI Principles", position="requires transparency", chunk_id="c1", supporting_text="text a"),
-            FrameworkPositionRaw(framework="UNESCO", position="emphasizes ethics", chunk_id="c2", supporting_text="text b"),
+            FrameworkPositionRaw(
+                framework="OECD AI Principles",
+                position="requires transparency",
+                chunk_id="c1",
+                supporting_text="text a",
+            ),
+            FrameworkPositionRaw(
+                framework="UNESCO",
+                position="emphasizes ethics",
+                chunk_id="c2",
+                supporting_text="text b",
+            ),
         ]
         evidence = [
-            RetrievedEvidence(chunk_id="c1", text="text a", source_framework="OECD AI Principles", similarity_score=0.8),
-            RetrievedEvidence(chunk_id="c2", text="text b", source_framework="UNESCO", similarity_score=0.8),
+            RetrievedEvidence(
+                chunk_id="c1",
+                text="text a",
+                source_framework="OECD AI Principles",
+                similarity_score=0.8,
+            ),
+            RetrievedEvidence(
+                chunk_id="c2", text="text b", source_framework="UNESCO", similarity_score=0.8
+            ),
         ]
         result = build_framework_synthesis(positions, evidence)
         assert "OECD AI Principles" in result
@@ -1381,13 +1535,34 @@ class TestBuildFrameworkSynthesis:
 
     def test_duplicate_frameworks_deduplicated(self):
         from src.models import FrameworkPositionRaw
+
         positions = [
-            FrameworkPositionRaw(framework="OECD AI Principles", position="requires transparency", chunk_id="c1", supporting_text="text a"),
-            FrameworkPositionRaw(framework="OECD AI Principles", position="also requires accountability", chunk_id="c2", supporting_text="text b"),
+            FrameworkPositionRaw(
+                framework="OECD AI Principles",
+                position="requires transparency",
+                chunk_id="c1",
+                supporting_text="text a",
+            ),
+            FrameworkPositionRaw(
+                framework="OECD AI Principles",
+                position="also requires accountability",
+                chunk_id="c2",
+                supporting_text="text b",
+            ),
         ]
         evidence = [
-            RetrievedEvidence(chunk_id="c1", text="text a", source_framework="OECD AI Principles", similarity_score=0.8),
-            RetrievedEvidence(chunk_id="c2", text="text b", source_framework="OECD AI Principles", similarity_score=0.8),
+            RetrievedEvidence(
+                chunk_id="c1",
+                text="text a",
+                source_framework="OECD AI Principles",
+                similarity_score=0.8,
+            ),
+            RetrievedEvidence(
+                chunk_id="c2",
+                text="text b",
+                source_framework="OECD AI Principles",
+                similarity_score=0.8,
+            ),
         ]
         result = build_framework_synthesis(positions, evidence)
         assert len(result.split("|")) == 1
@@ -1484,8 +1659,11 @@ class TestClusterCompoundingExcludesUnanalysedDimensions:
         from src.gap_analyzer import compute_risk
         from src.models import CoverageLevel
 
-        others = [self._gap("Accountability", CoverageLevel.INSUFFICIENT_EVIDENCE,
-                            error="LLM quota exhausted")]
+        others = [
+            self._gap(
+                "Accountability", CoverageLevel.INSUFFICIENT_EVIDENCE, error="LLM quota exhausted"
+            )
+        ]
         risk, reason = compute_risk(CoverageLevel.PARTIAL, "Transparency", others)
         assert "same cluster" not in reason.lower()
 
@@ -1501,8 +1679,11 @@ class TestClusterCompoundingExcludesUnanalysedDimensions:
         from src.gap_analyzer import resolve_priority
         from src.models import CoverageLevel, Priority
 
-        others = [self._gap("Accountability", CoverageLevel.INSUFFICIENT_EVIDENCE,
-                            error="LLM quota exhausted")]
+        others = [
+            self._gap(
+                "Accountability", CoverageLevel.INSUFFICIENT_EVIDENCE, error="LLM quota exhausted"
+            )
+        ]
         assert resolve_priority(CoverageLevel.PARTIAL, "Transparency", others) == Priority.MEDIUM
 
     def test_real_gap_neighbour_still_escalates_priority(self):
@@ -1526,6 +1707,7 @@ class TestMaturityIndexCalibration:
     def _stages(*labels):
         from src.gap_analyzer import MATURITY_STAGE_SCORE
         from src.models import GovernanceMaturity
+
         by_name = {
             "U": GovernanceMaturity.UNADDRESSED,
             "E": GovernanceMaturity.EMERGING,
@@ -1536,7 +1718,8 @@ class TestMaturityIndexCalibration:
         return round(sum(MATURITY_STAGE_SCORE[s] for s in stages) / len(stages), 1)
 
     def test_scores_are_monotonic_across_stages(self):
-        from src.gap_analyzer import MATURITY_STAGE_SCORE, MATURITY_RANK
+        from src.gap_analyzer import MATURITY_RANK, MATURITY_STAGE_SCORE
+
         ordered = sorted(MATURITY_RANK, key=lambda s: MATURITY_RANK[s])
         scores = [MATURITY_STAGE_SCORE[s] for s in ordered]
         assert scores == sorted(scores)
@@ -1548,6 +1731,7 @@ class TestMaturityIndexCalibration:
         must not be priced below the step above it."""
         from src.gap_analyzer import MATURITY_STAGE_SCORE as S
         from src.models import GovernanceMaturity as G
+
         duty_step = S[G.DEVELOPING] - S[G.EMERGING]
         enforcement_step = S[G.ESTABLISHED] - S[G.DEVELOPING]
         assert duty_step > enforcement_step

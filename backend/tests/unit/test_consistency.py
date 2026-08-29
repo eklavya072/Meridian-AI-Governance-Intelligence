@@ -1,5 +1,3 @@
-
-
 class TestRiskTableMatchesComputeRisk:
     """The validator's allowed-risk table must accept compute_risk's own output.
 
@@ -12,9 +10,9 @@ class TestRiskTableMatchesComputeRisk:
     """
 
     def test_every_compute_risk_result_is_permitted_by_the_table(self):
-        from src.gap_analyzer import compute_risk, GOVERNANCE_DIMENSIONS
         from src.consistency import RISK_COVERAGE_MAP
-        from src.models import GovernanceGap, CoverageLevel
+        from src.gap_analyzer import GOVERNANCE_DIMENSIONS, compute_risk
+        from src.models import CoverageLevel, GovernanceGap
 
         def gap(dimension, coverage):
             return GovernanceGap(
@@ -33,9 +31,7 @@ class TestRiskTableMatchesComputeRisk:
         for dimension in GOVERNANCE_DIMENSIONS:
             for coverage in (CoverageLevel.PARTIAL, CoverageLevel.MISSING, CoverageLevel.COVERED):
                 for neighbour in assessed:
-                    others = [
-                        gap(d, neighbour) for d in GOVERNANCE_DIMENSIONS if d != dimension
-                    ]
+                    others = [gap(d, neighbour) for d in GOVERNANCE_DIMENSIONS if d != dimension]
                     risk, _ = compute_risk(coverage, dimension, others)
                     allowed = RISK_COVERAGE_MAP.get(coverage)
                     if allowed:

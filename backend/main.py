@@ -2,43 +2,38 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 import uuid
-from datetime import datetime
-import structlog
-from pathlib import Path
 from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
+import structlog
+from dotenv import load_dotenv
 from sqlalchemy import select as sa_select
 from sqlalchemy import text as sa_text
 
-from dotenv import load_dotenv
-
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Response
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.logging_config import setup_logging, log_upload_rejection
-from src.vectorstore import VectorStore
-from src.validation import validate_pdf_file
-from src.gap_analyzer import GapAnalyzer
-from src.brief_generator import generate_executive_brief_text
-from src.workspace import WorkspaceService
-from src.db_models import Base, WorkspaceStatus, ChatSession, ChatMessage, Report
-from src.brief_synthesis import generate_brief as generate_brief_v2, render_brief_markdown
 from src.brief_export import render_docx, render_pdf
-from src.framework_sync import FrameworkSyncService
-from src.framework_library import get_framework_library
-from src.guardrails import Guardrails
-from src.verify import verify_citation
-from src.ingestion import ingest_document
+from src.brief_generator import generate_executive_brief_text
+from src.brief_synthesis import generate_brief as generate_brief_v2
+from src.brief_synthesis import render_brief_markdown
 from src.chat import chat as chat_fn
+from src.db_models import Base, ChatMessage, ChatSession, Report, WorkspaceStatus
+from src.framework_library import get_framework_library
+from src.framework_sync import FrameworkSyncService
+from src.guardrails import Guardrails
+from src.logging_config import log_upload_rejection, setup_logging
+from src.validation import validate_pdf_file
+from src.vectorstore import VectorStore
+from src.workspace import WorkspaceService
 
 setup_logging()
 logger = structlog.get_logger()
@@ -49,9 +44,7 @@ UPLOAD_DIR = Path(__file__).parent / "data" / "uploads"
 # Comma-separated list of allowed browser origins (e.g. "https://app.example.com,http://localhost:3000")
 CORS_ORIGINS = [
     o.strip()
-    for o in os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-    ).split(",")
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
     if o.strip()
 ]
 
@@ -169,9 +162,7 @@ async def lifespan(app: FastAPI):
                 # Already-applied migrations are the normal case here; a real
                 # problem shows up as the next query failing on a missing
                 # column, so log loudly enough to connect the two.
-                logger.warning(
-                    "schema_migration_skipped", migration=name, error=str(exc)
-                )
+                logger.warning("schema_migration_skipped", migration=name, error=str(exc))
     finally:
         await autocommit.close()
 
@@ -276,6 +267,7 @@ app.add_middleware(
 
 # --- Schemas ---
 
+
 class WorkspaceCreate(BaseModel):
     country: str
     policy_title: str
@@ -315,6 +307,7 @@ class BriefRequest(BaseModel):
 
 
 # --- Routes ---
+
 
 @app.get("/api/v1/health")
 async def health():
@@ -362,9 +355,7 @@ async def create_workspace(body: WorkspaceCreate):
             frameworks=workspace.frameworks,
             status=workspace.status.value,
             status_detail=workspace.status_detail,
-            pending_documents=[
-                d.get("file_name", "") for d in (workspace.pending_documents or [])
-            ],
+            pending_documents=[d.get("file_name", "") for d in (workspace.pending_documents or [])],
             created_at=workspace.created_at.isoformat() if workspace.created_at else "",
             updated_at=workspace.updated_at.isoformat() if workspace.updated_at else "",
         )
@@ -383,9 +374,7 @@ async def list_workspaces():
                 frameworks=w.frameworks,
                 status=w.status.value,
                 status_detail=w.status_detail,
-                pending_documents=[
-                    d.get("file_name", "") for d in (w.pending_documents or [])
-                ],
+                pending_documents=[d.get("file_name", "") for d in (w.pending_documents or [])],
                 created_at=w.created_at.isoformat() if w.created_at else "",
                 updated_at=w.updated_at.isoformat() if w.updated_at else "",
             )
@@ -407,9 +396,7 @@ async def get_workspace(workspace_id: str):
             frameworks=workspace.frameworks,
             status=workspace.status.value,
             status_detail=workspace.status_detail,
-            pending_documents=[
-                d.get("file_name", "") for d in (workspace.pending_documents or [])
-            ],
+            pending_documents=[d.get("file_name", "") for d in (workspace.pending_documents or [])],
             created_at=workspace.created_at.isoformat() if workspace.created_at else "",
             updated_at=workspace.updated_at.isoformat() if workspace.updated_at else "",
         )
@@ -490,9 +477,7 @@ async def upload_policy(
         await ws_service.update_status(
             workspace_id,
             WorkspaceStatus.QUEUED,
-            detail=(
-                f"{len(pending)} document(s) ready. Run analysis to start."
-            ),
+            detail=(f"{len(pending)} document(s) ready. Run analysis to start."),
         )
         await ws_service.log_upload(
             filename=file_label,
@@ -723,27 +708,30 @@ async def get_analysis(workspace_id: str):
             # to the frontend so the call-count and decision-analytics cards
             # render instead of reading fields that never arrive.
             metrics = a.ragas_metrics or {}
-            analysis_list.append({
-                "analysis_id": str(a.id),
-                "document_name": a.document_name,
-                "frameworks_used": a.frameworks_used,
-                "governance_gaps": a.governance_gaps or [],
-                "summary": a.summary or "",
-                "total_retrieved": a.total_retrieved or 0,
-                "similarity_scores": a.similarity_scores or [],
-                "llm_latency": a.llm_latency or 0.0,
-                "total_processing_time": a.total_processing_time or 0.0,
-                "generated_by": a.generated_by or {"provider": "unknown", "tier": "unknown"},
-                "llm_call_count": metrics.get("llm_call_count", 0),
-                "tier_stats": metrics.get("tier_stats"),
-                "decision_analytics": metrics.get("decision_analytics"),
-                # Deterministic scope disclaimer + evaluated document list
-                # (multi-doc workspaces: NAIS + Model AI Governance Framework).
-                "scope_disclaimer": (metrics.get("scope_disclaimer") or {})
-                .get("disclaimer", ""),
-                "evaluated_documents": metrics.get("evaluated_documents", []),
-                "created_at": a.created_at.isoformat() if a.created_at else "",
-            })
+            analysis_list.append(
+                {
+                    "analysis_id": str(a.id),
+                    "document_name": a.document_name,
+                    "frameworks_used": a.frameworks_used,
+                    "governance_gaps": a.governance_gaps or [],
+                    "summary": a.summary or "",
+                    "total_retrieved": a.total_retrieved or 0,
+                    "similarity_scores": a.similarity_scores or [],
+                    "llm_latency": a.llm_latency or 0.0,
+                    "total_processing_time": a.total_processing_time or 0.0,
+                    "generated_by": a.generated_by or {"provider": "unknown", "tier": "unknown"},
+                    "llm_call_count": metrics.get("llm_call_count", 0),
+                    "tier_stats": metrics.get("tier_stats"),
+                    "decision_analytics": metrics.get("decision_analytics"),
+                    # Deterministic scope disclaimer + evaluated document list
+                    # (multi-doc workspaces: NAIS + Model AI Governance Framework).
+                    "scope_disclaimer": (metrics.get("scope_disclaimer") or {}).get(
+                        "disclaimer", ""
+                    ),
+                    "evaluated_documents": metrics.get("evaluated_documents", []),
+                    "created_at": a.created_at.isoformat() if a.created_at else "",
+                }
+            )
 
         return {
             "workspace_id": workspace_id,
@@ -816,13 +804,15 @@ async def _save_brief(db, workspace_id: str, brief: dict, markdown: str) -> None
     old = await _load_cached_brief(db, workspace_id)
     if old:
         await db.delete(old)
-    db.add(Report(
-        workspace_id=uuid.UUID(workspace_id),
-        type="executive_brief",
-        content=markdown,
-        meta=brief,
-        created_at=datetime.utcnow(),
-    ))
+    db.add(
+        Report(
+            workspace_id=uuid.UUID(workspace_id),
+            type="executive_brief",
+            content=markdown,
+            meta=brief,
+            created_at=datetime.utcnow(),
+        )
+    )
     await db.commit()
 
 
@@ -945,6 +935,7 @@ async def list_analyses(workspace_id: str):
 
 # --- Chat Schemas ---
 
+
 class ChatRequest(BaseModel):
     workspace_id: str | None = ""  # empty/None = Mode A (general, unscoped)
     message: str
@@ -988,6 +979,7 @@ class ChatSessionResponse(BaseModel):
 
 # --- Chat Routes ---
 
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(body: ChatRequest):
     vs = get_vector_store()
@@ -1016,12 +1008,10 @@ async def chat_endpoint(body: ChatRequest):
 
         if session_id:
             session_uuid = uuid.UUID(session_id) if isinstance(session_id, str) else session_id
-            stmt = (
-                await db.execute(
-                    sa_select(ChatMessage)
-                    .where(ChatMessage.session_id == session_uuid)
-                    .order_by(ChatMessage.created_at)
-                )
+            stmt = await db.execute(
+                sa_select(ChatMessage)
+                .where(ChatMessage.session_id == session_uuid)
+                .order_by(ChatMessage.created_at)
             )
             msgs = stmt.scalars().all()
             history_messages = [{"role": m.role, "content": m.content} for m in msgs]
@@ -1029,9 +1019,7 @@ async def chat_endpoint(body: ChatRequest):
             session_id = str(uuid.uuid4())
             new_session = ChatSession(
                 id=uuid.UUID(session_id),
-                workspace_id=(
-                    uuid.UUID(workspace_id) if workspace_id else None
-                ),
+                workspace_id=(uuid.UUID(workspace_id) if workspace_id else None),
                 mode=mode,
                 title=body.message[:80],
                 created_at=datetime.utcnow(),
@@ -1114,7 +1102,10 @@ async def chat_endpoint(body: ChatRequest):
             citation_pass_count=result.get("citation_pass_count", 0),
             citation_fail_count=result.get("citation_fail_count", 0),
             llm_latency=result.get("llm_latency", 0.0),
-            guardrail_result={"blocked": result.get("blocked", False), "reason": result.get("reason")},
+            guardrail_result={
+                "blocked": result.get("blocked", False),
+                "reason": result.get("reason"),
+            },
             created_at=datetime.utcnow(),
         )
         db.add(msg_user)
@@ -1176,10 +1167,7 @@ async def list_chat_sessions(workspace_id: str = "", mode: str | None = None):
 @app.get("/api/v1/chat/sessions/{session_id}")
 async def get_chat_session(session_id: str):
     async with get_db() as db:
-        stmt = (
-            sa_select(ChatSession)
-            .where(ChatSession.id == uuid.UUID(session_id))
-        )
+        stmt = sa_select(ChatSession).where(ChatSession.id == uuid.UUID(session_id))
         result = await db.execute(stmt)
         session = result.scalar_one_or_none()
         if not session:
@@ -1219,10 +1207,7 @@ async def get_chat_session(session_id: str):
 @app.delete("/api/v1/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str):
     async with get_db() as db:
-        stmt = (
-            sa_select(ChatSession)
-            .where(ChatSession.id == uuid.UUID(session_id))
-        )
+        stmt = sa_select(ChatSession).where(ChatSession.id == uuid.UUID(session_id))
         result = await db.execute(stmt)
         session = result.scalar_one_or_none()
         if not session:
@@ -1234,4 +1219,5 @@ async def delete_chat_session(session_id: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

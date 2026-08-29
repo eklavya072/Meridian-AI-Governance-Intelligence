@@ -8,6 +8,7 @@ the verdicts rest on — all of it already computed and already citation-verifie
 The extra length is DETERMINISTIC. None of these sections passes through the
 LLM, so the brief got longer without the model getting more room to invent.
 """
+
 import pytest
 
 from src.brief_synthesis import (
@@ -18,38 +19,62 @@ from src.brief_synthesis import (
 
 GAPS = [
     {
-        "dimension": "Accountability", "coverage": "Covered",
-        "governance_maturity": "Institutionalized", "confidence_score": 0.80,
+        "dimension": "Accountability",
+        "coverage": "Covered",
+        "governance_maturity": "Institutionalized",
+        "confidence_score": 0.80,
         "risk_basis": "The document imposes 26 binding requirement(s) here, 16 of "
-                      "them backed by supervisory or enforcement powers.",
-        "evidence": [{"text": "Market surveillance authorities shall have the power to "
-                              "require corrective action from providers.", "verified": True}],
+        "them backed by supervisory or enforcement powers.",
+        "evidence": [
+            {
+                "text": "Market surveillance authorities shall have the power to "
+                "require corrective action from providers.",
+                "verified": True,
+            }
+        ],
     },
     {
-        "dimension": "Environmental Sustainability", "coverage": "Partial",
-        "governance_maturity": "Emerging", "confidence_score": 0.73,
+        "dimension": "Environmental Sustainability",
+        "coverage": "Partial",
+        "governance_maturity": "Emerging",
+        "confidence_score": 0.73,
         "risk_basis": "1 binding requirement(s) exist with no enforcement, audit or "
-                      "redress machinery behind them. Not addressed: carbon "
-                      "disclosure, e-waste / hardware lifecycle.",
+        "redress machinery behind them. Not addressed: carbon "
+        "disclosure, e-waste / hardware lifecycle.",
         "evidence": [
-            {"text": "High-risk AI systems shall be designed and developed with resource "
-                     "and energy efficiency in mind throughout their lifecycle.", "verified": True},
+            {
+                "text": "High-risk AI systems shall be designed and developed with resource "
+                "and energy efficiency in mind throughout their lifecycle.",
+                "verified": True,
+            },
             {"text": "short", "verified": True},
-            {"text": "An unverified passage that must never be quoted in the brief.", "verified": False},
+            {
+                "text": "An unverified passage that must never be quoted in the brief.",
+                "verified": False,
+            },
         ],
         "module_3": {
             "responsible_agency": "AI Office",
             "phases": [
-                {"phase": "Phase 1", "timeline": "0-4 months",
-                 "objective": "Establish metrics.", "steps": ["Extend GPAI documentation."]},
-                {"phase": "Phase 2", "timeline": "4-7 months",
-                 "objective": "Operationalise guidance.", "steps": []},
+                {
+                    "phase": "Phase 1",
+                    "timeline": "0-4 months",
+                    "objective": "Establish metrics.",
+                    "steps": ["Extend GPAI documentation."],
+                },
+                {
+                    "phase": "Phase 2",
+                    "timeline": "4-7 months",
+                    "objective": "Operationalise guidance.",
+                    "steps": [],
+                },
             ],
             "monitoring_checklist": ["Documentation contains energy disclosures."],
         },
     },
     {
-        "dimension": "Privacy", "coverage": "Insufficient Evidence",
+        "dimension": "Privacy",
+        "coverage": "Insufficient Evidence",
         "analysis_error": "LLM quota exhausted",
     },
 ]
@@ -59,7 +84,9 @@ class TestDimensionAssessment:
     def test_every_dimension_appears(self):
         rows = build_dimension_assessment(GAPS)
         assert [r["dimension"] for r in rows] == [
-            "Accountability", "Environmental Sustainability", "Privacy"
+            "Accountability",
+            "Environmental Sustainability",
+            "Privacy",
         ]
 
     def test_absent_mechanisms_are_extracted(self):

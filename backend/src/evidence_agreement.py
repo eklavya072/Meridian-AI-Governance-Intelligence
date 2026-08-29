@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-import structlog
 from typing import Any
+
+import structlog
 
 from src.models import EvidenceAgreement, EvidenceItem, EvidencePair
 from src.utils import cosine_similarity, l2_normalize
@@ -15,11 +16,35 @@ CONFLICT_KEYWORD_THRESHOLD = float(os.getenv("CONFLICT_KEYWORD_THRESHOLD", "0.3"
 
 def _contains_negation(text: str) -> bool:
     negation_words = {
-        "not", "no", "never", "nor", "neither", "cannot", "can't",
-        "don't", "doesn't", "didn't", "won't", "wouldn't", "shouldn't",
-        "isn't", "aren't", "wasn't", "weren't", "hasn't", "haven't",
-        "does not", "do not", "will not", "shall not", "must not",
-        "absence", "lack", "without", "fails to", "failure to",
+        "not",
+        "no",
+        "never",
+        "nor",
+        "neither",
+        "cannot",
+        "can't",
+        "don't",
+        "doesn't",
+        "didn't",
+        "won't",
+        "wouldn't",
+        "shouldn't",
+        "isn't",
+        "aren't",
+        "wasn't",
+        "weren't",
+        "hasn't",
+        "haven't",
+        "does not",
+        "do not",
+        "will not",
+        "shall not",
+        "must not",
+        "absence",
+        "lack",
+        "without",
+        "fails to",
+        "failure to",
     }
     text_lower = text.lower()
     for word in negation_words:
@@ -64,8 +89,9 @@ def analyze_evidence_agreement(
     for i in range(len(items)):
         for j in range(i + 1, len(items)):
             a, b = items[i], items[j]
-            pair = _classify_pair(a, b, embeddings[i] if embeddings else None,
-                                 embeddings[j] if embeddings else None)
+            pair = _classify_pair(
+                a, b, embeddings[i] if embeddings else None, embeddings[j] if embeddings else None
+            )
             if pair is not None:
                 pairs.append(pair)
 
