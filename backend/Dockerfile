@@ -29,7 +29,12 @@ FROM python:${PYTHON_VERSION}-slim AS base
 # python-magic is a binding, not a reimplementation: validation.py reads the
 # true content type from the file's bytes rather than trusting an extension
 # or a client-supplied MIME, and that needs the C library present.
+# `upgrade` before `install`: the base image tag lags the security archive,
+# and the first Trivy gate blocked the release on openssl 3.5.6-1~deb13u2
+# (CVE-2026-14456, fix available in 3.5.7-1~deb13u2). Pulling the patched
+# packages here is the fix; allowlisting it would not have been.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -102,6 +107,22 @@ CMD ["pytest", "-q"]
 FROM base AS prod
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin meridian
+
+# The application runs entirely from /opt/venv, so the base image's system
+# pip is never invoked at runtime — and it vendors its own copies of
+# setuptools 70.3.0 and msgpack 1.1.2, both of which carry HIGH advisories
+# (CVE-2025-47273, GHSA-6v7p-g79w-8964) that blocked the first release gate.
+# They were never Meridian dependencies; our locked setuptools is 84.0.0 and
+# nothing depends on msgpack. Removing pip resolves both, drops a package
+# installer from a production image, and makes it smaller.
+RUN python -m pip uninstall -y pip setuptools wheel >/dev/null 2>&1 || true; \
+    rm -rf /usr/local/lib/python*/site-packages/pip \
+           /usr/local/lib/python*/site-packages/pip-* \
+           /usr/local/lib/python*/site-packages/setuptools \
+           /usr/local/lib/python*/site-packages/setuptools-* \
+           /usr/local/lib/python*/site-packages/pkg_resources \
+           /usr/local/lib/python*/site-packages/wheel \
+           /usr/local/lib/python*/site-packages/wheel-*
 
 WORKDIR /app
 

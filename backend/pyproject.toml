@@ -18,49 +18,41 @@ dependencies = [
     "uvicorn[standard]>=0.51.0",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.32",
-
     # Async DB
     "asyncpg>=0.31.0",
     "sqlalchemy[asyncio]>=2.0.51",
-
     # Document parsing. python-magic reads the real content type; the upload
     # path must never trust an extension or a client-supplied MIME.
     "pypdf>=6.14.2",
     "python-magic>=0.4.27",
-
     # Vector store + embeddings
     "chromadb>=1.5.9",
     "sentence-transformers>=5.6.0",
     # Declared explicitly only so [tool.uv.sources] below can pin where it
     # comes from. Nothing imports torch directly; sentence-transformers does.
     "torch>=2.9.0",
-
     # LLM providers. google-genai is the primary path; openai is the client
     # for the Groq and Cerebras endpoints (both OpenAI-compatible) and was
     # imported by llm_provider.py while absent from requirements.txt, so the
     # built image raised ImportError the moment a fallback was needed.
     "google-genai>=2.13.0",
     "openai>=2.46.0",
-
     # Brief export. Both were imported by brief_export.py and undeclared, so
     # PDF and DOCX export were dead in any environment built from the
     # dependency file rather than inherited from a local venv.
     "reportlab>=5.0.0",
     "python-docx>=1.2.0",
-
     # Framework config (config/frameworks.yaml) — read by framework_sync and
     # framework_router, also previously undeclared.
     "pyyaml>=6.0.3",
-
     # Structured logging
     "structlog>=26.1.0",
-
     # HTTP client for framework sync
     "httpx>=0.28.1",
-
     # Utils
     "python-dotenv>=1.2.2",
     "numpy>=2.5.1",
+    "azure-storage-blob>=12.23.0",
 ]
 
 [dependency-groups]

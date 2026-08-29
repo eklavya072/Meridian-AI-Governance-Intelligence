@@ -31,6 +31,7 @@ from src.framework_library import get_framework_library
 from src.framework_sync import FrameworkSyncService
 from src.guardrails import Guardrails
 from src.logging_config import log_upload_rejection, setup_logging
+from src.storage import get_storage
 from src.validation import validate_pdf_file
 from src.vectorstore import VectorStore
 from src.workspace import WorkspaceService
@@ -511,14 +512,18 @@ async def upload_policy(
             },
         )
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = UPLOAD_DIR / f"{uuid.uuid4()}_{file.filename}"
-    file_path.write_bytes(file_bytes)
+    # Through the storage interface rather than straight to container disk.
+    # The reference is what gets persisted on the workspace row; for the
+    # filesystem backend it is the same absolute path as before, so rows
+    # written by older builds keep resolving.
+    storage = get_storage()
+    stored_ref = storage.put(f"{uuid.uuid4()}_{file.filename}", file_bytes)
+    file_path = Path(stored_ref)
     logger.info(
         "stage_1_file_upload_saved",
         filename=file.filename,
         file_size=file_size,
-        saved_path=str(file_path),
+        saved_path=stored_ref,
         workspace_id=workspace_id,
     )
 
@@ -596,9 +601,8 @@ async def auditor_upload(file: UploadFile = File(...)):
             },
         )
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = UPLOAD_DIR / f"{uuid.uuid4()}_{file_name}"
-    file_path.write_bytes(file_bytes)
+    stored_ref = get_storage().put(f"{uuid.uuid4()}_{file_name}", file_bytes)
+    file_path = Path(stored_ref)
 
     async with get_db() as db:
         ws_service = WorkspaceService(db)
@@ -711,8 +715,11 @@ async def run_analysis(
         # Missing files (a wiped uploads dir between restarts) are dropped here
         # rather than failing mid-pipeline, where the workspace would be left
         # in PROCESSING with a stack trace and no obvious way back.
-        missing = [d for d in pending if not Path(d.get("file_path", "")).is_file()]
-        usable = [d for d in pending if Path(d.get("file_path", "")).is_file()]
+        # Asked of the storage backend, not of this container's disk — an
+        # Azure-backed reference is not a local file and never was.
+        storage = get_storage()
+        missing = [d for d in pending if not storage.exists(d.get("file_path", ""))]
+        usable = [d for d in pending if storage.exists(d.get("file_path", ""))]
         if missing:
             logger.warning(
                 "run_analysis_dropped_missing_files",
