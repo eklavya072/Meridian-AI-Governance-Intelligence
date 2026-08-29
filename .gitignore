@@ -64,4 +64,7 @@ htmlcov/
 *.bak
 
 # ── Demo PDFs staged for the landing page (large, unreferenced by code) ─
+# The DIRECTORY must stay tracked (.gitkeep): frontend/Dockerfile does
+# COPY --from=builder /app/public ./public, which fails on a clean clone if
+# nothing in public/ is committed.
 frontend/public/*.pdf
