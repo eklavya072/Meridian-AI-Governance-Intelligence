@@ -155,6 +155,26 @@ def render_docx(brief: dict[str, Any]) -> bytes:
     heading("RISK OVERVIEW")
     body(s["risk_overview"]["paragraph"])
 
+    # Deterministic depth sections (dimension detail, roadmap, evidence).
+    # Rendered from stored analysis, so the exported document carries the same
+    # substance as the on-screen brief rather than a shorter summary of it.
+    rows = s.get("dimension_assessment") or []
+    if rows:
+        heading("DIMENSION ASSESSMENT")
+        for r in rows:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(2)
+            label = f"{r['dimension']} — {r['coverage']}"
+            if r.get("maturity"):
+                label += f" · {r['maturity']}"
+            run = p.add_run(label)
+            run.font.bold = True
+            run.font.color.rgb = ink
+            if r.get("basis"):
+                body(r["basis"])
+            if r.get("absent_mechanisms"):
+                bullet("Not addressed: " + ", ".join(r["absent_mechanisms"]))
+
     heading("PRIORITY RECOMMENDATIONS")
     recs = s["priority_recommendations"]
     if recs:
@@ -169,6 +189,37 @@ def render_docx(brief: dict[str, Any]) -> bytes:
                 rr.font.color.rgb = ink
     else:
         body("No critical gaps identified — no priority actions required.")
+
+    roadmap = s.get("implementation_roadmap") or []
+    if roadmap:
+        heading("IMPLEMENTATION ROADMAP")
+        for item in roadmap:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(2)
+            run = p.add_run(f"{item['dimension']} ({item['coverage']})")
+            run.font.bold = True
+            run.font.color.rgb = ink
+            if item.get("responsible_agency"):
+                body(f"Responsible body: {item['responsible_agency']}")
+            for ph in item["phases"]:
+                label = ph["phase"] or "Phase"
+                if ph.get("timeline"):
+                    label += f" · {ph['timeline']}"
+                body(f"{label} — {ph.get('objective', '')}")
+                for st in ph["steps"]:
+                    bullet(st)
+            for mc in item.get("monitoring") or []:
+                bullet(f"Monitor: {mc}")
+
+    ev = s.get("evidence_base") or {}
+    if ev.get("citations_total"):
+        heading("EVIDENCE BASE")
+        body(
+            f"{ev['citations_verified']} of {ev['citations_total']} citations were "
+            "verified against their source passage."
+        )
+        for q in (ev.get("representative_quotes") or []):
+            bullet(f"{q['dimension']} — \u201c{q['quote']}\u201d")
 
     if s.get("relevant_precedent"):
         heading("RELEVANT PRECEDENT")
@@ -284,6 +335,19 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
     _h1("RISK OVERVIEW")
     _body(s["risk_overview"]["paragraph"])
 
+    rows = s.get("dimension_assessment") or []
+    if rows:
+        _h1("DIMENSION ASSESSMENT")
+        for r in rows:
+            label = f"{r['dimension']} — {r['coverage']}"
+            if r.get("maturity"):
+                label += f" · {r['maturity']}"
+            _h2(label)
+            if r.get("basis"):
+                _body(r["basis"])
+            if r.get("absent_mechanisms"):
+                _bullets(["Not addressed: " + ", ".join(r["absent_mechanisms"])])
+
     _h1("PRIORITY RECOMMENDATIONS")
     recs = s["priority_recommendations"]
     if recs:
@@ -303,6 +367,35 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
         story.append(Spacer(1, 2))
     else:
         _body("No critical gaps identified — no priority actions required.")
+
+    roadmap = s.get("implementation_roadmap") or []
+    if roadmap:
+        _h1("IMPLEMENTATION ROADMAP")
+        for item in roadmap:
+            _h2(f"{item['dimension']} ({item['coverage']})")
+            if item.get("responsible_agency"):
+                _body(f"Responsible body: {item['responsible_agency']}")
+            for ph in item["phases"]:
+                label = ph["phase"] or "Phase"
+                if ph.get("timeline"):
+                    label += f" \u00b7 {ph['timeline']}"
+                _body(f"{label} — {ph.get('objective', '')}")
+                _bullets(ph["steps"])
+            if item.get("monitoring"):
+                _bullets([f"Monitor: {mc}" for mc in item["monitoring"]])
+
+    ev = s.get("evidence_base") or {}
+    if ev.get("citations_total"):
+        _h1("EVIDENCE BASE")
+        _body(
+            f"{ev['citations_verified']} of {ev['citations_total']} citations were "
+            "verified against their source passage."
+        )
+        if ev.get("representative_quotes"):
+            _bullets([
+                f"{q['dimension']} — \u201c{q['quote']}\u201d"
+                for q in ev["representative_quotes"]
+            ])
 
     if s.get("relevant_precedent"):
         _h1("RELEVANT PRECEDENT")
