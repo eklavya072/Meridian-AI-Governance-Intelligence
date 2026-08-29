@@ -1,0 +1,159 @@
+[project]
+name = "meridian-backend"
+version = "1.0.0"
+description = "Meridian — evidence-linked AI governance policy analysis"
+readme = "../README.md"
+license = { file = "../LICENSE" }
+# Pinned, not a floor. requirements.txt pinned nothing transitively, so two
+# installs a week apart could resolve different builds of chromadb or
+# sentence-transformers and move a latency or quality number with no commit
+# to explain it. The lockfile below is the reproducibility guarantee; this
+# line makes sure it is resolved against one interpreter.
+requires-python = ">=3.13,<3.14"
+
+dependencies = [
+    # Web
+    "fastapi>=0.139.2",
+    "uvicorn[standard]>=0.51.0",
+    "pydantic>=2.13.4",
+    "python-multipart>=0.0.32",
+
+    # Async DB
+    "asyncpg>=0.31.0",
+    "sqlalchemy[asyncio]>=2.0.51",
+
+    # Document parsing. python-magic reads the real content type; the upload
+    # path must never trust an extension or a client-supplied MIME.
+    "pypdf>=6.14.2",
+    "python-magic>=0.4.27",
+
+    # Vector store + embeddings
+    "chromadb>=1.5.9",
+    "sentence-transformers>=5.6.0",
+
+    # LLM providers. google-genai is the primary path; openai is the client
+    # for the Groq and Cerebras endpoints (both OpenAI-compatible) and was
+    # imported by llm_provider.py while absent from requirements.txt, so the
+    # built image raised ImportError the moment a fallback was needed.
+    "google-genai>=2.13.0",
+    "openai>=2.46.0",
+
+    # Brief export. Both were imported by brief_export.py and undeclared, so
+    # PDF and DOCX export were dead in any environment built from the
+    # dependency file rather than inherited from a local venv.
+    "reportlab>=5.0.0",
+    "python-docx>=1.2.0",
+
+    # Framework config (config/frameworks.yaml) — read by framework_sync and
+    # framework_router, also previously undeclared.
+    "pyyaml>=6.0.3",
+
+    # Structured logging
+    "structlog>=26.1.0",
+
+    # HTTP client for framework sync
+    "httpx>=0.28.1",
+
+    # Utils
+    "python-dotenv>=1.2.2",
+    "numpy>=2.5.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.0",
+    "mypy>=1.18.0",
+]
+
+[tool.uv]
+# Torch ships as a very large wheel and is pulled in transitively by
+# sentence-transformers. Nothing here needs CUDA, and the CPU build is what
+# both this machine and the container run.
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv", "data", "scripts_rebuild_chroma.py", "scripts_resync_frameworks.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = [
+    # The codebase deliberately uses long explanatory comment blocks above
+    # non-obvious logic; reflowing them adds churn without adding clarity.
+    "E501",
+    # Several call sites bind a loop variable inside a closure intentionally
+    # (dimension callbacks); flagging every one is noise.
+    "B023",
+    # zip(..., strict=) would be a behaviour change, not a cleanup. Every site
+    # pairs vectors that are constructed together (query texts to embeddings,
+    # scores to chunk ids); if one ever came back short, raising mid-analysis
+    # is worse than the current shorter zip, and proving each pair equal-length
+    # is a separate piece of work from a lint pass.
+    "B905",
+    # UP042 wants `class X(str, Enum)` rewritten to StrEnum. These enums are
+    # persisted as Postgres enum labels and serialized into stored analysis
+    # JSON; StrEnum changes __str__ and __format__, so the rewrite risks
+    # moving what lands in the database for a purely stylistic gain.
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on structure, not style; unused imports there are usually a
+# fixture being registered.
+"tests/**" = ["F401", "B011"]
+# main.py calls load_dotenv() before importing anything under src/, and that
+# ordering is load-bearing: modules under src/ read os.getenv into
+# module-level constants at import time (GEMINI_RPM_LIMIT, SEMANTIC_THRESHOLD,
+# LADDER_FLOOR_ENABLED and others), so hoisting the imports above the
+# load_dotenv() call would have them all resolve against an unloaded env.
+# B008 is the FastAPI dependency idiom (File(...), BackgroundTasks()).
+"main.py" = ["E402", "B008"]
+
+[tool.mypy]
+python_version = "3.13"
+# Scoped honestly. These are the modules with no third-party stub gaps and
+# small enough surface that a clean pass is real signal rather than a wall
+# of ignores. The scope widens as modules are typed, and the list is the
+# honest statement of what is checked today — not an aspiration.
+files = [
+    "src/evaluation.py",
+    "src/stability.py",
+    "src/utils.py",
+    "src/validation.py",
+    "src/guardrails.py",
+    "src/framework_library.py",
+    "src/logging_config.py",
+]
+# Report only on the files listed above. Without this mypy follows imports
+# and reports errors in modules that are not in scope yet (chromadb-typed
+# call sites in vectorstore.py, for one), which would make the gate a
+# statement about untyped code rather than about the scope we committed to.
+follow_imports = "silent"
+warn_unused_configs = true
+warn_redundant_casts = true
+no_implicit_optional = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::FutureWarning",
+]
+
+[tool.coverage.run]
+# Module names, not file paths. Listing "main.py" here made coverage treat the
+# backend directory itself as a source root, which put it on the import path a
+# second time and made chromadb's Rust extension load twice —
+# "ImportError: cannot load module more than once per process" on 22 of the
+# test modules, but only under --cov.
+source = ["src", "main"]
+omit = ["tests/*", ".venv/*", "scripts_*.py"]
+
+[tool.coverage.report]
+show_missing = true
