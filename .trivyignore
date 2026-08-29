@@ -1,0 +1,20 @@
+# Trivy allowlist.
+#
+# Rules for this file:
+#   1. Every entry carries a CVE, a reason, and an expiry date.
+#   2. An entry expires. Trivy stops honouring it after `exp:`, so a
+#      suppression cannot quietly become permanent.
+#   3. "It is noisy" is not a reason. The reason must say why the
+#      vulnerability is not exploitable in Meridian specifically, or what is
+#      blocking the upgrade and when it is expected.
+#
+# The release gate already passes `--ignore-unfixed`, so anything without an
+# available patch is out of scope and does not belong here. This file is only
+# for vulnerabilities that DO have a fix which we are consciously deferring.
+#
+# Format:
+#   CVE-YYYY-NNNNN exp:YYYY-MM-DD
+#   # why, and what unblocks it
+#
+# Currently empty — nothing has been consciously accepted. The counts from
+# the first scan are recorded in docs/MEASUREMENTS.md.

@@ -1,0 +1,218 @@
+name: Release
+
+# On merge to the default branch: build the production image, scan it, and
+# publish it to GHCR as a public package with an SBOM attached.
+#
+# Deliberately separate from ci.yml. CI is the gate that must stay fast and
+# green on every PR; this is the pipeline that produces an artifact the world
+# can pull. A slow scan or a registry outage should never turn the CI badge
+# red on a pull request.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/meridian
+
+jobs:
+  publish:
+    name: build · scan · push
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # attach the SBOM to a release when one is tagged
+      packages: write # push to GHCR
+      security-events: write # upload Trivy findings to the Security tab
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The built-in GITHUB_TOKEN with packages:write is enough — no personal
+      # access token, so nothing long-lived exists to leak or rotate.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+          labels: |
+            org.opencontainers.image.title=Meridian
+            org.opencontainers.image.description=Evidence-linked AI governance policy analysis
+            org.opencontainers.image.licenses=MIT
+
+      # Built once, loaded locally, and scanned BEFORE it is pushed. Scanning
+      # after the push would mean a HIGH/CRITICAL finding fails the job with
+      # the vulnerable image already public.
+      - name: Build the prod image (amd64, for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          target: prod
+          platforms: linux/amd64
+          load: true
+          tags: meridian:scan
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Report the image size
+        run: |
+          bytes=$(docker image inspect meridian:scan --format '{{.Size}}')
+          awk -v b="$bytes" 'BEGIN { printf "prod image: %.0f MB\n", b/1024/1024 }'
+
+      # ── Vulnerability scan ────────────────────────────────────────────
+      # Run twice on purpose. The first is informational and always records
+      # the full count, so the numbers in docs/MEASUREMENTS.md come from a
+      # real run. The second is the gate.
+      - name: Trivy scan (full inventory, informational)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: meridian:scan
+          format: table
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "0"
+          output: trivy-full.txt
+
+      - name: Show the full inventory
+        run: |
+          echo "### Trivy — full inventory" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -c 60000 trivy-full.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat trivy-full.txt
+
+      - name: Trivy scan (gate — fails on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: meridian:scan
+          format: table
+          severity: HIGH,CRITICAL
+          # Unfixed vulnerabilities are ignored deliberately: a HIGH in a base
+          # image with no available patch is not something this repository can
+          # act on, and failing the release on it would only teach us to add a
+          # blanket allowlist. Everything with a fix available is a hard fail.
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      - name: Trivy scan (SARIF for the Security tab)
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: meridian:scan
+          format: sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+          output: trivy-results.sarif
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-image
+
+      # ── SBOM ──────────────────────────────────────────────────────────
+      - name: Generate an SBOM with syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: meridian:scan
+          format: spdx-json
+          output-file: meridian-sbom.spdx.json
+          upload-artifact: false
+
+      - name: Summarise the SBOM
+        run: |
+          python3 - <<'PY'
+          import json
+          doc = json.load(open("meridian-sbom.spdx.json"))
+          pkgs = doc.get("packages", [])
+          print(f"SBOM: {len(pkgs)} packages, SPDX {doc.get('spdxVersion')}")
+          with open("sbom-summary.txt", "w") as fh:
+              fh.write(f"{len(pkgs)} packages\n")
+          PY
+          cat sbom-summary.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the SBOM and scan report as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-and-scan
+          path: |
+            meridian-sbom.spdx.json
+            trivy-full.txt
+            trivy-results.sarif
+          if-no-files-found: error
+
+      # ── Publish ───────────────────────────────────────────────────────
+      # Only reached when the gate above passed. Multi-arch so the published
+      # image runs on both x86 servers and Apple Silicon.
+      - name: Build and push (multi-arch)
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          target: prod
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Record what was published
+        run: |
+          {
+            echo "### Published"
+            echo ""
+            echo '```'
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            echo '```'
+            echo ""
+            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
+            echo ""
+            echo "Tags:"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Attach the SBOM to the GitHub Release when this run is for a tag.
+      - name: Attach the SBOM to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            meridian-sbom.spdx.json
+            trivy-full.txt
