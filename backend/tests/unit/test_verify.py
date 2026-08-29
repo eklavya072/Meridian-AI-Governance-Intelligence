@@ -95,6 +95,49 @@ class TestPageExistsCheck:
         )
         assert result.passed is False
 
+    def test_workspace_document_citation_exceeding_length_fails(self):
+        """document_total_pages bounds a citation that genuinely comes FROM
+        the uploaded workspace document (chunk carries a workspace_id) — the
+        claimed page really can't exist in a document that short."""
+        vs = MockVectorStore()
+        vs.add_chunk(
+            "chunk_own_doc", "Some text",
+            {"page_number": "50", "workspace_id": "ws-123"},
+        )
+        result = verify_citation(
+            chunk_id="chunk_own_doc",
+            claim_text="Some text",
+            page_number=50,
+            source_framework="",
+            vector_store=vs,
+            document_total_pages=10,
+        )
+        assert result.page_exists is False
+        assert "exceeds document length" in (result.failure_reason or "")
+
+    def test_framework_citation_exceeding_uploaded_doc_length_still_passes(self):
+        """Regression: a citation to a FRAMEWORK chunk (no workspace_id —
+        shared corpus chunks are never workspace-scoped) must NOT be
+        rejected against the unrelated uploaded document's page count. Real
+        bug: a genuine page-89 citation into a 144-page framework was
+        rejected as "exceeds document length" against a 20-36 page uploaded
+        policy it has nothing to do with."""
+        vs = MockVectorStore()
+        vs.add_chunk(
+            "chunk_framework", "Some text",
+            {"page_number": "89", "framework": "EU AI Act"},
+        )
+        result = verify_citation(
+            chunk_id="chunk_framework",
+            claim_text="Some text",
+            page_number=89,
+            source_framework="EU AI Act",
+            vector_store=vs,
+            document_total_pages=20,
+        )
+        assert result.page_exists is True
+        assert result.failure_reason is None or "exceeds document length" not in result.failure_reason
+
 
 class TestTextSupportsClaim:
     def test_text_directly_supports_claim(self):
@@ -164,3 +207,68 @@ class TestAllChecksPass:
         assert result.chunk_exists is True
         assert result.page_exists is True
         assert result.text_supports_claim is True
+
+
+class TestCitationSeverity:
+    """Fabricated and merely-unretrieved citations are different failures."""
+
+    # Recitals are numbered "(70)" in the operative text, and PDF extraction
+    # splits "Article" into "Ar ticle" throughout the EU AI Act — both are
+    # exercised here so the classifier is not quietly matching on neither.
+    DOCUMENT = (
+        "Ar ticle 10 concerns data and data governance for high-r isk systems. "
+        "(71) Having comprehensible information on how high-risk AI systems "
+        "have been developed is essential to enable traceability."
+    )
+    RETRIEVED = "The provider shall keep records enabling traceability."
+
+    def test_real_but_unretrieved_citation_is_unsupported_not_fabricated(self):
+        from src.verify import classify_narrative_citations
+        out = classify_narrative_citations(
+            ["Article 10 requires examination for biases."],
+            self.RETRIEVED,
+            self.DOCUMENT,
+        )
+        assert out["unsupported"] == ["Article 10"]
+        assert out["fabricated"] == []
+
+    def test_ocr_split_headings_do_not_read_as_fabrication(self):
+        """The document says "Ar ticle 10"; a naive check calls that invented."""
+        from src.verify import classify_narrative_citations
+        out = classify_narrative_citations(
+            ["Article 10 applies."], self.RETRIEVED, self.DOCUMENT
+        )
+        assert "Article 10" not in out["fabricated"]
+
+    def test_recital_parenthesised_form_is_recognised(self):
+        from src.verify import classify_narrative_citations
+        out = classify_narrative_citations(
+            ["Recital 71 underscores traceability."], self.RETRIEVED, self.DOCUMENT
+        )
+        assert out["unsupported"] == ["Recital 71"]
+
+    def test_number_absent_from_the_document_is_fabricated(self):
+        from src.verify import classify_narrative_citations
+        out = classify_narrative_citations(
+            ["Article 999 mandates carbon reporting."], self.RETRIEVED, self.DOCUMENT
+        )
+        assert out["fabricated"] == ["Article 999"]
+        assert out["unsupported"] == []
+
+    def test_without_a_document_nothing_is_called_invented(self):
+        """No document to check against must not produce false accusations."""
+        from src.verify import classify_narrative_citations
+        out = classify_narrative_citations(
+            ["Article 10 applies."], self.RETRIEVED, ""
+        )
+        assert out["fabricated"] == []
+        assert out["unsupported"] == ["Article 10"]
+
+    def test_citation_backed_by_retrieved_evidence_is_not_flagged(self):
+        from src.verify import classify_narrative_citations
+        out = classify_narrative_citations(
+            ["Article 10 requires data governance."],
+            "Article 10 requires data governance measures.",
+            self.DOCUMENT,
+        )
+        assert out == {"fabricated": [], "unsupported": []}

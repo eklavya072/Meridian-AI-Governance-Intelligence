@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 import os
 import structlog
+from functools import lru_cache
 from typing import Any
 
 from pydantic import BaseModel
@@ -116,7 +118,19 @@ def verify_citation(
             failures.append(
                 f"Claimed page {page_number} does not match stored page {chunk_page}."
             )
-    if document_total_pages and page_number:
+    # document_total_pages is the UPLOADED POLICY's own page count — it must
+    # only bound citations that actually come FROM that document. A chunk
+    # carries a workspace_id only when it was ingested as part of a
+    # workspace's uploaded document; shared corpus/framework chunks (EU AI
+    # Act, NIST, CDEI, ...) never do, regardless of which workspace cites
+    # them. Without this guard, a correct citation to page 89 of a 144-page
+    # framework was rejected as "exceeds document length" against an
+    # unrelated 20-36 page uploaded policy — a false negative on the
+    # framework citation, not a real problem with it (confirmed live: every
+    # rejected citation this bug produced had a high semantic-similarity
+    # score, i.e. genuinely supported the claim).
+    chunk_belongs_to_workspace_document = bool(chunk_metadata.get("workspace_id"))
+    if document_total_pages and page_number and chunk_belongs_to_workspace_document:
         if page_number > document_total_pages:
             page_exists = False
             failures.append(f"Page {page_number} exceeds document length ({document_total_pages} pages).")
@@ -409,3 +423,211 @@ def verify_gap_analysis_citations(
         verified_evidence.append(ev_entry)
 
     return verified_evidence
+
+
+# ── Narrative citation-number validation ─────────────────────────────────
+# Chunk-level verification (above) confirms a cited chunk_id exists and
+# supports the claim. It does NOT check the article/recital NUMBERS the model
+# writes into prose, and those were measured to be the weakest link: on a real
+# EU AI Act run the model produced article numbers that were all genuine, but
+# recital numbers that were confabulated — a plausible number within ±2 of the
+# correct one, attached to a real obligation the model knew existed.
+#
+# Format matters. Recitals appear in the source as a bare "(70)" rather than
+# "Recital 70", so a naive check flags correct citations as invented. Each
+# citation kind is therefore matched in the form the instrument actually uses.
+
+# How legal and policy instruments number their internal divisions. The list
+# is deliberately wider than EU statutory vocabulary: Japan's AI Guidelines
+# use "Part", India's rules use "Chapter" and "Clause", and treating
+# Article/Recital/Section as the whole world is what produced a model writing
+# "Section 4" about a document whose divisions are Parts. See
+# detect_division_vocabulary.
+DIVISION_KINDS = (
+    "Article", "Recital", "Annex", "Section", "Part", "Chapter",
+    "Clause", "Paragraph", "Schedule", "Rule", "Principle",
+)
+
+# Sub-references, NOT independently citable divisions. "Article 10, paragraph 2"
+# is one reference; checking "Paragraph 2" on its own asks whether a document
+# contains a top-level Paragraph 2, which is not what the model meant and not a
+# question worth answering. The EU AI Act contains the string 27 times and it
+# was still reported as an unverified citation.
+#
+# They stay in DIVISION_KINDS because detect_division_vocabulary reads the
+# DOCUMENT, where "Paragraph 3" as a heading is real; they are excluded only
+# from the narrative check, which reads the model's prose.
+_SUBREFERENCE_KINDS = frozenset({"Clause", "Paragraph"})
+
+_NARRATIVE_CITATION_RE = re.compile(
+    r"\b("
+    + "|".join(k for k in DIVISION_KINDS if k not in _SUBREFERENCE_KINDS)
+    + r")\s+([0-9]{1,3})\b",
+    re.IGNORECASE,
+)
+
+
+_DOCUMENT_DIVISION_RE = re.compile(
+    r"\b("
+    + "|".join(r"\s*".join(ch for ch in kind) for kind in DIVISION_KINDS)
+    + r")\s*([0-9]{1,3})\b",
+    re.IGNORECASE,
+)
+
+
+def detect_division_vocabulary(texts: list[str], limit: int = 3) -> list[str]:
+    """Which division words this document ACTUALLY numbers its parts with.
+
+    Returns e.g. ["Part"] for Japan's AI Guidelines, ["Article", "Recital"]
+    for the EU AI Act — ordered by how often each form occurs, most common
+    first.
+
+    This exists because the model was being told to "cite article, section or
+    recital numbers", a closed vocabulary that does not include "Part". Given
+    a document organised into Parts and an instruction permitting only those
+    three words, the model did the reasonable thing and mapped Part 4 onto the
+    nearest allowed word, writing "Section 4" for a document containing zero
+    occurrences of "Section". That is not the model inventing a provision — it
+    is us prescribing the wrong vocabulary and the model complying.
+
+    Detected from the document's own text so the instruction can name the form
+    the document really uses, instead of guessing.
+    """
+    if not texts:
+        return []
+    counts: dict[str, int] = {}
+    for text in texts:
+        if not text:
+            continue
+        # OCR-tolerant, because this reads the DOCUMENT rather than the model's
+        # prose. The EU AI Act extracts as "Ar ticle" throughout, so a strict
+        # pattern reports its vocabulary as Paragraph/Section and misses the
+        # Articles the regulation is actually built from.
+        # (_NARRATIVE_CITATION_RE stays strict — it parses clean model output.)
+        for match in _DOCUMENT_DIVISION_RE.finditer(text):
+            kind = re.sub(r"\s+", "", match.group(1)).title()
+            counts[kind] = counts.get(kind, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [kind for kind, _ in ranked[:limit]]
+
+
+# Legal instruments overwhelmingly number their divisions as bare ordinals:
+# "4. Fairness and Equity" in the India AI Governance Guidelines, "38. (1) The
+# provisions of this Act" in the DPDP Act. The division WORD appears only in
+# running prose ("the seven principles", "under section 5"), so a check that
+# demands the literal string "Principle 4" confirms a citation only when the
+# document happens to cross-reference that division somewhere else — an
+# accident of drafting, not evidence. On the India run this reported Principle
+# 4, Principle 6 and Section 4 as invented when all three are real and were
+# read correctly, the same class of error as the closed citation vocabulary
+# that detect_division_vocabulary was written to fix.
+_ENUMERATED_DIVISION_RE = re.compile(r"(?:^|[\n\r\s])([0-9]{1,3})\s*\.\s+(?=[A-Z(])")
+
+
+@lru_cache(maxsize=8)
+def _enumerated_ordinals(corpus_text: str) -> frozenset[str]:
+    """Division numbers the document enumerates as bare headings."""
+    return frozenset(
+        m.group(1) for m in _ENUMERATED_DIVISION_RE.finditer(corpus_text)
+    )
+
+
+def _citation_present(kind: str, number: str, corpus_text: str) -> bool:
+    """True when a cited article/recital number really occurs in the source."""
+    from src.utils import ocr_flexible_fragment
+
+    kind_l = kind.lower()
+    patterns = [ocr_flexible_fragment(kind_l) + r"\s*" + number + r"\b"]
+    if kind_l == "recital":
+        # Recitals are numbered "(70)" in the operative text.
+        patterns.append(r"\(\s*" + number + r"\s*\)")
+    for p in patterns:
+        if re.search(p, corpus_text, re.IGNORECASE):
+            return True
+    # Both halves are required. Without the vocabulary check any numbered list
+    # would clear a citation to a division kind the document does not contain,
+    # which would leave the check unable to catch a genuinely invented number.
+    # This is also why callers pass documents SEPARATELY rather than joined:
+    # the Guidelines enumerate exactly 1-7 (the seven sutras), so "Principle 8"
+    # is caught against them alone, but concatenating the 44-section DPDP Act
+    # would lend it an ordinal 8 and clear it.
+    if re.search(ocr_flexible_fragment(kind_l) + r"s?\b", corpus_text, re.IGNORECASE):
+        return number in _enumerated_ordinals(corpus_text)
+    return False
+
+
+def classify_narrative_citations(
+    narrative_texts: list[str],
+    retrieved_text: str,
+    document_text: str | list[str] = "",
+) -> dict[str, list[str]]:
+    """Split unverifiable citation numbers by how wrong they actually are.
+
+    find_unverifiable_citations answers one question — "is this number in the
+    passages the model was shown?" — and lumps two very different failures
+    together:
+
+      fabricated   the number appears NOWHERE in the uploaded document. The
+                   model invented it. A reader who looks it up finds nothing.
+      unsupported  the number is real and IS in the document, but was not in
+                   the evidence retrieved for this dimension, so the model
+                   wrote it from memory rather than from what it was shown.
+                   Often still correct, but nothing here proves it.
+
+    Measured on a live EU AI Act run: of four flagged citations, one (Article
+    10, on data governance and bias examination) was real and correct but
+    unretrieved, two were real provisions attached to the wrong dimension, and
+    one pointed at an article of a DIFFERENT regulation. Reporting all four
+    with the same severity hides which is which.
+
+    `document_text` is optional: with no document to compare against, every
+    flagged citation is reported as unsupported rather than being
+    optimistically cleared or pessimistically called invented. Pass a LIST to
+    keep each document's division numbering separate — see _citation_present
+    for why joining them weakens the check.
+    """
+    flagged = find_unverifiable_citations(narrative_texts, retrieved_text)
+    if not flagged:
+        return {"fabricated": [], "unsupported": []}
+    documents = [document_text] if isinstance(document_text, str) else list(document_text)
+    documents = [d for d in documents if d]
+    if not documents:
+        return {"fabricated": [], "unsupported": flagged}
+
+    fabricated: list[str] = []
+    unsupported: list[str] = []
+    for label in flagged:
+        kind, _, number = label.rpartition(" ")
+        # Same matcher as the retrieved-text check, so a citation is never
+        # called invented merely because the document spells it differently
+        # (OCR splits "Article" into "Ar ticle" throughout the EU AI Act).
+        if any(_citation_present(kind, number, doc) for doc in documents):
+            unsupported.append(label)
+        else:
+            fabricated.append(label)
+    return {"fabricated": fabricated, "unsupported": unsupported}
+
+
+def find_unverifiable_citations(
+    narrative_texts: list[str],
+    corpus_text: str,
+) -> list[str]:
+    """Citation numbers in the narrative that do not occur in the source text.
+
+    Returns e.g. ["Recital 71"] — numbers the model wrote that cannot be
+    located in the retrieved passages, so a reader should not rely on them.
+    """
+    if not corpus_text:
+        return []
+    seen: set[str] = set()
+    unverifiable: list[str] = []
+    for text in narrative_texts:
+        for match in _NARRATIVE_CITATION_RE.finditer(text or ""):
+            kind, number = match.group(1).title(), match.group(2)
+            label = f"{kind} {number}"
+            if label in seen:
+                continue
+            seen.add(label)
+            if not _citation_present(kind, number, corpus_text):
+                unverifiable.append(label)
+    return unverifiable
