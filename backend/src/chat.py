@@ -14,7 +14,9 @@ from __future__ import annotations
 import json
 import re
 import time
+import os
 import structlog
+from collections import OrderedDict
 from typing import Any
 
 from src.guardrails import Guardrails, SCOPE_MESSAGE
@@ -24,6 +26,7 @@ from src.governance_advisor import (
     generate_response,
     build_concept_response,
     build_educational_response,
+    _gap_to_finding_context,
     Intent,
     SessionContext,
 )
@@ -33,8 +36,21 @@ from src.document_overview import (
     build_overview_prompt,
     build_overview_system_prompt,
     is_document_specific_question,
+    needs_full_analysis,
 )
-from src.verify import verify_chat_citation, verify_citation
+from src.meridian_facts import (
+    build_self_knowledge_context,
+    is_method_question,
+)
+from src.analysis_brief import (
+    build_analysis_overview_context,
+    is_analysis_overview_question,
+)
+from src.verify import (
+    verify_chat_citation,
+    verify_citation,
+    classify_narrative_citations,
+)
 
 logger = structlog.get_logger()
 
@@ -85,16 +101,25 @@ def build_auditor_greeting() -> str:
     (Guardrails block greetings by default, so this bot answers them
     directly instead.)"""
     return (
-        "Hello! I'm the AI Auditor — one bot for both sides of an AI policy "
-        "assessment. Upload an AI policy PDF and I can summarize it or answer "
-        "what it actually says, and I can also answer general questions about "
-        "the governance dimensions and the international frameworks we evaluate "
-        "against (UNESCO, OECD, EU AI Act, NIST AI RMF, UN, UNDP, ASEAN, "
-        "African Union).\n\nTry asking:\n"
-        "• Upload a policy PDF, then: \"Summarize this policy\"\n"
-        "• \"What does this document say about transparency?\"\n"
-        "• \"How does the EU AI Act classify high-risk AI?\"\n"
-        "• \"What does NIST AI RMF say about accountability?\""
+        "Hello! I'm the AI Auditor. I answer three kinds of question:\n\n"
+        "**AI governance concepts** — what transparency or safety actually means, "
+        "what the governance dimensions cover, how binding force differs from "
+        "coverage.\n\n"
+        "**The frameworks** — all 33 sources in the knowledge base, including "
+        "UNESCO, the OECD AI Principles, the EU AI Act, NIST AI RMF, the G7 "
+        "Hiroshima process, ASEAN and the African Union: what each says on a "
+        "topic, and where they disagree.\n\n"
+        "**Meridian itself** — why eight dimensions, how a verdict is decided, "
+        "what the tool cannot see.\n\n"
+        "Upload a policy PDF and I'll also answer what that document says, and "
+        "quote it back to you.\n\nTry asking:\n"
+        "• \"Why eight dimensions and not more?\"\n"
+        "• \"What does NIST AI RMF say about accountability?\"\n"
+        "• \"How does the G7 Hiroshima process handle safety?\"\n"
+        "• Upload a PDF, then: \"Where does this mention environmental rules?\"\n\n"
+        "For scoring a document — how it compares against a framework, what it "
+        "should improve — run it through the Analysis section; that produces the "
+        "graded verdicts a chat answer can't."
     )
 
 
@@ -112,6 +137,43 @@ def build_framework_qa_greeting() -> str:
         "• How does the EU AI Act classify high-risk AI?\n"
         "• What is the difference between the OECD AI Principles and the EU AI Act?\n"
         "• What are the five NIST AI RMF functions?"
+    )
+
+
+def build_full_analysis_referral(has_document: bool) -> str:
+    """Point a scoring question at the pipeline that can actually score.
+
+    Deliberately not an LLM call. The answer does not depend on the question's
+    wording, it returns instantly — which is the cheapest latency win
+    available — and hard-coding it removes any chance of the model talking
+    itself into a verdict on the way past.
+    """
+    if has_document:
+        return (
+            "That needs a full analysis rather than a chat answer — comparing a "
+            "document against a framework, saying what it should improve, or "
+            "laying out an implementation plan all rest on the per-dimension "
+            "verdicts, and I would only be guessing at those from a handful of "
+            "retrieved passages.\n\n"
+            "Run it through the **Analysis** section instead. Upload the document "
+            "to a workspace there and start a run: it scores all eight governance "
+            "dimensions, grades each finding for normative force, and produces the "
+            "gap breakdown, the recommendations and the implementation roadmap "
+            "with citations back to the text. Once that run finishes, the AI "
+            "Rapporteur beside the results will answer this properly.\n\n"
+            "In the meantime I can tell you what this document actually says on "
+            "any topic — ask me directly and I will quote it."
+        )
+    return (
+        "That needs a full analysis rather than a chat answer, and no document is "
+        "loaded here yet.\n\n"
+        "Upload the policy in the **Analysis** section and start a run — it scores "
+        "all eight governance dimensions, grades each finding for normative force, "
+        "and returns the gaps, recommendations and roadmap with citations. The AI "
+        "Rapporteur beside those results will then answer comparison and "
+        "improvement questions from the real verdicts.\n\n"
+        "I can still answer general governance questions, or anything about the "
+        "frameworks in the knowledge base, right now."
     )
 
 
@@ -244,7 +306,27 @@ def build_system_prompt() -> str:
         "6. For every factual claim from the retrieved context, cite the source "
         "in EXACTLY this format, on its own line: "
         '[Framework Name]: "exact text"\n\n'
-        "Keep answers focused and substantive. Do not add unnecessary preamble."
+        "Format:\n"
+        "- Lead with the answer. No preamble, no restating the question, no "
+        "closing offer of further help.\n"
+        "- Short paragraphs. Use a bullet list when you are genuinely "
+        "enumerating things; never bullet a single item.\n"
+        "- **Bold** only load-bearing terms: a named body, an instrument, a "
+        "provision reference, a verdict. Two or three per answer at most — "
+        "bolding everything is the same as bolding nothing.\n"
+        "- No headings unless the answer really has two or more distinct "
+        "sections. Never use a heading in a short reply.\n"
+        "- Plain sentences, no tables, no ASCII art.\n\n"
+        "Say what is true, including when it is inconvenient: if the evidence "
+        "is thin, say so in a sentence rather than padding the answer to look "
+        "complete.\n\n"
+        "CORRECT FALSE PREMISES BEFORE ANSWERING. A question often asserts a "
+        "verdict — \"why is Safety partial\", \"why did Privacy fail\". If the "
+        "stored analysis says otherwise, say so in the first sentence and then "
+        "answer the corrected question. Never argue for a verdict the analysis "
+        "did not reach because the question assumed it; a reader who leaves "
+        "believing a dimension is Partial when it was scored Covered has been "
+        "misled, and agreeing with them is the easiest way to do it."
     )
 
 
@@ -256,8 +338,22 @@ def build_llm_enrichment_prompt(
     dimension: str | None,
     drill_down_context: str | None = None,
     history: list[dict[str, str]] | None = None,
+    method_context: str | None = None,
+    analysis_context: str | None = None,
 ) -> str:
     parts = []
+    # Method and analysis context go FIRST, ahead of the advisor's template
+    # reply. Both are authoritative — one is the instrument describing itself,
+    # the other is what the pipeline already computed — whereas the base
+    # response is a generic scaffold. Leading with the scaffold invited the
+    # model to elaborate it and then contradict the figures further down.
+    if method_context:
+        parts.append(method_context)
+        parts.append("")
+    if analysis_context:
+        parts.append(analysis_context)
+        parts.append("")
+
     parts.append("--- Advisor Base Response ---")
     parts.append(advisor_reply)
     parts.append("")
@@ -289,11 +385,51 @@ def build_llm_enrichment_prompt(
     parts.append("--- User Question ---")
     parts.append(user_message)
     parts.append("")
+
+    if method_context or analysis_context or drill_down_context:
+        # The base response is a generic template the advisor layer produces
+        # before any of this context exists. Told to "refine" it, the model
+        # padded it out and left the real figures unused, so on these two
+        # paths it is explicitly demoted to tone reference only.
+        source = []
+        if method_context:
+            source.append("the description of how Meridian works")
+        if analysis_context:
+            source.append("the computed verdicts of the open analysis")
+        if drill_down_context:
+            source.append("the finding's own reasoning trail and evidence")
+        parts.append(
+            f"Answer from {' and '.join(source)} above. Those sections are "
+            "authoritative — prefer them over the advisor base response, which "
+            "is a generic template and may be a non-answer. Never say the "
+            "context lacks an evaluation or scorecard when a section above "
+            "supplies one.\n\n"
+            "CHECK THE QUESTION'S PREMISE FIRST. If it asserts a coverage level, "
+            "stage or risk that the sections above contradict, correct it in the "
+            "opening sentence and answer the corrected question. Do not "
+            "reconstruct a case for a verdict the analysis did not reach.\n\n"
+            "State figures exactly as given; do not round, recompute, or invent "
+            "one that is absent. Where the question asks WHY, give the reasoning "
+            "the sections above actually record rather than a plausible-sounding "
+            "rationale of your own."
+        )
+    else:
+        parts.append(
+            "Using the advisor base response and the retrieved context above, "
+            "refine and enrich your answer. Add specific evidence citations where "
+            "available. Maintain the same conversational, expert tone. "
+            "If the retrieved context doesn't add value, keep the base response."
+        )
+
+    parts.append("")
     parts.append(
-        "Using the advisor base response and the retrieved context above, "
-        "refine and enrich your answer. Add specific evidence citations where "
-        "available. Maintain the same conversational, expert tone. "
-        "If the retrieved context doesn't add value, keep the base response."
+        "Be CONCISE: answer in under ~140 words unless the user explicitly asks "
+        "for detail, and include only the most relevant citations. A short, "
+        "precise answer beats a long one.\n\n"
+        "Keep the formatting rules from the system prompt: answer first, short "
+        "paragraphs, bullets only for real lists, **bold** on two or three "
+        "load-bearing terms at most. Do not restate the question, and do not "
+        "end with an offer of further help."
     )
     return "\n".join(parts)
 
@@ -342,16 +478,43 @@ def _known_framework_names(vector_store) -> list[str]:
     verification. Both are legitimate citation targets: Mode A/C cite the
     framework knowledge base, Mode C can also cite the workspace document.
 
-    Cached for 5 minutes: chat is high-frequency and a full-store scan per
-    message is wasteful; the set only changes on sync/ingest."""
+    Keyed on the collection size rather than a 5-minute clock. The old TTL
+    meant that every five minutes some unlucky message paid for TWO full
+    paged scans of the store — 37k chunks, ~1000 rows a page, once for
+    framework names and again for document names — inside the request. The set
+    only changes when something is ingested or purged, and both move the total,
+    so the size is both a correct and a much cheaper invalidation signal.
+
+    The two scans are also now one pass: they read the same metadata."""
     global _known_source_cache
-    now = time.time()
-    if _known_source_cache and (now - _known_source_cache[0]) < 300:
+    try:
+        size = vector_store.collection.count()
+    except Exception:
+        return []
+    if _known_source_cache and _known_source_cache[0] == size:
         return _known_source_cache[1]
     try:
-        names = list(vector_store.get_all_frameworks())
-        names.extend(vector_store.get_all_document_names())
-        _known_source_cache = (now, names)
+        frameworks: set[str] = set()
+        documents: set[str] = set()
+        offset = 0
+        while True:
+            rows = vector_store.collection.get(
+                include=["metadatas"], limit=5000, offset=offset
+            )
+            metadatas = rows.get("metadatas") or []
+            if not metadatas:
+                break
+            for m in metadatas:
+                fw = (m or {}).get("framework") or ""
+                if fw:
+                    frameworks.add(fw)
+                dn = (m or {}).get("document_name") or ""
+                if dn:
+                    documents.add(dn)
+            offset += len(metadatas)
+        names = sorted(frameworks) + sorted(documents)
+        _known_source_cache = (size, names)
+        logger.info("known_source_names_cached", collection_size=size, names=len(names))
         return names
     except Exception:
         return []
@@ -499,14 +662,36 @@ def verify_document_overview_citations(
     return citations, cit_pass, cit_fail
 
 
-# Global session context (per session — could be stored in DB for persistence)
-_session_contexts: dict[str, SessionContext] = {}
+# In-process conversational state (active dimension, last intent, recent
+# turns). The DURABLE record of a conversation is the chat_sessions /
+# chat_messages tables; this only carries the working state that resolves
+# follow-up questions, and is expected to be lost on restart.
+#
+# Bounded because it never was: entries were created per session id and never
+# removed, so a long-lived process accumulated one SessionContext for every
+# conversation it had ever seen, each holding up to six messages plus a
+# finding context. That is a slow leak in a server designed to stay up.
+_SESSION_CONTEXT_LIMIT = int(os.getenv("CHAT_SESSION_CONTEXT_LIMIT", "500"))
+_session_contexts: "OrderedDict[str, SessionContext]" = OrderedDict()
 
 
 def _get_session(session_id: str) -> SessionContext:
-    if session_id not in _session_contexts:
-        _session_contexts[session_id] = SessionContext()
-    return _session_contexts[session_id]
+    """Working state for a session, evicting least-recently-used entries.
+
+    Eviction only discards in-memory follow-up context; the conversation
+    itself is persisted, so an evicted session resumes with a fresh context
+    rather than losing history.
+    """
+    existing = _session_contexts.get(session_id)
+    if existing is not None:
+        _session_contexts.move_to_end(session_id)
+        return existing
+    ctx = SessionContext()
+    _session_contexts[session_id] = ctx
+    while len(_session_contexts) > _SESSION_CONTEXT_LIMIT:
+        evicted, _ = _session_contexts.popitem(last=False)
+        logger.info("chat_session_context_evicted", session_id=evicted)
+    return ctx
 
 
 def chat(
@@ -543,8 +728,30 @@ def chat(
     # makes the AI Auditor ONE merged bot: the question itself decides whether
     # it reads the uploaded document (Mode B) or answers from the governance
     # knowledge base (advisor layer) — the user never picks a bot.
+    # A question about Meridian's own method is never a document question,
+    # even when it is phrased with "this" — "how does this tool decide
+    # Partial?" was matching the document markers and being answered from the
+    # uploaded PDF, which of course says nothing about Meridian.
+    asks_about_method = is_method_question(user_message)
+    # Comparison against a framework, improvement advice, implementation
+    # planning: real questions, but the honest answer is a scored run, not a
+    # chat turn. The Auditor hands them to the analysis pipeline rather than
+    # improvising verdicts outside it. The Rapporteur does NOT — it already
+    # has a completed analysis and answers them from those verdicts.
+    wants_full_analysis = (
+        needs_full_analysis(user_message)
+        and not asks_about_method
+        and not analysis_results
+    )
+    # "What are the main gaps in this analysis?" reads as document-specific by
+    # the marker list ("what are the main", "in the") and was being answered
+    # from the PDF's own passages, which of course do not discuss the analysis.
+    # When a completed run is in hand, a question about the RUN beats a
+    # question about the document.
+    asks_about_analysis = bool(analysis_results) and is_analysis_overview_question(user_message)
     routed_overview = (
         not is_qa and not is_overview and not has_finding
+        and not asks_about_method and not asks_about_analysis
         and bool(workspace_id) and is_document_specific_question(user_message)
     )
     effective_mode = (
@@ -594,6 +801,22 @@ def chat(
         result["blocked"] = True
         result["reason"] = guardrail_result.reason
         result["total_processing_time"] = time.time() - start_time
+        return result
+
+    # ── 1b. Questions that belong to the analysis pipeline ───────────────
+    # Returned before retrieval and before the LLM: nothing retrieved could
+    # change the answer, and the reply is the same either way.
+    if wants_full_analysis and not is_qa:
+        result["reply"] = build_full_analysis_referral(has_document=bool(workspace_id))
+        result["intent"] = "refer_to_analysis"
+        result["provider"] = "template"
+        result["total_processing_time"] = time.time() - start_time
+        logger.info(
+            "chat_referred_to_analysis",
+            workspace_id=workspace_id,
+            mode=mode,
+            seconds=round(result["total_processing_time"], 2),
+        )
         return result
 
     # ── 2. Retrieve Context (per-mode) ──────────────────────────────────
@@ -747,16 +970,47 @@ def chat(
 
         # ── LLM Enrichment (quota-routed; graceful degradation) ──────
         enrichment = None
-        if intent not in ("greeting", "unknown"):
+        # A method question that classified as unknown must still reach the
+        # LLM — the whole point is that the advisor templates have no answer
+        # for it and the method context does.
+        if intent not in ("greeting", "unknown") or (asks_about_method and not is_qa):
             try:
                 provider = get_provider()
 
                 drill_down_context = None
-                if not is_qa and (finding_context or session.finding_context):
+                if not is_qa:
                     ctx = finding_context or session.finding_context
+                    if not ctx and dimension and analysis_results:
+                        # Typing "why is Fairness Partial" deserves the same
+                        # reasoning trail as clicking "Ask about this finding".
+                        # Only the button path built one, so a typed question —
+                        # the far more common one, and the one that asks "what
+                        # proof do you have" — reached the model with the
+                        # verdict but none of the evidence behind it.
+                        gap = (analysis_results.get("gaps") or {}).get(dimension)
+                        if isinstance(gap, dict):
+                            ctx = _gap_to_finding_context(gap)
                     if ctx:
                         # Mode C: the FULL deterministic reasoning trail.
                         drill_down_context = build_drill_down_context(ctx)
+
+                # Self-knowledge: the corpus holds no document describing
+                # Meridian, so a question about the instrument had nothing to
+                # retrieve and came back as a refusal. Not applicable to the
+                # Framework Librarian, which is scoped to the knowledge base.
+                method_context = (
+                    build_self_knowledge_context(user_message, vector_store)
+                    if asks_about_method and not is_qa
+                    else None
+                )
+                # Cross-dimension questions need the whole run in view. The
+                # per-dimension generators already handle a single verdict, so
+                # this is attached only when the question actually spans them.
+                analysis_context = (
+                    build_analysis_overview_context(analysis_results)
+                    if not is_qa and asks_about_analysis
+                    else None
+                )
 
                 llm_prompt = build_llm_enrichment_prompt(
                     user_message=user_message,
@@ -766,7 +1020,17 @@ def chat(
                     dimension=dimension,
                     drill_down_context=drill_down_context,
                     history=conversation_history,
+                    method_context=method_context,
+                    analysis_context=analysis_context,
                 )
+                # Both can be attached — "which dimension is strongest" is a
+                # question about the run that happens to name the method's
+                # vocabulary. The run is the more specific of the two, so it
+                # names the intent.
+                if analysis_context:
+                    intent = "analysis_overview"
+                elif method_context:
+                    intent = "method_explanation"
 
                 llm_start = time.time()
                 # Quota discipline: chat calls go through the same RPD/RPM
@@ -826,8 +1090,64 @@ def chat(
                 else:
                     cit_fail += 1
 
+    # ── Narrative citation numbers ───────────────────────────────────
+    # The block above verifies QUOTED sources. It says nothing about the
+    # article and recital NUMBERS the model writes into prose, and those are
+    # the most common residual error: a live gap-analysis run produced four
+    # such citations, one of which pointed at an article of an entirely
+    # different regulation. The gap-analysis path has checked them since;
+    # chat had no equivalent guard at all, so a reply could assert "Article 54
+    # requires..." with nothing testing whether that article exists.
+    #
+    # Same helper, same OCR-tolerant matcher, same two severities — a check
+    # that only runs on one surface is not a property of the system.
+    narrative_citation_flags: dict[str, list[str]] = {"fabricated": [], "unsupported": []}
+    try:
+        retrieved_text = " ".join(
+            (c.get("text") or "") for c in (merged or []) if isinstance(c, dict)
+        )
+        if retrieved_text and final_reply:
+            # Lazy: the whole-document fetch only happens when the cheap regex
+            # pass has actually flagged something. Most replies cite nothing
+            # numbered, and pulling every chunk of a 1,700-chunk regulation on
+            # every chat turn to confirm that would be absurd.
+            from src.verify import find_unverifiable_citations
+
+            if find_unverifiable_citations([final_reply], retrieved_text):
+                document_text = ""
+                if workspace_id:
+                    try:
+                        res = vector_store.collection.get(
+                            where={"workspace_id": workspace_id},
+                            include=["documents"],
+                        )
+                        document_text = " \n".join(res.get("documents", []) or [])
+                    except Exception:
+                        # No document to compare against means "unsupported",
+                        # never "invented" — see classify_narrative_citations.
+                        document_text = ""
+                narrative_citation_flags = classify_narrative_citations(
+                    [final_reply], retrieved_text, document_text
+                )
+            if narrative_citation_flags["fabricated"]:
+                logger.error(
+                    "chat_narrative_citations_fabricated",
+                    workspace_id=workspace_id,
+                    citations=narrative_citation_flags["fabricated"],
+                )
+            elif narrative_citation_flags["unsupported"]:
+                logger.warning(
+                    "chat_narrative_citations_unsupported",
+                    workspace_id=workspace_id,
+                    citations=narrative_citation_flags["unsupported"],
+                )
+    except Exception as exc:
+        logger.warning("chat_narrative_citation_check_failed", error=str(exc))
+
     result["reply"] = final_reply
     result["citations"] = verified_citations
+    result["fabricated_citations"] = narrative_citation_flags["fabricated"]
+    result["unverifiable_citations"] = narrative_citation_flags["unsupported"]
     result["retrieval_count"] = len(merged)
     result["citation_pass_count"] = cit_pass
     result["citation_fail_count"] = cit_fail
