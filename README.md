@@ -62,7 +62,7 @@ by every pipeline stage — evaluation, recommendations, maturity, consistency, 
 
 | Section | Content | When it runs |
 |---|---|---|
-| **Evaluation** (governance dimension evaluation) | Coverage verdict (`Covered` / `Partial` / `Missing`), reasoning, governance maturity (0–5), document + framework evidence | Always |
+| **Evaluation** (governance dimension evaluation) | Coverage verdict (`Covered` / `Partial` / `Missing`), reasoning, governance maturity (Institutionalization Scale), document + framework evidence | Always |
 | **Recommendations & Alignment** | Recommendations, deterministic priority, international standard reference, structured framework synthesis (consensus / differences / overall); for Fully Covered dimensions: best practices + international examples instead | Always |
 | **Implementation Roadmap** | Phased roadmap with deterministic timeline estimates, responsible agency (code-grounded, never fabricated), documentation requirements, monitoring checklist | Only for `Partial` / `Missing` dimensions |
 | **Case Intelligence** | Matched real incidents (AI Incident Database, Robodebt Royal Commission, Allegheny AFST, and other curated records) with lessons learned | Only when a genuinely relevant incident match exists |
@@ -109,13 +109,39 @@ country/verdict expectation.
 - **Rule R2 (the implementation-commitment raise)** — `Partial` is raised to
   `Covered` only on a concrete implementation commitment (operational
   mechanism, named programme, or corroborated commitment phrases).
+- **Substantive specificity gate (anti-false-positive)** — before the broad
+  evidence pool can fire R1/R2, the chunk's mechanism-bearing sentences must be
+  semantically close to the dimension's profile above
+  `SUBSTANTIVE_RELEVANCE_THRESHOLD` (default `0.62`). This is the
+  "procedural authority ≠ substantive governance mechanism" rule: a provision
+  that merely assigns a minister/body a power to approve, support, or
+  administer something (e.g. "the Minister may approve/support AI data
+  centres")  passes the loose relevance gate but is not a governance mechanism
+  for the dimension, so it never raises a verdict. Genuine mechanisms scored
+  0.64–0.80 against their dimension's aspects during calibration; procedural
+  provisions scored 0.48–0.59.
+- **Sentence-level evidence discipline (R1/R2 chunk paths)** — the gates are
+  evaluated on the *sentence* that carries the commitment/obligation phrase
+  (and, for R2, the named responsible body in the same sentence), never on
+  the whole chunk. A long chunk can contain a genuine dimension mechanism in
+  one sentence and an unrelated strong obligation phrase / named body in
+  another (e.g. a mixed Article 32/33 safety chunk promoting Fairness on a
+  safety provision); co-located evidence elsewhere in the chunk never
+  satisfies the requirement.
+- **Ladder-raise review safeguard** — when a deterministic raise produces a
+  final verdict that contradicts the model's own coverage reasoning (gap
+  assertions like "does not establish", "no provisions", "lacks",
+  "provides no", "establishes no"...), the card is flagged for review
+  instead of shipping the mismatch silently.
 - **Priority is tiered in code** — `Covered` → none; `Partial` → Medium (High
   when a cluster dimension is also open); `Missing` → High (Critical when a
   cluster dimension is also open).
 - **Risk is cluster-aware** — core dimensions escalate; gaps in related
   dimensions compound risk.
-- **Overall maturity uses the weakest-dimension (CMMI) rule** — the policy is as
-  mature as its least mature dimension, plus a continuous 0–100 composite index.
+- **Overall maturity uses the weakest-dimension rule on the Institutionalization
+  Scale** (`Unaddressed` → `Emerging` → `Formalized` → `Operationalized` →
+  `Institutionalized`) — the policy is as mature as its least mature dimension,
+  plus a continuous 0–100 composite index.
 
 Toggle the R1 floor with `LADDER_FLOOR_ENABLED=0` for a strict "no floor"
 baseline (read at startup).
@@ -165,7 +191,7 @@ derived from real pipeline state, never an LLM self-assessment.
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLAlchemy (async) |
 | Vector store | ChromaDB (persistent, embedded) + `BAAI/bge-small-en-v1.5` embeddings |
-| LLM | **Gemini** (primary, multi-key rotation + RPM/RPD throttles), **Groq** fallback, optional **Ollama** local |
+| LLM | **Gemini** (primary, multi-key rotation + RPM/RPD throttles), **Groq** fallback |
 | Verification | `cross-encoder/nli-deberta-v3-base` NLI cross-encoder |
 | Database | PostgreSQL 16 |
 | Frontend | Next.js 14 (fully static output), React 18, TypeScript, Tailwind, Motion (Framer Motion), Recharts |
@@ -180,8 +206,7 @@ derived from real pipeline state, never an LLM self-assessment.
   `data/gemini_rpd.json` so restarts don't reset the day's count);
 - retries with **jittered backoff** so concurrent dimension calls don't
   re-collide on the same quota window;
-- falls back to **Groq** when all Gemini keys are exhausted (and to Ollama when
-  configured).
+- falls back to **Groq** when all Gemini keys are exhausted.
 
 ---
 
@@ -233,14 +258,14 @@ docker run -d --name meridian-pg -e POSTGRES_USER=aura -e POSTGRES_PASSWORD=aura
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg` | PostgreSQL connection |
-| `LLM_PROVIDER` | `gemini` | `gemini` \| `groq` \| `ollama` |
+| `LLM_PROVIDER` | `gemini` | `gemini` \| `groq` |
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini model |
 | `GEMINI_API_KEY` | — | Primary Gemini key (add `_2`/`_3`/`_4` for rotation) |
 | `GROQ_API_KEY` | — | Groq fallback provider |
-| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | — | Local Ollama fallback |
 | `CHROMA_PERSIST_DIR` | `./data/chroma` | Vector store location |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed browser origins |
 | `LADDER_FLOOR_ENABLED` | `1` | Enable the R1 commitment floor (see methodology) |
+| `SUBSTANTIVE_RELEVANCE_THRESHOLD` | `0.62` | Substantive-specificity bar for the ladder's anti-false-positive gate (model-dependent) |
 | `ANALYSIS_MAX_CONCURRENCY` | `3` | Parallel dimension-analysis workers |
 | `GEMINI_RPM_LIMIT` / `GEMINI_RPD_LIMIT` | `10` / `1000` | Free-tier throttle ceilings |
 | `LOG_LEVEL` / `DEV_MODE` | `INFO` / `false` | Logging + dev behavior |
@@ -376,8 +401,8 @@ aura-sdg/
 │   │   ├── retrieval.py          # Per-dimension retrieval + dimension-tagged budget reserves
 │   │   ├── framework_router.py   # Deterministic framework selection (roles, tags, regions)
 │   │   ├── deterministic.py      # Coverage ladder (R1/R2), maturity, low-information filter
-│   │   ├── provider_router.py    # LLM routing: Gemini rotation, throttles, Groq/Ollama fallback
-│   │   ├── llm_provider.py       # Provider clients (Gemini / Groq / Ollama)
+│   │   ├── provider_router.py    # LLM routing: Gemini rotation, throttles, Groq fallback
+│   │   ├── llm_provider.py       # Provider clients (Gemini / Groq)
 │   │   ├── verify.py             # Citation verification (chunk / page / NLI text support)
 │   │   ├── nli_verifier.py       # NLI cross-encoder wrapper
 │   │   ├── ingestion.py          # PDF parsing + structure-aware chunking
