@@ -12,8 +12,24 @@
 
 ARG PYTHON_VERSION=3.13
 
+# ── base ─────────────────────────────────────────────────────────────────
+# Shared by builder and prod so the runtime libraries cannot drift between
+# what the tests run against and what ships. libmagic1 living only in prod
+# is precisely how the first CI run failed: validation.py imports magic at
+# module scope, so every test that touches the ingestion path collected with
+# "ImportError: failed to find libmagic" in the test image while prod was
+# fine.
+FROM python:${PYTHON_VERSION}-slim AS base
+
+# python-magic is a binding, not a reimplementation: validation.py reads the
+# true content type from the file's bytes rather than trusting an extension
+# or a client-supplied MIME, and that needs the C library present.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── builder ──────────────────────────────────────────────────────────────
-FROM python:${PYTHON_VERSION}-slim AS builder
+FROM base AS builder
 
 # uv is copied from its own published image rather than pip-installed, so the
 # build does not depend on an index being reachable to get the tool that then
@@ -75,15 +91,9 @@ ENV PATH="/opt/venv/bin:$PATH" \
 CMD ["pytest", "-q"]
 
 # ── prod ─────────────────────────────────────────────────────────────────
-FROM python:${PYTHON_VERSION}-slim AS prod
+FROM base AS prod
 
-# libmagic1 is required: validation.py reads the true content type from the
-# file's bytes rather than trusting an extension or a client-supplied MIME,
-# and python-magic is a binding, not a reimplementation.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libmagic1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin meridian
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin meridian
 
 WORKDIR /app
 
