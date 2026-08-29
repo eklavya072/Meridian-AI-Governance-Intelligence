@@ -32,7 +32,7 @@
   /* ── Chart tokens — muted, not the library's default palette. Coverage
      distribution uses the muted status colors; everything else grey. ─── */
   --chart-covered: #3F7A52; /* muted forest green */
-  --chart-partial: #B07E2B; /* muted amber */
+  --chart-partial: #C9AF7A; /* soft gold — softer than amber against red/green */
   --chart-missing: #A8483F; /* muted red, desaturated */
   --chart-neutral: #8A8A8A; /* grey for "not assessed" */
 
@@ -467,4 +467,836 @@ body {
     animation: none;
     transition: none;
   }
+}
+
+/* ── Polished-steel headline ──────────────────────────────────────────
+   The landing page's display headings are cut out of a light source
+   rather than filled with a flat colour: a wide monochrome gradient —
+   graphite → white → silver → graphite → white — is clipped to the
+   glyphs and drifts slowly across them, so the letters read as brushed
+   steel catching a moving light. Strictly black/white/grey; the only
+   thing "coloured" is the light.
+
+   background-position is the only animated property (compositor-friendly,
+   no layout, no paint of anything but the text itself). Under reduced
+   motion the sweep parks at its best-looking frame instead of moving. */
+@keyframes steel-sweep {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: -200% 50%;
+  }
+}
+
+.text-steel {
+  background-image: linear-gradient(
+    100deg,
+    #7E7E7E 0%,
+    #C9C9C9 8%,
+    #FFFFFF 16%,
+    #FFFFFF 22%,
+    #B8B8B8 32%,
+    #6F6F6F 42%,
+    #D6D6D6 54%,
+    #FFFFFF 64%,
+    #FFFFFF 70%,
+    #A8A8A8 80%,
+    #7E7E7E 100%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  /* text-shadow would darken the transparent fill; the rendered glyphs get
+     a drop-shadow instead so they stay legible over the bright crests. */
+  text-shadow: none;
+  filter: drop-shadow(0 2px 18px rgba(0, 0, 0, 0.85));
+  animation: steel-sweep 14s linear infinite;
+}
+
+/* The light catches a beat later on a second line, so a stacked heading
+   reads as one surface lit across it rather than two identical washes. */
+.text-steel-delay {
+  animation-delay: -4.6s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-steel,
+  .text-steel-delay {
+    animation: none;
+    background-position: 18% 50%;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LANDING ROUTE
+   Scoped to .landing so no other route inherits a single declaration.
+   Palette: charcoal room, ivory paper, cool light. The only saturated
+   colours on this page are the three coverage verdicts, and they appear
+   only inside the product frames, where something has been measured.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* The root layout constrains <main> to max-w-7xl with padding. The landing
+   page is full bleed, so unconstrain it for this route only. :has() keeps
+   the rule scoped without touching layout.tsx or any other page. */
+body:has(.landing) main {
+  max-width: none;
+  padding: 0;
+}
+html, body { overflow-x: hidden; overflow-x: clip; }
+
+.landing {
+  --canvas: #0B0C0E;
+  --canvas-deep: #070809;
+  --panel: #14161A;
+  --panel-raised: #1C1F24;
+  --hairline: rgba(242, 239, 233, 0.10);
+  --hairline-strong: rgba(242, 239, 233, 0.22);
+
+  --ink: #F5F3EF;
+  /* Raised from #9AA0A8. Body copy sits over a moving ground whose crests
+     run pale, and at the old value it dropped toward the background every
+     time a swell passed under it. 11.4:1 on the canvas, and the scrim
+     below guarantees the canvas is what it actually sits on. */
+  --ink-2: #C2C7CE;
+  --ink-3: #858C96;
+
+  --accent: #F2EFE9;
+  --accent-hover: #FFFFFF;
+  --accent-muted: rgba(242, 239, 233, 0.14);
+
+  --serif: var(--font-serif), "Iowan Old Style", Georgia, serif;
+  --sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --code: var(--font-mono), ui-monospace, "SF Mono", monospace;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Text sits over a moving ground, which is a background nobody controls
+     frame to frame. Three layers, a tight edge, a mid glow and a wide
+     falloff, so a word stays readable even when a pale crest passes under
+     it. This is what lets the scrim stay light. */
+  --tshadow: 0 1px 2px rgba(5, 6, 8, 0.92), 0 3px 14px rgba(5, 6, 8, 0.72),
+    0 10px 40px rgba(5, 6, 8, 0.6);
+
+  position: relative;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--sans);
+}
+
+.landing ::selection { background: var(--ink); color: var(--canvas); }
+.landing :focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+/* Visually hidden, still read aloud. Every split or typed line keeps one
+   of these carrying the real sentence, so the accessibility tree never
+   sees the per-word markup the effect needs. */
+.l-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Type ─────────────────────────────────────────────────────────────── */
+.l-display {
+  font-family: var(--serif);
+  font-weight: 300;
+  letter-spacing: -0.018em;
+  line-height: 1.03;
+  text-wrap: balance;
+}
+.l-label {
+  display: block;
+  font-family: var(--code);
+  font-weight: 500;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.l-body {
+  font-family: var(--sans);
+  font-size: clamp(1.02rem, 1.15vw, 1.16rem);
+  line-height: 1.62;
+  color: var(--ink-2);
+}
+/* Emphasis inside body copy: brighter and heavier, never a different
+   colour. One or two phrases per paragraph, on the words that carry the
+   claim. */
+.landing strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* The one underline device. It sits under a phrase that names what the
+   product actually does, drawn as a rule rather than a text-decoration so
+   the offset and weight are ours rather than the browser's. */
+.l-mark {
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 -0.42em 0 rgba(242, 239, 233, 0.13);
+  border-bottom: 1px solid rgba(242, 239, 233, 0.55);
+  padding-bottom: 0.06em;
+}
+
+/* ── The moving ground ────────────────────────────────────────────────────
+   A slow WebGL swell in charcoal and grey, fixed behind the whole page, so
+   scrolling feels like moving through a place rather than past stacked
+   sections. Everything above it is transparent; only .landing paints a
+   colour, and that colour is what the waves sit on. */
+.l-waves {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.l-waves > * { width: 100%; height: 100%; }
+/* Reduced motion and no-WebGL both land here: a still version of the same
+   grade, so the page is never a flat black rectangle. */
+.l-waves-still {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 100%, rgba(150,156,166,.22), transparent 70%),
+    linear-gradient(180deg, #0B0C0E 0%, #101216 55%, #1A1D22 100%);
+}
+
+/* ── One environment: dust drifting behind everything ─────────────────── */
+.l-dust {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, rgba(242,239,233,.30), transparent 60%),
+    radial-gradient(1px 1px at 78% 14%, rgba(242,239,233,.22), transparent 60%),
+    radial-gradient(1.5px 1.5px at 34% 71%, rgba(242,239,233,.20), transparent 60%),
+    radial-gradient(1px 1px at 62% 48%, rgba(242,239,233,.26), transparent 60%),
+    radial-gradient(1px 1px at 88% 83%, rgba(242,239,233,.18), transparent 60%),
+    radial-gradient(1.5px 1.5px at 22% 92%, rgba(242,239,233,.16), transparent 60%);
+  animation: l-drift 90s linear infinite;
+  animation-delay: -22s;
+}
+@keyframes l-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-3vw, -8vh, 0); }
+}
+
+/* ── The signature: a plumb rail down the page's margin ───────────────── */
+.l-rail {
+  position: fixed;
+  left: clamp(1.75rem, 3.4vw, 3.5rem);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    var(--hairline) 8vh,
+    var(--hairline) calc(100% - 8vh),
+    transparent 100%
+  );
+}
+.l-rail-weight {
+  position: absolute;
+  left: 50%;
+  top: 22vh;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: var(--ink);
+  transform: rotate(45deg);
+  box-shadow: 0 0 14px rgba(242, 239, 233, 0.5);
+  animation: l-plumb 7s var(--ease-io) infinite alternate;
+  animation-delay: -2s;
+}
+@keyframes l-plumb {
+  from { top: 20vh; }
+  to   { top: 30vh; }
+}
+@media (max-width: 1023px) { .l-rail { display: none; } }
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+.l-hero {
+  position: relative;
+  z-index: 1;
+  min-height: 100svh;
+  display: grid;
+  place-content: center;
+  padding: 8rem clamp(1.5rem, 6vw, 5rem) 7rem;
+  text-align: center;
+  overflow: hidden;
+}
+/* A single shaft of light behind the lockup, so the hero is a lit room
+   rather than a flat dark rectangle. */
+.l-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 42% 55% at 50% 22%, rgba(242,239,233,.09), transparent 70%),
+    radial-gradient(ellipse 120% 80% at 50% 46%, transparent 30%, rgba(7,8,9,.7) 100%);
+}
+.l-hero-inner { position: relative; max-width: 54rem; margin: 0 auto; }
+
+.l-h1 { font-size: clamp(3rem, 8.2vw, 7rem); margin: 0; }
+.l-hero-sub {
+  max-width: 50ch;
+  margin: 1.9rem auto 0;
+  font-size: clamp(1.08rem, 1.3vw, 1.25rem);
+  color: var(--ink-2);
+}
+.l-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+.l-hero-cta { margin-top: 2.75rem; }
+
+.l-scroll-cue {
+  position: absolute;
+  left: 50%;
+  bottom: 2.75rem;
+  width: 1px;
+  height: 3.5rem;
+  overflow: hidden;
+  background: var(--hairline);
+}
+.l-scroll-cue-line {
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  animation: l-cue 2.6s var(--ease-io) infinite;
+}
+@keyframes l-cue {
+  0%   { transform: translateY(-100%); }
+  60%  { transform: translateY(100%); }
+  100% { transform: translateY(100%); }
+}
+@media (max-height: 620px) { .l-scroll-cue { display: none; } }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.l-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.95rem 1.9rem;
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: background-color 320ms var(--ease-out), color 320ms var(--ease-out),
+    border-color 320ms var(--ease-out), transform 320ms var(--ease-out);
+}
+.l-btn-primary { background: var(--accent); color: var(--canvas); border: 1px solid var(--accent); }
+.l-btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); }
+.l-btn-quiet { color: var(--ink); border: 1px solid var(--hairline-strong); background: transparent; }
+.l-btn-quiet:hover { border-color: var(--ink); background: rgba(242, 239, 233, 0.06); transform: translateY(-1px); }
+@media (pointer: coarse) { .l-btn { min-height: 44px; } }
+
+/* Applied to type only. Buttons and the light product screens are opaque
+   surfaces and a shadow on their labels would read as grime. */
+.l-hero-sub,
+.l-sec .l-label,
+.l-sec .l-h2,
+.l-sec .l-body,
+.l-finding-lede,
+.l-rung-qty,
+.l-rung-text,
+.l-finding-kicker,
+.l-stage-name,
+.l-close-h,
+.l-h1 { text-shadow: var(--tshadow); }
+.l-btn, .l-footer .l-link { text-shadow: none; }
+
+/* ── Section frame ────────────────────────────────────────────────────── */
+/* The swell is the hero's material and the reading sections' enemy. This
+   scrim rides under the content only, so the ground stays vivid where
+   there is nothing to read and drops back where there is. */
+.landing .l-content {
+  position: relative;
+  z-index: 2;
+  /* Light enough that the swell still moves under the whole page. Holding
+     text off the pale crests is the type's job, not the scrim's: see
+     --tshadow below. A scrim heavy enough to guarantee contrast on its own
+     turns everything past the hero into a flat black rectangle. */
+  background: linear-gradient(
+    180deg,
+    rgba(11, 12, 14, 0.34) 0,
+    rgba(11, 12, 14, 0.58) 12vh,
+    rgba(11, 12, 14, 0.6) 100%
+  );
+}
+.l-sec {
+  position: relative;
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: clamp(6rem, 13vh, 11rem) clamp(1.5rem, 6vw, 5rem);
+}
+.l-h2 {
+  font-size: clamp(2.1rem, 4.6vw, 3.6rem);
+  margin: 0.9rem 0 0;
+  color: var(--ink);
+  max-width: 20ch;
+}
+.l-link { color: var(--ink); border-bottom: 1px solid var(--hairline-strong); transition: border-color 260ms var(--ease-out); }
+.l-link:hover { border-bottom-color: var(--ink); }
+
+/* Reveal. Start and end states are both prefixed with the section class so
+   nothing later in the cascade can leave an element stuck at its start. */
+.landing.is-armed .l-sec .l-label,
+.landing.is-armed .l-sec .l-h2,
+.landing.is-armed .l-sec .l-body,
+.landing.is-armed .l-sec .l-finding-lede,
+.landing.is-armed .l-sec .l-rung,
+.landing.is-armed .l-sec .l-split-visual,
+.landing.is-armed .l-sec .l-standards-visual {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 800ms var(--ease-out), transform 800ms var(--ease-out);
+}
+.landing.is-armed .l-sec.in .l-label,
+.landing.is-armed .l-sec.in .l-h2,
+.landing.is-armed .l-sec.in .l-body,
+.landing.is-armed .l-sec.in .l-finding-lede,
+.landing.is-armed .l-sec.in .l-rung,
+.landing.is-armed .l-sec.in .l-split-visual,
+.landing.is-armed .l-sec.in .l-standards-visual {
+  opacity: 1;
+  transform: none;
+}
+.landing.is-armed .l-sec.in .l-h2 { transition-delay: 90ms; }
+.landing.is-armed .l-sec.in .l-body { transition-delay: 170ms; }
+.landing.is-armed .l-sec.in .l-split-visual,
+.landing.is-armed .l-sec.in .l-standards-visual { transition-delay: 140ms; }
+.landing.is-armed .l-sec.in .l-rung:nth-child(2) { transition-delay: 130ms; }
+.landing.is-armed .l-sec.in .l-rung:nth-child(3) { transition-delay: 260ms; }
+/* `.done` lands a couple of seconds after the entrance starts, on a plain
+   timer, and it does two jobs.
+
+   It retires the stagger delays, or every later hover lags by its entrance
+   delay forever. The selectors repeat the delayed ones so they match on
+   specificity, since :nth-child counts as a class.
+
+   And it asserts the finished state with the transition switched OFF. That
+   is the fail-safe: if the transition never advances (a paused compositor,
+   an embedded webview that stops producing frames), the element still ends
+   up visible, because there is no longer an animation standing between the
+   class and the computed value. Timers keep firing where frames do not. */
+.landing.is-armed .l-sec.in.done .l-label,
+.landing.is-armed .l-sec.in.done .l-h2,
+.landing.is-armed .l-sec.in.done .l-body,
+.landing.is-armed .l-sec.in.done .l-finding-lede,
+.landing.is-armed .l-sec.in.done .l-rung,
+.landing.is-armed .l-sec.in.done .l-split-visual,
+.landing.is-armed .l-sec.in.done .l-standards-visual,
+.landing.is-armed .l-sec.in.done .l-rung:nth-child(2),
+.landing.is-armed .l-sec.in.done .l-rung:nth-child(3) {
+  opacity: 1;
+  transform: none;
+  transition: none !important;
+  transition-delay: 0s !important;
+}
+
+/* ── 01 The finding ───────────────────────────────────────────────────────
+   Drawn as a measurement rather than set as a paragraph. Three bars, each
+   one a rung of the same ladder the product scores on, getting shorter as
+   the commitment gets harder. The last bar is the product's reason to
+   exist, so it is the one that carries the accent. */
+.l-finding-head { max-width: 40rem; }
+.l-finding-lede {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: clamp(1.9rem, 4.3vw, 3.3rem);
+  line-height: 1.16;
+  color: var(--ink);
+  margin: 0.9rem 0 0;
+  max-width: 17ch;
+}
+
+.l-ladder { margin-top: clamp(3rem, 6vh, 4.5rem); display: grid; gap: 0; }
+.l-rung {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem 2rem;
+  padding: clamp(1.6rem, 3vh, 2.4rem) 0;
+  border-top: 1px solid var(--hairline);
+  align-items: baseline;
+}
+.l-rung:last-child { border-bottom: 1px solid var(--hairline); }
+@media (min-width: 820px) {
+  /* Sized for the longest quantifier at its largest step. At 13rem
+     "A minority" overran the column and ran into the sentence beside it. */
+  .l-rung { grid-template-columns: 15.5rem 1fr; }
+}
+.l-rung-qty {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: clamp(2rem, 3.5vw, 3rem);
+  line-height: 1;
+  color: var(--ink-3);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.l-rung-body { min-width: 0; }
+.l-rung-text {
+  font-size: clamp(1.06rem, 1.5vw, 1.28rem);
+  color: var(--ink-2);
+  margin: 0 0 1.6rem;
+  max-width: 42ch;
+}
+/* The bar. Width comes inline from the data so the markup carries the
+   proportion, and the fill is a transform so it stays on the compositor.
+   The empty track is deliberately not drawn: at hairline weight it read as
+   another row divider, and the first two bars stopped looking like
+   measurements at all. Only what was measured is visible. */
+.l-rung-bar {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+}
+.l-rung-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--ink-3);
+  transform-origin: left;
+  transition: transform 1200ms var(--ease-out);
+}
+.landing.is-armed .l-rung-fill { transform: scaleX(0); }
+.landing.is-armed .l-sec.in .l-rung-fill { transform: scaleX(1); }
+.landing.is-armed .l-sec.in .l-rung:nth-child(2) .l-rung-fill { transition-delay: 160ms; }
+.landing.is-armed .l-sec.in .l-rung:nth-child(3) .l-rung-fill { transition-delay: 320ms; }
+.landing.is-armed .l-sec.in.done .l-rung-fill { transition: none !important; transition-delay: 0s !important; transform: scaleX(1); }
+
+/* The rung that matters: brighter type, a lit bar, and the only place in
+   this section where anything glows. */
+.l-rung.is-gap .l-rung-qty { color: var(--ink); }
+.l-rung.is-gap .l-rung-text { color: var(--ink); }
+.l-rung.is-gap .l-rung-bar { height: 4px; }
+.l-rung.is-gap .l-rung-fill {
+  background: var(--ink);
+  box-shadow: 0 0 18px rgba(242, 239, 233, 0.45);
+}
+
+.l-finding-note {
+  margin-top: clamp(2.5rem, 5vh, 3.5rem);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.l-finding-kicker {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: clamp(1.15rem, 2vw, 1.55rem);
+  color: var(--ink);
+  margin: 0;
+  max-width: 30ch;
+}
+.l-finding-source { font-size: .78rem; color: var(--ink-3); margin: 0; }
+.l-finding-source .l-link { color: var(--ink-2); }
+
+/* ── 02 and 03: copy beside a live product screen ─────────────────────── */
+.l-split {
+  display: grid;
+  gap: clamp(2.5rem, 5vw, 4.5rem);
+  grid-template-columns: 1fr;
+  align-items: center;
+}
+@media (min-width: 940px) {
+  .l-split { grid-template-columns: 0.82fr 1.18fr; }
+  .l-split.is-reverse { grid-template-columns: 1.18fr 0.82fr; }
+  .l-split.is-reverse .l-split-copy { order: 2; }
+  .l-split.is-reverse .l-split-visual { order: 1; }
+}
+.l-split-copy .l-body { margin-top: 1.5rem; max-width: 46ch; }
+.l-split-visual { position: relative; }
+
+/* ── 04 The standards ─────────────────────────────────────────────────── */
+.l-standards-head { max-width: 46rem; }
+.l-standards-head .l-body { margin-top: 1.5rem; max-width: 58ch; }
+.l-standards-visual { margin-top: 3.5rem; }
+
+/* ── 05 The method ────────────────────────────────────────────────────── */
+.l-method-head { max-width: 46rem; }
+.l-stages { margin-top: 4rem; display: grid; gap: clamp(4rem, 9vh, 7rem); }
+.l-stage-row {
+  display: grid;
+  gap: clamp(2rem, 4.5vw, 4rem);
+  grid-template-columns: 1fr;
+  align-items: center;
+}
+@media (min-width: 940px) {
+  .l-stage-row { grid-template-columns: 1.15fr 0.85fr; }
+  .l-stage-row[data-visual-first="false"] { grid-template-columns: 0.85fr 1.15fr; }
+  .l-stage-row[data-visual-first="false"] .l-stage-visual { order: 2; }
+  .l-stage-row[data-visual-first="false"] .l-stage-copy { order: 1; }
+}
+.landing.is-armed .l-stage-visual,
+.landing.is-armed .l-stage-copy {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 800ms var(--ease-out), transform 800ms var(--ease-out);
+}
+.landing.is-armed .l-stage-row.in .l-stage-visual,
+.landing.is-armed .l-stage-row.in .l-stage-copy { opacity: 1; transform: none; }
+.landing.is-armed .l-stage-row.in .l-stage-copy { transition-delay: 110ms; }
+/* Same fail-safe as the sections: the finished state, asserted without a
+   transition, so a frozen compositor cannot leave a stage invisible. */
+.landing.is-armed .l-stage-row.done .l-stage-visual,
+.landing.is-armed .l-stage-row.done .l-stage-copy {
+  opacity: 1;
+  transform: none;
+  transition: none !important;
+  transition-delay: 0s !important;
+}
+.l-stage-name {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(1.55rem, 2.8vw, 2.3rem);
+  color: var(--ink);
+  margin: 0.7rem 0 0.9rem;
+}
+.l-stage-copy .l-body { max-width: 46ch; }
+@keyframes stage-scan {
+  0%   { top: 12%; }
+  50%  { top: 86%; }
+  100% { top: 12%; }
+}
+
+/* ── 06 The close ─────────────────────────────────────────────────────── */
+.l-close { text-align: center; }
+.l-close-mark { color: var(--ink); opacity: .8; margin: 0 auto 2rem; }
+.l-close-h { font-size: clamp(2rem, 5vw, 3.6rem); margin: 0 auto; max-width: 18ch; }
+.l-close-cta { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: center; margin-top: 2.5rem; }
+
+.l-footer {
+  border-top: 1px solid var(--hairline);
+  position: relative;
+  z-index: 2;
+  background: rgba(11, 12, 14, 0.6);
+}
+.l-footer-inner {
+  max-width: 78rem; margin: 0 auto;
+  padding: 2.5rem clamp(1.5rem, 6vw, 5rem);
+  display: flex; flex-wrap: wrap; gap: 1rem 2rem; align-items: center;
+}
+.l-footer-nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 1.5rem; }
+.l-footer-nav .l-link {
+  font-family: var(--code); font-size: .75rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+
+@media (max-height: 560px) { .l-dust { display: none; } }
+
+/* Loops stop on a hidden tab. animation-play-state does not inherit, so this
+   has to reach elements and pseudo-elements directly. */
+body.paused *, body.paused *::before, body.paused *::after {
+  animation-play-state: paused !important;
+}
+
+/* ── Reduced motion, honoured completely ──────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .landing *,
+  .landing *::before,
+  .landing *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0s !important;
+  }
+  .landing .l-label,
+  .landing .l-h2,
+  .landing .l-body,
+  .landing .l-finding-lede,
+  .landing .l-rung,
+  .landing .l-split-visual,
+  .landing .l-standards-visual,
+  .landing .l-stage-visual,
+  .landing .l-stage-copy {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .l-dust, .l-rail-weight, .l-scroll-cue-line { animation: none; }
+  .landing .l-rung-fill { transform: scaleX(1) !important; }
+  .l-scroll-cue-line { transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOTION
+   One thesis: this page is an instrument taking a reading, so its motion
+   is things SETTLING into position rather than things appearing. Words
+   rise from behind a mask edge the way a value lands on a readout, bars
+   extend like a measurement being taken, and screens resolve from soft to
+   sharp the way an instrument focuses.
+
+   Everything below runs from an already-visible default and is driven by
+   class changes, never by a frame loop that can stall. The `.done` class
+   from LandingSections lands on a plain timer and asserts every finished
+   state with the transition switched off, so no animation here can leave
+   content unreadable.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── The roll ─────────────────────────────────────────────────────────────
+   Words rise from behind a clipped edge. The padding and matching negative
+   margin give the mask room for descenders, or the tails of g, y and p get
+   sliced off at the baseline. */
+.l-roll {
+  display: inline-block;
+  overflow: hidden;
+  padding-bottom: 0.16em;
+  margin-bottom: -0.16em;
+  vertical-align: bottom;
+}
+.l-roll-in {
+  display: inline-block;
+  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* Hidden ONLY once JS has armed the page. Without this gate the
+   server-rendered markup paints a blank hero for anyone whose JS never
+   runs, which is the one failure this page does not accept. */
+.landing.is-armed .l-roll-in { transform: translateY(115%); }
+.landing.is-armed .l-sec.in .l-roll-in,
+.landing.is-armed .l-hero.in .l-roll-in { transform: translateY(0); }
+.landing.is-armed .l-sec.in.done .l-roll-in,
+.landing.is-armed .l-hero.in .l-roll-in.is-done {
+  transform: translateY(0);
+  transition: none !important;
+  transition-delay: 0s !important;
+}
+
+/* ── The hero settles in three arrivals ───────────────────────────────── */
+.landing.is-armed .l-hero-sub,
+.landing.is-armed .l-hero-cta,
+.landing.is-armed .l-scroll-cue {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.landing.is-armed .l-hero.in .l-hero-sub,
+.landing.is-armed .l-hero.in .l-hero-cta,
+.landing.is-armed .l-hero.in .l-scroll-cue { opacity: 1; transform: none; }
+.landing.is-armed .l-hero.in .l-hero-sub { transition-delay: 520ms; }
+.landing.is-armed .l-hero.in .l-hero-cta { transition-delay: 680ms; }
+.landing.is-armed .l-hero.in .l-scroll-cue { transition-delay: 1100ms; }
+.landing.is-armed .l-hero.settled .l-hero-sub,
+.landing.is-armed .l-hero.settled .l-hero-cta,
+.landing.is-armed .l-hero.settled .l-scroll-cue,
+.landing.is-armed .l-hero.settled .l-roll-in {
+  opacity: 1;
+  transform: none;
+  transition: none !important;
+  transition-delay: 0s !important;
+}
+
+/* ── The caret, for the one line that types ───────────────────────────── */
+.l-caret {
+  display: inline-block;
+  width: 0.06em;
+  height: 0.82em;
+  margin-left: 0.09em;
+  vertical-align: -0.06em;
+  background: var(--ink);
+  animation: l-blink 1.05s steps(1) infinite;
+}
+.l-caret.is-done { animation: l-blink-out 1.6s ease-out forwards; }
+@keyframes l-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+@keyframes l-blink-out { 0% { opacity: 1 } 70% { opacity: 1 } 100% { opacity: 0 } }
+
+/* ── Screens resolve from soft to sharp ───────────────────────────────────
+   The blur is a static value crossfaded by opacity on a duplicate layer
+   everywhere else in this codebase, but a product screen has no duplicate
+   to fade against, so the filter animates here. It is bounded to one
+   element, runs once, and drops off the compositor when `.done` lands. */
+.landing.is-armed .l-sec .l-split-visual,
+.landing.is-armed .l-sec .l-standards-visual {
+  filter: blur(14px);
+  transform: translateY(26px) scale(0.985);
+  transition:
+    opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1100ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 900ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, filter;
+}
+.landing.is-armed .l-sec.in .l-split-visual,
+.landing.is-armed .l-sec.in .l-standards-visual {
+  filter: blur(0);
+  transform: none;
+}
+.landing.is-armed .l-sec.in.done .l-split-visual,
+.landing.is-armed .l-sec.in.done .l-standards-visual {
+  filter: none;
+  transform: none;
+  will-change: auto;
+}
+
+/* Stage screens arrive from the side they live on, so the alternating
+   layout is what the motion is about rather than a repeated rise. */
+.landing.is-armed .l-stage-row .l-stage-visual {
+  filter: blur(10px);
+  transform: translateX(-34px);
+  transition:
+    opacity 850ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1000ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 850ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.landing.is-armed .l-stage-row[data-visual-first="false"] .l-stage-visual { transform: translateX(34px); }
+.landing.is-armed .l-stage-row.in .l-stage-visual { filter: blur(0); transform: none; }
+.landing.is-armed .l-stage-row.done .l-stage-visual { filter: none; transform: none; }
+
+/* ── The focal sequence: the ladder taking its reading ────────────────────
+   The bar extends first, the word lands on it. Read together they are one
+   measurement, which is why the rung's word is delayed behind its own bar
+   rather than staggered with its neighbours. */
+.l-rung-qty .l-roll-in { transition-duration: 1000ms; }
+.landing.is-armed .l-sec.in .l-rung:nth-child(1) .l-rung-qty .l-roll-in { transition-delay: 240ms; }
+.landing.is-armed .l-sec.in .l-rung:nth-child(2) .l-rung-qty .l-roll-in { transition-delay: 400ms; }
+.landing.is-armed .l-sec.in .l-rung:nth-child(3) .l-rung-qty .l-roll-in { transition-delay: 560ms; }
+.l-rung-fill { transition-duration: 1400ms; }
+
+/* ── Reduced motion ───────────────────────────────────────────────────────
+   Movement goes; the meaning stays. Text is already in place rather than
+   rolling into it, screens are sharp rather than focusing, and the caret
+   stops blinking instead of disappearing. */
+@media (prefers-reduced-motion: reduce) {
+  .landing .l-roll-in { transform: none !important; }
+  .landing .l-roll { overflow: visible; padding-bottom: 0; margin-bottom: 0; }
+  .landing .l-caret { animation: none; opacity: 0; }
+  .landing .l-split-visual,
+  .landing .l-standards-visual,
+  .landing .l-stage-visual {
+    filter: none !important;
+    transform: none !important;
+  }
+}
+
+/* The auditor's thinking indicator: a settling pulse on an exponential
+   curve, matching the rest of the page's motion rather than a spring. */
+@keyframes l-think {
+  0%, 100% { opacity: 0.28; transform: scale(0.82); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+.l-think { animation: l-think 1.25s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .l-think { animation: none; opacity: 0.6; }
 }

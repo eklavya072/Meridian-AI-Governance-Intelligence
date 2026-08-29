@@ -21,12 +21,15 @@ import {
   Framework,
 } from "@/lib/api";
 import CitationCard from "@/components/CitationCard";
+import HighlightedText from "@/components/HighlightedText";
 import ProviderBadge from "@/components/ProviderBadge";
 import MaturityBadge from "@/components/MaturityBadge";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import ModuleStack, { type ModuleStackItem } from "@/components/ModuleStack";
 import SpecularButton from "@/components/SpecularButton";
 import { CoverageDonut, MaturityGauge, StageHistogram } from "@/components/DashboardCharts";
+import { RunComparisonHeatmap } from "@/components/Heatmaps";
+import ProvisionChecklist from "@/components/ProvisionChecklist";
 import {
   RadarChart,
   RadarGrid,
@@ -58,11 +61,12 @@ const COVERAGE_LABEL: Record<string, string> = {
 };
 
 // Coverage tier accent colors — exact muted chart tokens. These carry the
-// Covered/Partial/Missing semantic, so they use the muted status colors
-// (forest green / amber / red) within the monochrome system.
+// Covered/Partial/Missing semantic. Partial is a soft gold rather than amber:
+// it softens the red-vs-green contrast at the tier that sits between them,
+// for a calmer, more elegant read than the harsher stock traffic-light amber.
 const TIER_DOT: Record<string, string> = {
   Covered: "#3F7A52", // --chart-covered (muted forest green)
-  Partial: "#B07E2B", // --chart-partial (muted amber)
+  Partial: "#C9AF7A", // --chart-partial (soft gold)
   Missing: "#A8483F", // --chart-missing (muted red)
   "Insufficient Evidence": "#B07E2B", // cannot tell — caution amber
 };
@@ -86,7 +90,7 @@ const RADAR_DISPLAY: Record<string, string> = {
 
 const RADAR_TIER_LEGEND = [
   { label: "Missing", color: "#A8483F" },
-  { label: "Partially Covered", color: "#B07E2B" },
+  { label: "Partially Covered", color: "#C9AF7A" },
   { label: "Fully Covered", color: "#3F7A52" },
 ] as const;
 
@@ -96,7 +100,7 @@ const RADAR_TIER_LEGEND = [
 // legend and donut.
 const radarTooltip = (value: number): RadarTooltip => {
   if (value >= 100) return { label: "Fully Covered", color: "#3F7A52" };
-  if (value >= 66) return { label: "Partially Covered", color: "#B07E2B" };
+  if (value >= 66) return { label: "Partially Covered", color: "#C9AF7A" };
   if (value >= 33) return { label: "Missing", color: "#A8483F" };
   return { label: "Not assessed", color: "#8A8A8A" };
 };
@@ -152,26 +156,26 @@ function FrameworkSynthesisBlock({
         <div className="space-y-3">
           {consensus && (
             <div>
-              <p className="module-label mb-1">Consensus</p>
-              <p className="module-body">{consensus}</p>
+              <p className="module-label font-bold mb-1">Consensus</p>
+              <p className="module-body"><HighlightedText text={consensus} /></p>
             </div>
           )}
           {differences && (
             <div>
-              <p className="module-label mb-1">Differences</p>
-              <p className="module-body">{differences}</p>
+              <p className="module-label font-bold mb-1">Differences</p>
+              <p className="module-body"><HighlightedText text={differences} /></p>
             </div>
           )}
           {overall && (
             <div>
-              <p className="module-label mb-1">Overall Assessment</p>
-              <p className="module-body">{overall}</p>
+              <p className="module-label font-bold mb-1">Overall Assessment</p>
+              <p className="module-body"><HighlightedText text={overall} /></p>
             </div>
           )}
         </div>
       ) : (
         <p className="module-body">
-          {m2?.framework_synthesis || gap.framework_synthesis || "—"}
+          <HighlightedText text={m2?.framework_synthesis || gap.framework_synthesis || "—"} />
         </p>
       )}
     </div>
@@ -299,7 +303,7 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
           <CoverageIndicator coverage={gap.coverage} />
         </div>
         <div>
-          <p className="module-label mb-1.5">Governance Maturity</p>
+          <p className="module-label font-bold mb-1.5">Implementation Depth</p>
           <MaturityBadge level={maturity} />
         </div>
         <div>
@@ -311,35 +315,76 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
         {!isCovered && (
           <div>
             <p className="module-label mb-1.5">Reason Flagged</p>
-            <p className="module-body">{m1?.reason_flagged || gap.reason_flagged}</p>
+            <p className="module-body">
+              <HighlightedText text={m1?.reason_flagged || gap.reason_flagged || ""} />
+            </p>
           </div>
         )}
       </div>
 
-      {/* Fully Covered tier: coverage_example replaces reason_flagged /
-          coverage_reasoning — what in the document led to the verdict. */}
+      <ProvisionChecklist gap={gap} />
+
+      {/* Fully Covered tier: coverage_example (what led to the Covered
+          verdict) replaces reason_flagged. When the model produced no
+          coverage_example, fall back to coverage_reasoning so the verdict
+          is never left unexplained. */}
       {isCovered ? (
         m1?.coverage_example ? (
           <div>
             <p className="module-heading mb-2">Coverage Examples</p>
-            <p className="module-body">{m1.coverage_example}</p>
+            <p className="module-body">
+              <HighlightedText text={m1.coverage_example} />
+            </p>
           </div>
-        ) : null
+        ) : (
+          (m1?.coverage_reasoning || gap.coverage_reasoning) && (
+            <div>
+              <p className="module-heading mb-2">Coverage Reasoning</p>
+              <p className="module-body">
+                <HighlightedText text={m1?.coverage_reasoning || gap.coverage_reasoning || ""} />
+              </p>
+            </div>
+          )
+        )
       ) : (
         (m1?.coverage_reasoning || gap.coverage_reasoning) && (
           <div>
             <p className="module-heading mb-2">Coverage Reasoning</p>
             <p className="module-body">
-              {m1?.coverage_reasoning || gap.coverage_reasoning}
+              <HighlightedText text={m1?.coverage_reasoning || gap.coverage_reasoning || ""} />
             </p>
           </div>
         )
       )}
 
+      {/* Citation caveats — FABRICATED ONLY.
+          A caveat is worth a reader's attention when they cannot check the
+          reference themselves. Two severities are computed: fabricated (the
+          number appears nowhere in the uploaded document) and unsupported
+          (real and present in the document, but not in the passages retrieved
+          for this dimension).
+          Only the first is shown. Surfacing the second told readers to doubt
+          citations they could look up and confirm — on the EU AI Act run it
+          flagged "Article 10" for Fairness, which is the data-governance and
+          bias-examination provision and exactly the right reference, plus a
+          recital that occurs verbatim in the text. That is a retrieval-coverage
+          signal about us, not a defect in the analysis, and putting it in front
+          of the reader made correct work look unreliable. It is still recorded
+          on the gap and logged server-side. */}
+      {(gap.fabricated_citations?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-[#E4C9C6] bg-[#F9F1F0] px-3 py-2">
+          <p className="module-heading mb-1 text-[#A8483F]">Citation caveat</p>
+          <p className="module-body text-[#A8483F]">
+            Not found anywhere in the uploaded document —{" "}
+            {gap.fabricated_citations!.join(", ")}. Treat as unreliable.
+          </p>
+        </div>
+      )}
+
       {m1?.maturity_reasoning && (
         <div>
           <p className="module-heading mb-2">Maturity Reasoning</p>
-          <p className="module-body">{m1.maturity_reasoning}</p>
+          <p className="module-body"><HighlightedText text={m1.maturity_reasoning} /></p>
         </div>
       )}
 
@@ -403,7 +448,7 @@ function BestPracticesPanel({ gap }: { gap: GovernanceGap }) {
 
   return (
     <div className="space-y-5">
-      <p className="module-body">{best.opening}</p>
+      <p className="module-body"><HighlightedText text={best.opening} /></p>
 
       {best.future_strengthening_opportunities.length > 0 && (
         <div>
@@ -412,7 +457,7 @@ function BestPracticesPanel({ gap }: { gap: GovernanceGap }) {
           </p>
           <ul className="module-list">
             {best.future_strengthening_opportunities.map((e, i) => (
-              <li key={i}>{e}</li>
+              <li key={i}><HighlightedText text={e} /></li>
             ))}
           </ul>
         </div>
@@ -426,7 +471,7 @@ function BestPracticesPanel({ gap }: { gap: GovernanceGap }) {
           <div className="space-y-3">
             {best.international_examples.map((ex, i) => (
               <div key={i} className="border rounded-lg p-3.5 bg-white/70 space-y-2">
-                <p className="module-body">{ex.practice}</p>
+                <p className="module-body"><HighlightedText text={ex.practice} /></p>
                 <div className="flex flex-wrap gap-3 module-meta">
                   {ex.country_or_source && <span>{ex.country_or_source}</span>}
                   {ex.reference && <span>Source: {ex.reference}</span>}
@@ -510,7 +555,7 @@ function Module2Panel({ gap }: { gap: GovernanceGap }) {
         {recommendations.length ? (
           <ul className="module-list">
             {recommendations.map((r, i) => (
-              <li key={i}>{r}</li>
+              <li key={i}><HighlightedText text={r} /></li>
             ))}
           </ul>
         ) : (
@@ -531,7 +576,13 @@ function Module2Panel({ gap }: { gap: GovernanceGap }) {
                     href={`/frameworks?framework=${encodeURIComponent(
                       seg.framework.name
                     )}`}
-                    className="text-undp-blue underline underline-offset-2 hover:text-undp-blue-light transition-colors"
+                    // A real highlight, not just a color swap: `text-undp-blue`
+                    // resolves to the same near-black as ordinary body text
+                    // (the palette killed blue), so underline alone read as a
+                    // stray line under plain prose rather than a link. The
+                    // background carries the "clickable" signal color cannot.
+                    className="font-semibold text-navy-950 underline decoration-navy-950/50 underline-offset-2 bg-navy-950/[0.06] hover:bg-navy-950/[0.11] rounded px-1 py-0.5 -mx-1 transition-colors"
+                    title={`Open ${seg.framework.name} in the Framework Library`}
                   >
                     {seg.text}
                   </Link>
@@ -602,7 +653,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
                 )}
               </div>
               {ph.objective && (
-                <p className="module-body mt-2">{ph.objective}</p>
+                <p className="module-body mt-2"><HighlightedText text={ph.objective} /></p>
               )}
               {ph.steps.length > 0 && (
                 <ol className="mt-3 space-y-2.5">
@@ -611,7 +662,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
                       <span className="font-bold text-navy-950 shrink-0 tabular-nums">
                         {j + 1}.
                       </span>
-                      <span>{s}</span>
+                      <span><HighlightedText text={s} /></span>
                     </li>
                   ))}
                 </ol>
@@ -654,7 +705,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
           </p>
           <ul className="module-list">
             {m3.documentation_requirements.map((d, i) => (
-              <li key={i}>{d}</li>
+              <li key={i}><HighlightedText text={d} /></li>
             ))}
           </ul>
         </div>
@@ -669,7 +720,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
             {m3.monitoring_checklist.map((m, i) => (
               <li key={i} className="module-body flex items-start gap-2.5">
                 <span className="font-bold text-navy-950 mt-0.5 shrink-0 text-sm leading-relaxed">☐</span>
-                <span>{m}</span>
+                <span><HighlightedText text={m} /></span>
               </li>
             ))}
           </ul>
@@ -730,25 +781,25 @@ function Module4Panel({ gap }: { gap: GovernanceGap }) {
               {inc.dimension_relevance && (
                 <p className="module-body">
                   <span className="font-semibold">Relevance: </span>
-                  {inc.dimension_relevance}
+                  <HighlightedText text={inc.dimension_relevance} />
                 </p>
               )}
               {inc.potential_consequence && (
                 <p className="module-body">
                   <span className="font-semibold">Potential Consequence: </span>
-                  {inc.potential_consequence}
+                  <HighlightedText text={inc.potential_consequence} />
                 </p>
               )}
               {inc.lessons_learned && (
                 <p className="module-body">
                   <span className="font-semibold">Lessons Learned: </span>
-                  {inc.lessons_learned}
+                  <HighlightedText text={inc.lessons_learned} />
                 </p>
               )}
               {inc.mitigation && (
                 <p className="module-body">
                   <span className="font-semibold">Mitigation: </span>
-                  {inc.mitigation}
+                  <HighlightedText text={inc.mitigation} />
                 </p>
               )}
               {citation &&
@@ -797,7 +848,7 @@ function AnalysisFailedPanel({ gap }: { gap: GovernanceGap }) {
   );
 }
 
-function DimensionBlock({ gap }: { gap: GovernanceGap }) {
+function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
   const [open, setOpen] = useState(false);
   const maturity = gap.module_1?.governance_maturity || gap.governance_maturity;
   const failed = Boolean(gap.analysis_error);
@@ -875,10 +926,20 @@ function DimensionBlock({ gap }: { gap: GovernanceGap }) {
   return (
     <motion.div
       layout
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      // Once per card, a little into the viewport — the reveal a reader
+      // scrolling down the dimension list used to see. `once: true` so an
+      // opened-then-scrolled-past card never re-plays the entrance.
+      viewport={{ once: true, amount: 0.2 }}
       className={`bg-white rounded-xl shadow-sm border ${
         failed ? "border-[#E4C9C6]" : "border-[color:var(--border)]"
       }`}
-      transition={{ layout: { duration: DUR.slow, ease: EASE.outSoft } }}
+      transition={{
+        layout: { duration: DUR.slow, ease: EASE.outSoft },
+        opacity: { duration: DUR.base, ease: EASE.out, delay: Math.min(index * 0.05, 0.25) },
+        y: { duration: DUR.base, ease: EASE.out, delay: Math.min(index * 0.05, 0.25) },
+      }}
     >
       {/* Header — owns its own corner rounding now that the card no longer
           clips with overflow-hidden (which would break the sticky deck). */}
@@ -911,7 +972,7 @@ function DimensionBlock({ gap }: { gap: GovernanceGap }) {
               <CoverageIndicator coverage={gap.coverage} />
             </motion.span>
           )}
-          {/* An un-assessed dimension has no maturity — showing 'Ad Hoc' or
+          {/* An un-assessed dimension has no maturity — showing 'Unaddressed' or
               'Insufficient Evidence' tags next to 'Analysis failed' would be
               misleading. Risk labels (Low/Medium/High) were removed from the
               UI; risk_level stays in the data for backend priority logic. */}
@@ -971,8 +1032,6 @@ function DimensionBlock({ gap }: { gap: GovernanceGap }) {
             >
                 <div className="flex items-center gap-2 text-xs font-medium text-navy-900">
                   <span>Confidence: {(gap.confidence_score * 100).toFixed(0)}%</span>
-                  <span>—</span>
-                  <span className="italic">{gap.confidence_method}</span>
                 </div>
               </motion.div>
 
@@ -1020,10 +1079,26 @@ const WEAK_TIER: Record<string, number> = {
 function DecisionAnalyticsCard({
   analytics,
   gaps,
+  analyses,
+  currentAnalysisId,
 }: {
   analytics: DecisionAnalytics;
   gaps: GovernanceGap[];
+  analyses: Analysis[];
+  currentAnalysisId: string;
 }) {
+  // The trajectory compares this run against what came before it — on the
+  // very first run there is no "before", so it has nothing to show. Gated on
+  // the run actually being VIEWED, not just on the workspace having more than
+  // one run overall: opening run 1 of a two-run workspace must not show a
+  // trajectory into a future run the reader hasn't gotten to yet.
+  const isBaselineRun = useMemo(() => {
+    if (analyses.length < 2) return true;
+    const sorted = [...analyses].sort(
+      (a, b) => (a.created_at || "").localeCompare(b.created_at || "")
+    );
+    return sorted[0]?.analysis_id === currentAnalysisId;
+  }, [analyses, currentAnalysisId]);
   const radar = useMemo(() => {
     const values: Record<string, number> = {};
     let notAssessed = 0;
@@ -1089,7 +1164,7 @@ function DecisionAnalyticsCard({
       <div className="flex items-center justify-between mb-4">
         <motion.h2
           variants={staggerChild}
-          className="text-lg font-semibold text-navy-950"
+          className="text-lg font-bold text-navy-950"
         >
           Decision Analytics
         </motion.h2>
@@ -1114,7 +1189,7 @@ function DecisionAnalyticsCard({
           variants={staggerChild}
           className="rounded-xl border border-[color:var(--border)] bg-white p-4"
         >
-          <p className="eyebrow mb-3">Overall Governance Maturity</p>
+          <p className="eyebrow mb-3">Implementation Depth</p>
           <MaturityGauge analytics={analytics} />
           <StageHistogram analytics={analytics} />
         </motion.div>
@@ -1197,6 +1272,24 @@ function DecisionAnalyticsCard({
           </p>
         </motion.div>
       </div>
+
+      {/* Row 4: regulatory trajectory — only meaningful once a workspace
+          holds more than one run. Shows what each added instrument actually
+          moved, per dimension, without opening two run tabs to read two
+          tables from memory. */}
+      {!isBaselineRun && (
+        <motion.div
+          variants={staggerChild}
+          className="rounded-xl border border-[color:var(--border)] bg-white p-4 mt-4"
+        >
+          <p className="eyebrow mb-1">Regulatory Trajectory</p>
+          <p className="text-[11px] text-navy-600 mb-3">
+            Coverage and maturity stage per dimension, across every run in
+            this workspace — what each added instrument actually moved.
+          </p>
+          <RunComparisonHeatmap analyses={analyses} />
+        </motion.div>
+      )}
     </motion.div>
   );
 }
@@ -1216,7 +1309,15 @@ export default function AnalysisPage() {
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { openPanel, setWorkspaceId, setFindingContext, setMode } = useChat();
+  // Live status of the currently-selected workspace's pipeline (independent
+  // of whether it has any completed analysis yet) — lets a running analysis
+  // be shown as a banner ABOVE previously-completed results, instead of
+  // either hiding those results or silently doing nothing when a re-run is
+  // in progress.
+  const [wsStatus, setWsStatus] = useState<string | null>(null);
+  const [wsStatusDetail, setWsStatusDetail] = useState<string | null>(null);
+  const { openPanel, setWorkspaceId, setFindingContext, setMode, setAnalysisId } =
+    useChat();
 
   // Load the analysis for a specific workspace id — shared by the
   // workspace dropdown (loadAnalysis) and the ?workspace=<id> deep link
@@ -1227,6 +1328,8 @@ export default function AnalysisPage() {
     setError(null);
     try {
       const data = await api.getAnalysis(wsId);
+      setWsStatus(data.status);
+      setWsStatusDetail(data.status_detail);
       if (data.analyses.length > 0) {
         setAnalyses(data.analyses);
         // Keep the currently-selected run if it still exists; otherwise show
@@ -1236,15 +1339,18 @@ export default function AnalysisPage() {
           data.analyses[0];
         setSelectedAnalysisId(selected.analysis_id);
         setAnalysis(selected);
+      } else if (data.status === "processing" || data.status === "queued") {
+        // No completed run exists yet for this workspace — keep the running
+        // banner (rendered from wsStatus below) as the only messaging here;
+        // no separate error text needed.
+        setAnalyses([]);
+        setSelectedAnalysisId("");
+        setAnalysis(null);
       } else {
         setAnalyses([]);
         setSelectedAnalysisId("");
         setAnalysis(null);
-        setError(
-          data.status === "processing" || data.status === "queued"
-            ? "Analysis is still running. Check back shortly."
-            : "No analysis results yet."
-        );
+        setError("No analysis results yet.");
       }
     } catch (e) {
       setError("Failed to load analysis");
@@ -1252,6 +1358,34 @@ export default function AnalysisPage() {
       setLoading(false);
     }
   }
+
+  // While the selected workspace's pipeline is actively running, keep
+  // re-fetching so a running re-run flips over to its finished result (and
+  // the banner clears) without the user having to click View Analysis again.
+  // Same shape as the Workspace page poller: the "is a run in flight?" test
+  // is a boolean dependency and the interval id is NOT held in state. Storing
+  // it and guarding on it lets a stale id block the replacement interval after
+  // a cleanup, which is how the Workspace page stopped polling after one tick
+  // and left finished analyses looking like they were still running.
+  //
+  // "queued" is excluded: it means documents are attached and waiting for the
+  // user to press Run Analysis, so polling it would never terminate.
+  const isRunActive =
+    wsStatus === "processing" || wsStatus === "generating_report";
+
+  useEffect(() => {
+    if (!isRunActive || !selectedWs) return;
+    const id = setInterval(() => loadAnalysisFor(selectedWs), 5000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunActive, selectedWs]);
+
+  // Keep the Rapporteur pointed at the run on screen. Done here rather than
+  // in the selector's click handler so the deep-link and reload paths — which
+  // pick a run without any click — stay in sync too.
+  useEffect(() => {
+    setAnalysisId(selectedAnalysisId || null);
+  }, [selectedAnalysisId, setAnalysisId]);
 
   useEffect(() => {
     // Framework Library names power the clickable International Standard
@@ -1402,26 +1536,52 @@ export default function AnalysisPage() {
 
       {analyses.length > 1 && (
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-sm font-semibold text-navy-950">Run history:</span>
-          {analyses.map((a, idx) => (
-            <button
-              key={a.analysis_id}
-              onClick={() => {
-                setSelectedAnalysisId(a.analysis_id);
-                setAnalysis(a);
-              }}
-              className={`pressable px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                a.analysis_id === selectedAnalysisId
-                  ? "bg-undp-blue text-white border-undp-blue"
-                  : "bg-white text-navy-950 border-navy-300 hover:border-undp-blue hover:text-undp-blue"
-              }`}
-            >
-              {idx === 0 ? "Latest run" : `Run ${analyses.length - idx}`}{" "}
-              <span className="font-normal">
-                {a.created_at ? a.created_at.slice(0, 16).replace("T", " ") : ""}
-              </span>
-            </button>
-          ))}
+          <span className="text-sm font-semibold text-navy-950">Documents evaluated:</span>
+          {analyses.map((a) => {
+            // Label by what was actually evaluated, not by run order/time —
+            // a multi-document workspace (e.g. India: DPDPA, then DPDPA +
+            // AI Governance Guidelines added) reads far more clearly as
+            // "DPDPA" / "DPDPA, AI Governance Guidelines" than as
+            // "Run 1" / "Latest run" with a timestamp.
+            const docs = a.evaluated_documents?.length
+              ? a.evaluated_documents
+              : a.document_name
+              ? [a.document_name]
+              : [];
+            const label = docs.length > 0 ? docs.join(" + ") : "Untitled run";
+            return (
+              <button
+                key={a.analysis_id}
+                onClick={() => {
+                  setSelectedAnalysisId(a.analysis_id);
+                  setAnalysis(a);
+                }}
+                title={a.created_at ? a.created_at.slice(0, 16).replace("T", " ") : undefined}
+                className={`pressable px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  a.analysis_id === selectedAnalysisId
+                    ? "bg-undp-blue text-white border-undp-blue"
+                    : "bg-white text-navy-950 border-navy-300 hover:border-undp-blue hover:text-undp-blue"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {(wsStatus === "processing" ||
+        wsStatus === "queued" ||
+        wsStatus === "generating_report") && (
+        <div className="bg-navy-100 border border-navy-200 text-navy-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2.5">
+          <span className="w-2 h-2 rounded-full bg-navy-500 status-dot shrink-0" />
+          <span>
+            <span className="font-semibold">Analysis is currently running for this workspace.</span>{" "}
+            {wsStatusDetail || "This can take a few minutes."}
+            {analysis
+              ? " Showing the most recently completed results below — this will update automatically once the new run finishes."
+              : " Results will appear here automatically once it finishes."}
+          </span>
         </div>
       )}
 
@@ -1438,6 +1598,8 @@ export default function AnalysisPage() {
             <DecisionAnalyticsCard
               analytics={analysis.decision_analytics}
               gaps={analysis.governance_gaps}
+              analyses={analyses}
+              currentAnalysisId={analysis.analysis_id}
             />
           )}
 
@@ -1445,8 +1607,8 @@ export default function AnalysisPage() {
             <h2 className="text-xl font-semibold text-undp-blue">
               Governance Dimensions
             </h2>
-            {analysis.governance_gaps.map((gap) => (
-              <DimensionBlock key={gap.dimension} gap={gap} />
+            {analysis.governance_gaps.map((gap, i) => (
+              <DimensionBlock key={gap.dimension} gap={gap} index={i} />
             ))}
           </div>
         </div>

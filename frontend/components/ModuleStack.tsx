@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { motion } from "motion/react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { EASE, DUR } from "@/lib/motion";
-import ScrollFloat from "@/components/ScrollFloat";
 import { cn } from "@/lib/utils";
 
 export type ModuleStackItem = {
@@ -29,9 +28,10 @@ export type ModuleStackItem = {
  * not an image reel; the user advances with the arrows, the pagination dots,
  * the "01 / 04" counter, or by swiping the card horizontally.
  *
- * The card chrome is untouched — header band (counter + ScrollFloat title +
- * meta) and the content area are exactly the deck cards that were already
- * there. Only the display animation changed.
+ * The card chrome is untouched — header band (counter + title + meta) and
+ * the content area are exactly the deck cards that were already there.
+ * Only the display animation changed. (The title no longer animates on
+ * scroll — static text, no ScrollFloat.)
  *
  * Cards size to their OWN content: a short module shows a short card, a long
  * one grows. The deck container height is measured from the active card and
@@ -194,18 +194,7 @@ export default function ModuleStack({
                     {String(n).padStart(2, "0")}
                   </span>
                   <h4 className="font-display text-lg font-bold tracking-tight text-navy-950">
-                    {/* Float-on-scroll reveal (React Bits ScrollFloat) —
-                        animation only; inherits the h4's own font/size. */}
-                    <ScrollFloat
-                      scrollContainerRef={undefined}
-                      animationDuration={1}
-                      ease="back.inOut(2)"
-                      scrollStart="center bottom+=50%"
-                      scrollEnd="bottom bottom-=40%"
-                      stagger={0.03}
-                    >
-                      {item.title}
-                    </ScrollFloat>
+                    {item.title}
                   </h4>
                   {item.meta && (
                     <div className="mt-2 flex justify-center">{item.meta}</div>

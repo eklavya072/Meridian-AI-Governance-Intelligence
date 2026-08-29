@@ -19,6 +19,7 @@
  */
 
 import { usePathname } from "next/navigation";
+import MeridianMark from "@/components/MeridianMark";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 const LINKS = [
@@ -111,18 +112,20 @@ export default function NavBar() {
         hidden ? "is-hidden" : ""
       }`}
     >
-      {/* Compact pill sizing — py-2.5 sm:py-3 from the previous py-3.5.
-          The base breakpoint stays tight so the pill never clips on narrow
-          phones. */}
-      <div className="nav-pill pointer-events-auto flex items-center gap-1 sm:gap-2 rounded-full px-4 sm:px-6 py-2 sm:py-3">
+      {/* The pill carries the brand now that the landing hero does not, so
+          the mark sits beside the wordmark and the whole thing runs a step
+          larger. The base breakpoint stays tight so it never clips on
+          narrow phones. */}
+      <div className="nav-pill pointer-events-auto flex items-center gap-1 sm:gap-2 rounded-full px-5 sm:px-7 py-2.5 sm:py-3.5">
         <a
           href="/"
-          className="font-brand text-xl sm:text-[1.375rem] font-semibold tracking-tight text-white pr-2 sm:pr-3"
+          className="flex items-center gap-2 sm:gap-2.5 font-brand text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-white pr-2 sm:pr-3.5"
         >
+          <MeridianMark size={26} className="shrink-0 w-[1.35rem] h-[1.35rem] sm:w-7 sm:h-7" />
           Meridian
         </a>
-        <span className="hidden sm:block h-4 sm:h-5 w-px bg-white/15" aria-hidden />
-        <div className="flex items-center gap-3 sm:gap-5 lg:gap-6 text-[15px] font-display font-medium tracking-tight pl-2 sm:pl-3">
+        <span className="hidden sm:block h-5 sm:h-6 w-px bg-white/15" aria-hidden />
+        <div className="flex items-center gap-3 sm:gap-5 lg:gap-7 text-[16px] font-display font-medium tracking-tight pl-2 sm:pl-3.5">
           {LINKS.map((link) => {
             const active =
               link.href === "/"

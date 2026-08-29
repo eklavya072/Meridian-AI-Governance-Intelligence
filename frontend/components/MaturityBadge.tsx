@@ -1,12 +1,18 @@
-// Logical maturity color ramp — every level carries a real semantic color
-// (red → amber → green), never grey: Ad Hoc is the weakest tier, Optimized
-// the strongest, so the dot reads like a progress signal at a glance.
+// Maturity is intentionally monochrome, not a rainbow: Coverage (Covered/
+// Partial/Missing) already owns the site's three status hues (green/amber/
+// red) — reusing them here would make Maturity read as a second coverage
+// verdict instead of the distinct "how operational is it" axis it actually
+// is. Same grey ramp as the StageHistogram gauge (DashboardCharts.tsx) for
+// one consistent visual language: light grey = barely present, black =
+// fully institutionalized — a weight/ink metaphor that fits the site's
+// black+white+grey system instead of borrowing colors that mean something
+// else.
 const maturityDot: Record<string, string> = {
-  "Ad Hoc": "#A8483F", // muted red — weakest
-  Developing: "#B07E2B", // muted amber
-  Defined: "#3F7A52", // muted green
-  Managed: "#3F7A52", // muted green
-  Optimized: "#3F7A52", // muted forest green — strongest
+  Unaddressed: "#8A8A8A", // grey.500 — barely present
+  Emerging: "#6E6E6E", // grey.550
+  Delegated: "#4A4A4A", // grey.700 — an owner or a duty, no regime yet
+  Operationalized: "#262626", // grey.800
+  Institutionalized: "#0A0A0A", // black — fully established
 };
 
 export default function MaturityBadge({ level }: { level?: string | null }) {
@@ -18,7 +24,7 @@ export default function MaturityBadge({ level }: { level?: string | null }) {
     >
       <span
         className="w-2 h-2 rounded-full shrink-0"
-        style={{ background: maturityDot[level] || "#A8483F" }}
+        style={{ background: maturityDot[level] || "#8A8A8A" }}
       />
       {level}
     </span>

@@ -113,6 +113,12 @@ export default function Gauge({
     return String(centerValue ?? Math.round(display));
   }, [formatOptions, centerValue, display]);
 
+  // A word ("Institutionalized") needs a different size from a number ("92.9").
+  // Scaled from the rendered string rather than exposed as a prop, so a caller
+  // switching a gauge from a score to a label cannot forget to resize it.
+  const centerFontSize =
+    shown.length > 14 ? 12 : shown.length > 11 ? 14 : shown.length > 7 ? 18 : 26;
+
   // The value arc spans only value% of the track — the gradient must end at
   // the value arc's actual endpoint (not the full sweep) so the dark end of
   // the ramp lands where the arc stops.
@@ -189,7 +195,7 @@ export default function Gauge({
           x={cx}
           y={cy - 2}
           textAnchor="middle"
-          fontSize={26}
+          fontSize={centerFontSize}
           fontWeight={700}
           fill="#0A0A0A"
           style={{ fontVariantNumeric: "tabular-nums" }}

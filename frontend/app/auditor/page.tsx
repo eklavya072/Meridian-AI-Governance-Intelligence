@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { api, ChatCitation, ChatSessionInfo } from "@/lib/api";
 import { EASE, DUR } from "@/lib/motion";
 import SplitText from "@/components/SplitText";
+import MarkdownLite from "@/components/MarkdownLite";
 
 interface ChatMessage {
   id: string;
@@ -15,11 +16,15 @@ interface ChatMessage {
   reason?: string | null;
 }
 
+// One per capability, in the order the greeting introduces them: a governance
+// concept, a framework question, a question about Meridian itself, and a
+// document question. The old set offered two document prompts on a screen
+// where no document is attached yet.
 const SUGGESTIONS = [
-  "Summarize this policy",
-  "What does this document say about transparency?",
-  "How does the EU AI Act classify high-risk AI?",
+  "What is transparency in AI?",
   "What does NIST AI RMF say about accountability?",
+  "Why eight dimensions and not more?",
+  "How does the G7 Hiroshima process handle safety?",
 ];
 
 /** A PDF attached for document chat (ingested chat-only, never analysed). */
@@ -105,7 +110,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       className={`flex ${isUser ? "justify-end" : "justify-start"}`}
     >
       <div
-        className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+        className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isUser
             ? "bg-navy-950 text-white rounded-br-md shadow-md shadow-navy-950/15"
             :          isBlocked
@@ -113,7 +118,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             : "bg-white border border-navy-950/10 text-gray-800 rounded-bl-md shadow-sm"
         }`}
       >
-        {msg.content}
+        {/* See ChatPanel: assistant replies are light Markdown and must be
+            rendered, or **bold** reaches the user as literal asterisks. */}
+        {isUser ? (
+          <span className="whitespace-pre-wrap">{msg.content}</span>
+        ) : (
+          <MarkdownLite text={msg.content} />
+        )}
         {isBlocked && msg.reason && (
           <p className="mt-1.5 text-xs text-[#8A6420] italic">Reason: {msg.reason}</p>
         )}
@@ -170,6 +181,14 @@ export default function AuditorPage() {
       // ignore
     }
   }, []);
+
+  // Loaded once on mount, not only when the history panel is opened — the
+  // "History (N)" badge on the closed button was only ever populated by that
+  // panel's own click handler, so it read "(0)" on every fresh visit no
+  // matter how much history existed until the user had already opened it.
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

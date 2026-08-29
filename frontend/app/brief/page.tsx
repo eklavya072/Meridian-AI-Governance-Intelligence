@@ -96,6 +96,11 @@ export default function BriefPage() {
   }
 
   const s = brief?.sections;
+  // Render-order section numbering. Reset on every render so the counter does
+  // not accumulate across re-renders; JSX below evaluates top-to-bottom, so
+  // calling this in place yields 01, 02, 03 ... skipping absent sections.
+  let sectionCounter = 0;
+  const nextIndex = () => String(++sectionCounter).padStart(2, "0");
 
   return (
     <div className="space-y-8">
@@ -223,14 +228,18 @@ export default function BriefPage() {
           </div>
 
           <div className="px-8 py-6">
+            {/* Section numbers are assigned in render order rather than
+                hardcoded: several sections below are conditional (a run with
+                no gaps has no roadmap), and fixed indices skipped numbers or
+                repeated them as soon as one was absent. */}
             {/* EXECUTIVE SUMMARY */}
-            <SectionHeading index="01">Executive Summary</SectionHeading>
+            <SectionHeading index={nextIndex()}>Executive Summary</SectionHeading>
             <p className="text-sm leading-relaxed text-gray-800 max-w-3xl">
               {s.executive_summary}
             </p>
 
             {/* KEY FINDINGS */}
-            <SectionHeading index="02">Key Findings</SectionHeading>
+            <SectionHeading index={nextIndex()}>Key Findings</SectionHeading>
             <div className="space-y-5 max-w-3xl">
               <div>
                 <h3 className="text-sm font-bold text-navy-800 mb-2">
@@ -247,7 +256,7 @@ export default function BriefPage() {
             </div>
 
             {/* RISK OVERVIEW */}
-            <SectionHeading index="03">Risk Overview</SectionHeading>
+            <SectionHeading index={nextIndex()}>Risk Overview</SectionHeading>
             <p className="text-sm leading-relaxed text-gray-800 max-w-3xl">
               {s.risk_overview.paragraph}
             </p>
@@ -264,8 +273,40 @@ export default function BriefPage() {
               </div>
             )}
 
+            {/* DIMENSION ASSESSMENT — deterministic per-dimension detail */}
+            {(s.dimension_assessment?.length ?? 0) > 0 && (
+              <>
+                <SectionHeading index={nextIndex()}>Dimension Assessment</SectionHeading>
+                <div className="max-w-3xl divide-y divide-navy-950/10">
+                  {s.dimension_assessment!.map((r) => (
+                    <div key={r.dimension} className="py-3 first:pt-0">
+                      <div className="flex flex-wrap items-baseline gap-x-2">
+                        <span className="text-sm font-semibold text-navy-950">
+                          {r.dimension}
+                        </span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          {r.coverage}
+                          {r.maturity ? ` · ${r.maturity}` : ""}
+                        </span>
+                      </div>
+                      {r.basis && (
+                        <p className="mt-1 text-sm leading-relaxed text-gray-700">
+                          {r.basis}
+                        </p>
+                      )}
+                      {r.absent_mechanisms.length > 0 && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Not addressed: {r.absent_mechanisms.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             {/* PRIORITY RECOMMENDATIONS */}
-            <SectionHeading index="04">Priority Recommendations</SectionHeading>
+            <SectionHeading index={nextIndex()}>Priority Recommendations</SectionHeading>
             {s.priority_recommendations.length === 0 ? (
               <p className="text-sm text-gray-500 italic">
                 No critical gaps identified — no priority actions required.
@@ -292,10 +333,81 @@ export default function BriefPage() {
               </ol>
             )}
 
+            {/* IMPLEMENTATION ROADMAP — sequenced Module 3 actions */}
+            {(s.implementation_roadmap?.length ?? 0) > 0 && (
+              <>
+                <SectionHeading index={nextIndex()}>Implementation Roadmap</SectionHeading>
+                <div className="max-w-3xl space-y-5">
+                  {s.implementation_roadmap!.map((item) => (
+                    <div key={item.dimension}>
+                      <p className="text-sm font-semibold text-navy-950">
+                        {item.dimension}{" "}
+                        <span className="font-normal text-gray-500">({item.coverage})</span>
+                      </p>
+                      {item.responsible_agency && (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          Responsible body: {item.responsible_agency}
+                        </p>
+                      )}
+                      {item.phases.map((ph, pi) => (
+                        <div key={pi} className="mt-2 border-l-2 border-navy-950/15 pl-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            {ph.phase}
+                            {ph.timeline ? ` · ${ph.timeline}` : ""}
+                          </p>
+                          {ph.objective && (
+                            <p className="text-sm text-gray-800">{ph.objective}</p>
+                          )}
+                          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-gray-700">
+                            {ph.steps.map((st, si) => (
+                              <li key={si}>{st}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                      {item.monitoring.length > 0 && (
+                        <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-gray-500">
+                          {item.monitoring.map((mc, mi) => (
+                            <li key={mi}>Monitor: {mc}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* EVIDENCE BASE — what the verdicts rest on */}
+            {(s.evidence_base?.citations_total ?? 0) > 0 && (
+              <>
+                <SectionHeading index={nextIndex()}>Evidence Base</SectionHeading>
+                <p className="text-sm leading-relaxed text-gray-800 max-w-3xl">
+                  {s.evidence_base!.citations_verified} of{" "}
+                  {s.evidence_base!.citations_total} citations were verified against
+                  their source passage.
+                </p>
+                {s.evidence_base!.representative_quotes.length > 0 && (
+                  <ul className="mt-2 max-w-3xl space-y-2">
+                    {s.evidence_base!.representative_quotes.map((q, qi) => (
+                      <li key={qi} className="border-l-2 border-navy-950/15 pl-3">
+                        <span className="text-xs font-semibold text-navy-950">
+                          {q.dimension}
+                        </span>
+                        <p className="text-sm italic leading-relaxed text-gray-700">
+                          &ldquo;{q.quote}&rdquo;
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+
             {/* RELEVANT PRECEDENT */}
             {s.relevant_precedent && (
               <>
-                <SectionHeading index="05">Relevant Precedent</SectionHeading>
+                <SectionHeading index={nextIndex()}>Relevant Precedent</SectionHeading>
                 <p className="text-sm leading-relaxed text-gray-800 max-w-3xl">
                   {s.relevant_precedent}
                 </p>
@@ -303,7 +415,7 @@ export default function BriefPage() {
             )}
 
             {/* SCOPE & METHODOLOGY */}
-            <SectionHeading index={s.relevant_precedent ? "06" : "05"}>
+            <SectionHeading index={nextIndex()}>
               Scope &amp; Methodology
             </SectionHeading>
             <div className="space-y-3 max-w-3xl">

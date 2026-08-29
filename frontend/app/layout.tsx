@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Unbounded, Public_Sans } from "next/font/google";
+import { Space_Grotesk, Unbounded, Public_Sans, Newsreader, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { MotionConfig } from "motion/react";
 import { ChatProvider } from "@/components/ChatProvider";
@@ -41,6 +41,29 @@ const brand = Unbounded({
   display: "swap",
 });
 
+/* ── Landing route trio ──────────────────────────────────────────────────
+   Newsreader (display): a document serif with optical sizing. The landing
+   page's world is ink on paper, and this is the face that says so without
+   reaching for the fashion serif every dark site uses.
+   IBM Plex Mono (labels): dimension names, scores, framework versions,
+   section numerals. Institutional, and it sits correctly beside a serif.
+   Scoped to the landing route by CSS; the rest of the app keeps Space
+   Grotesk. Only the weights actually in use are requested. */
+const displaySerif = Newsreader({
+  subsets: ["latin"],
+  weight: ["300", "400"],
+  style: ["normal", "italic"],
+  variable: "--font-serif",
+  display: "swap",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
+  display: "swap",
+});
+
 export default function RootLayout({
   children,
 }: {
@@ -50,7 +73,7 @@ export default function RootLayout({
     <html lang="en" className="font-sans">
       {/* Font variables on <body> (not <html>) keeps the no-JS fallback
           surface clean and scopes them to app content. */}
-      <body className={`${display.variable} ${body.variable} ${brand.variable}`}>
+      <body className={`${display.variable} ${body.variable} ${brand.variable} ${displaySerif.variable} ${mono.variable}`}>
         {/* reducedMotion="user": every motion-driven animation in the app
             honors the user's prefers-reduced-motion preference — the CSS-only
             animations (status dot, progress bar) already have their own

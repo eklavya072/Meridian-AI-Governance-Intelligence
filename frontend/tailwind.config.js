@@ -69,7 +69,7 @@ module.exports = {
            distribution uses the muted status colors; everything else grey. */
         chart: {
           covered: "#3F7A52",
-          partial: "#B07E2B",
+          partial: "#C9AF7A", // soft gold — softer than amber against red/green
           missing: "#A8483F",
           neutral: "#8A8A8A",
         },

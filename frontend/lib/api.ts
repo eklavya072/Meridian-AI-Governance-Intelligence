@@ -26,6 +26,8 @@ export interface Workspace {
   frameworks: string[];
   status: string;
   status_detail: string | null;
+  /** Uploaded but not yet analysed. Non-empty means "Run Analysis" is available. */
+  pending_documents: string[];
   created_at: string;
   updated_at: string;
 }
@@ -66,8 +68,21 @@ export interface GovernanceGap {
   confidence_method: string;
   // ── Module 1 + Module 2 (expanded analysis) ──
   coverage_reasoning?: string;
+  /** Real provisions cited from memory: in the document, not in the retrieved evidence. */
+  unverifiable_citations?: string[];
+  /** Citation numbers that appear nowhere in the uploaded document. */
+  fabricated_citations?: string[];
   governance_maturity?: string;
   maturity_reasoning?: string;
+  /**
+   * Which of the dimension's expected governance mechanisms the document
+   * provides, and at what normative force (0 Aspirational -> 4 Enforceable).
+   * The aggregate "38 of 45" is meaningless on its own — a reader has no way
+   * to know what the 45 are — so the checklist names every one.
+   */
+  mechanisms_present?: Record<string, number>;
+  /** Expected mechanisms the document does not address at all. */
+  mechanisms_absent?: string[];
   module_1?: Module1Evaluation | null;
   module_2?: Module2Recommendation | null;
   // ── Module 3 + Module 4 (conditional, Part 2) ──
@@ -203,11 +218,20 @@ export interface DecisionAnalytics {
   missing: number;
   insufficient_evidence: number;
   analysis_failed: number;
-  /** CMMI-style weakest-dimension staged maturity: min stage across assessed dimensions. */
-  overall_governance_maturity: string;
-  /** Continuous 0-100 composite maturity index (gradient for gauges/trends). */
+  /** BINDING FORCE, 0-100: how much authority the instruments carry. Displayed
+   *  as "Implementation Depth" — "maturity" read as a report card, which is not what
+   *  this measures. Paired with coverage_index below; the interesting cases are
+   *  the ones where the two diverge. */
   maturity_index: number;
-  /** Per-stage counts (Ad Hoc/Developing/Defined/Managed/Optimized) for histograms. */
+  /** COVERAGE, 0-100: share of framework-required mechanisms addressed at all,
+   *  regardless of the force behind them. Deliberately not tier-weighted. */
+  coverage_index: number;
+  mechanisms_met: number;
+  mechanisms_total: number;
+  mechanisms_binding: number;
+  /** Of the mechanisms present, the share carried by an actual duty (tier >= 3). */
+  binding_share: number;
+  /** Per-stage counts (Unaddressed/Emerging/Delegated/Operationalized/Institutionalized) for histograms. */
   maturity_distribution: Record<string, number>;
   assessed_dimensions: number;
   average_confidence: number;
@@ -257,12 +281,48 @@ export interface BriefRiskOverview {
   distribution: Record<string, number>;
 }
 
+export interface BriefDimensionRow {
+  dimension: string;
+  coverage: string;
+  maturity: string;
+  basis: string;
+  absent_mechanisms: string[];
+  confidence: number | null;
+}
+
+export interface BriefRoadmapPhase {
+  phase: string;
+  timeline: string;
+  objective: string;
+  steps: string[];
+}
+
+export interface BriefRoadmapItem {
+  dimension: string;
+  coverage: string;
+  responsible_agency: string;
+  phases: BriefRoadmapPhase[];
+  monitoring: string[];
+}
+
+export interface BriefEvidenceBase {
+  citations_total: number;
+  citations_verified: number;
+  representative_quotes: { dimension: string; quote: string }[];
+}
+
 export interface BriefSections {
   executive_summary: string;
   areas_of_strength: string[];
   areas_requiring_attention: string[];
   risk_overview: BriefRiskOverview;
+  /** Deterministic per-dimension detail — coverage, maturity, evidence basis. */
+  dimension_assessment?: BriefDimensionRow[];
   priority_recommendations: BriefRecommendation[];
+  /** Sequenced Module 3 actions for the gapped dimensions. */
+  implementation_roadmap?: BriefRoadmapItem[];
+  /** Verified-citation counts plus representative passages. */
+  evidence_base?: BriefEvidenceBase;
   relevant_precedent: string | null;
   scope_and_methodology: string;
 }
@@ -314,6 +374,10 @@ export interface ChatResponse {
   provider?: string;
   /** "advisor" (analysis-aware) | "framework_qa" (knowledge-base only) */
   mode?: string;
+  /** Real provisions cited from memory: in the document, not in the retrieved evidence. */
+  unverifiable_citations?: string[];
+  /** Citation numbers that appear nowhere in the uploaded document. */
+  fabricated_citations?: string[];
 }
 
 /** "auditor" = the merged AI Auditor bot (document + framework questions). */
@@ -372,7 +436,29 @@ export const api = {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail?.message || err.detail || `Upload failed: ${res.status}`);
     }
-    return res.json();
+    return res.json() as Promise<{
+      status: string;
+      file_name: string;
+      pending_documents: string[];
+    }>;
+  },
+
+  /** Start the pipeline over every document queued on the workspace. */
+  runAnalysis: async (workspaceId: string) => {
+    const res = await fetch(`${API_BASE}/analyze/${workspaceId}/run`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(
+        err.detail?.message || err.detail || `Could not start analysis: ${res.status}`
+      );
+    }
+    return res.json() as Promise<{
+      status: string;
+      workspace_id: string;
+      documents: string[];
+    }>;
   },
 
   /** AI Auditor: ingest a PDF for chat only (no dimension analysis run). */
@@ -437,7 +523,11 @@ export const api = {
       message: string,
       sessionId?: string | null,
       findingContext?: Record<string, unknown> | null,
-      mode?: ChatMode
+      mode?: ChatMode,
+      /** The run the question is about. Without it the backend answers from
+       *  the newest run, which is the wrong one whenever a workspace holds
+       *  more than one — i.e. every country scored guidelines-then-statutes. */
+      analysisId?: string | null
     ) =>
       request<ChatResponse>("/chat", {
         method: "POST",
@@ -447,6 +537,7 @@ export const api = {
           session_id: sessionId || null,
           finding_context: findingContext || null,
           mode: mode || "advisor",
+          analysis_id: analysisId || null,
         }),
       }),
 

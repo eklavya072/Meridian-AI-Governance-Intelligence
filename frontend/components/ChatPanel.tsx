@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useChat, ChatMessage } from "./ChatProvider";
 import { EASE, DUR } from "@/lib/motion";
+import MarkdownLite from "@/components/MarkdownLite";
 
 const INTENT_BADGES: Record<string, { label: string; color: string }> = {
   concept_explanation: {
@@ -100,8 +101,15 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           </div>
         )}
 
-        {/* Message content */}
-        <p className="whitespace-pre-wrap">{msg.content}</p>
+        {/* Message content. Assistant replies arrive as light Markdown (the
+            model emits **bold** and lists whether asked to or not), so they
+            are rendered rather than shown as literal asterisks. User messages
+            are their own typing and stay verbatim. */}
+        {isUser ? (
+          <p className="whitespace-pre-wrap">{msg.content}</p>
+        ) : (
+          <MarkdownLite text={msg.content} />
+        )}
 
         {/* Blocked reason */}
         {isBlocked && msg.reason && (
@@ -161,11 +169,12 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 // completed analysis: how a dimension was scored, the evidence, the
 // recommendations, the roadmap, and the case intelligence.
 const SUGGESTIONS = [
+  "Which dimension came out strongest, and why?",
+  "What are the main gaps in this analysis?",
   "Why did Transparency receive its coverage level?",
   "What evidence supports the Safety verdict?",
-  "Summarize the recommendations for Inclusivity",
+  "Which mechanisms are missing, and which are binding?",
   "What are the implementation roadmap phases?",
-  "Explain the case intelligence match for Accountability",
 ];
 
 export default function ChatPanel() {
