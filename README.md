@@ -191,7 +191,7 @@ derived from real pipeline state, never an LLM self-assessment.
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLAlchemy (async) |
 | Vector store | ChromaDB (persistent, embedded) + `BAAI/bge-small-en-v1.5` embeddings |
-| LLM | **Gemini** (primary, multi-key rotation + RPM/RPD throttles), **Groq** fallback |
+| LLM | **Gemini** (primary; quota-aware routing, per-key RPM/RPD throttles, failover and backoff across configured credentials), **Groq** fallback |
 | Verification | `cross-encoder/nli-deberta-v3-base` NLI cross-encoder |
 | Database | PostgreSQL 16 |
 | Frontend | Next.js 14 (fully static output), React 18, TypeScript, Tailwind, Motion (Framer Motion), Recharts |
