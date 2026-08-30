@@ -411,7 +411,12 @@ scoped to exclude it.
 ## Not yet measured
 
 - Live end-to-end latency (replay is measured above; live is provider-bound)
-- A Grafana dashboard screenshot from sustained traffic
+- A Grafana dashboard screenshot from sustained traffic. The dashboard is
+  provisioned as code (`observability/grafana/dashboards/meridian.json`) and
+  the metrics behind every panel were verified live during the load test —
+  `/metrics` reported 45 complete and 36 rejected runs, matching k6 exactly.
+  What is missing is a rendered screenshot, which needs the compose stack
+  and therefore a container runtime this machine does not have.
 - A rollback performed and timed against a running deployment
 - OpenTelemetry span timings per pipeline stage
 - Provider failover behaviour under a real 429 storm

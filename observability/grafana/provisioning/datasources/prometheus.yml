@@ -1,0 +1,10 @@
+# Provisioned, not configured by hand: a dashboard whose datasource has to be
+# clicked into place is not reproducible.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

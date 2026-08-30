@@ -1,0 +1,199 @@
+{
+  "uid": "meridian-overview",
+  "title": "Meridian — pipeline and provider",
+  "tags": ["meridian"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Evidence quality — the signal a silent regression moves first",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "gauge",
+      "title": "Citation pass rate (most recent run)",
+      "description": "Share of citations that resolved and verified. Measured baseline is 88.7% on verbatim-contained excerpts; below 0.80 is the alert condition in docs/RUNBOOK.md. This is the objective to watch: availability and latency degrade visibly, a quiet drop in citation quality does not.",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "meridian_citation_pass_rate", "legendFormat": "pass rate", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.8 },
+              { "color": "green", "value": 0.85 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Citations verified vs rejected",
+      "description": "Split by dimension. 'The citation pass rate dropped' is a far weaker signal than 'it dropped on Environmental Sustainability'.",
+      "gridPos": { "h": 8, "w": 10, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(meridian_citations_checked_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "type": "bargauge",
+      "title": "Coverage-ladder verdict distribution",
+      "description": "The deterministic stage. Its output should only change when the code or the documents change, so a shift with neither is a bug — not model variation.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum by (verdict) (meridian_coverage_verdicts_total)",
+          "legendFormat": "{{verdict}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "Pipeline",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Stage duration p95",
+      "description": "Which stage dominates a run. Buckets reach 30 minutes because a full analysis is up to 16 LLM calls paced against a rate-limited free tier; Prometheus defaults top out at 10s and would put every real run in +Inf.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(meridian_stage_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Analysis runs by outcome",
+      "description": "rejected_capacity is admission control working, not an error. Measured under load: 45 complete, 36 rejected with the limit at 2.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(meridian_analysis_runs_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "Provider — the most common operational failure",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Credentials the breaker trusts",
+      "description": "Zero means nothing can serve, even when the daily budget is untouched. That combination used to report /readyz 200.",
+      "gridPos": { "h": 6, "w": 5, "x": 0, "y": 19 },
+      "targets": [
+        { "expr": "meridian_provider_keys_healthy", "legendFormat": "healthy", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Daily quota remaining",
+      "description": "Meridian's own accounting, not a reading of Google's quota — see the Known limits section of docs/RUNBOOK.md.",
+      "gridPos": { "h": 6, "w": 5, "x": 5, "y": 19 },
+      "targets": [
+        { "expr": "meridian_provider_quota_remaining", "legendFormat": "remaining", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Failover events",
+      "description": "key_rotation, circuit_open, capacity_exhausted. All of this used to be print() on stdout — unparseable, and where every provider signal lived.",
+      "gridPos": { "h": 6, "w": 14, "x": 10, "y": 19 },
+      "targets": [
+        {
+          "expr": "sum by (event) (rate(meridian_provider_failover_total[5m]))",
+          "legendFormat": "{{event}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "Uploads",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Uploads rejected, by reason",
+      "description": "Meridian accepts arbitrary PDFs from strangers. A spike in file_too_large or malformed_pdf is worth looking at; a spike in wrong_file_type usually is not.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 26 },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(meridian_uploads_rejected_total[5m]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Documents ingested and chunks indexed",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 26 },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(meridian_documents_ingested_total[5m]))",
+          "legendFormat": "documents {{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(meridian_chunks_indexed_total[5m])",
+          "legendFormat": "chunks",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    }
+  ]
+}
