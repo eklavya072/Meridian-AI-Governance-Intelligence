@@ -188,6 +188,9 @@ class KeyHealthRegistry:
             immediate = kind is FailureKind.TERMINAL
             if immediate or health.consecutive_failures >= BREAKER_FAILURE_THRESHOLD:
                 if health.state is not CircuitState.OPEN:
+                    from src import metrics
+
+                    metrics.provider_failover.labels(event="circuit_open").inc()
                     logger.warning(
                         "provider_circuit_opened",
                         key_id=key_id,
