@@ -325,9 +325,93 @@ takes the longer of the two, which is safe but delays recovery by 23 s. See
 
 ---
 
+## Load test — the real path, in replay mode
+
+**Date:** 2026-08-30 · **Gemini calls: 0.** k6 against a locally-running API
+with `MERIDIAN_REPLAY=1`, driving the actual path: create workspace → upload
+a 546 KB / 8-page policy PDF → run analysis → poll until a brief exists.
+
+Replay mode fakes **only the provider**. PDF validation, chunking,
+embedding, vector indexing, retrieval, the deterministic ladder and citation
+verification all run for real, with a fixed 50 ms per simulated LLM call.
+That is the point: it isolates Meridian's own cost from the provider's
+latency, which is the more useful engineering number — and pointing k6 at a
+paid, rate-limited API would measure that API's queue while burning quota.
+
+### Environment
+
+| | |
+|---|---|
+| Machine | Apple MacBook Air, M2, 8 GB RAM, macOS 14.6 |
+| Load profile | ramping VUs: 1 → 2 (30 s) → 5 (60 s) → 0 (30 s) |
+| `MAX_CONCURRENT_ANALYSES` | 2 |
+| Postgres | 16, local, isolated database |
+| Chroma | empty at start (local, persistent) |
+
+### End-to-end (upload accepted → analysis available)
+
+| | |
+|---|---|
+| p50 | **4.93 s** |
+| p90 | **6.61 s** |
+| p95 | **6.85 s** |
+| max | 7.64 s |
+| mean | 4.60 s |
+
+### By stage
+
+| Stage | mean | p95 |
+|---|---|---|
+| Upload (validate, store, queue) | 531 ms | 1.19 s |
+| Run trigger (admission + dispatch) | 43 ms | 196 ms |
+| Analysis (ingest → index → score → verify) | 4.08 s | 6.28 s |
+
+Analysis dominates, as expected — it is the only stage doing real work per
+document.
+
+### Throughput, errors and backpressure
+
+| | |
+|---|---|
+| Iterations completed | 81 over 2 min |
+| Throughput | 0.67 analyses/s, 3.4 HTTP req/s |
+| Checks passed | **207 / 207 (100%)** |
+| Server errors (5xx, timeouts) | **0** |
+| Capacity rejections (429) | **36** |
+| Peak worker RSS | **51 MB** |
+
+The 36 rejections are the headline result, not a failure. With
+`MAX_CONCURRENT_ANALYSES=2`, five concurrent users produced 45 admitted runs
+and 36 refused ones — and every refusal was an immediate 429 naming the
+limit, not a queued request holding a connection open until it timed out.
+`/metrics` recorded exactly the same split
+(`meridian_analysis_runs_total{outcome="complete"} 45`,
+`{outcome="rejected_capacity"} 36`), which is the domain metrics agreeing
+with an external observer under real traffic.
+
+k6's overall `http_req_failed` reads 8.78%, and that number is misleading on
+its own: filtered to responses that were *supposed* to succeed it is
+**0.00%**. A 429 under saturation is correct behaviour, so the threshold is
+scoped to exclude it.
+
+### What this does not measure
+
+- Live provider latency. A real run adds up to 16 LLM calls paced against a
+  ~10 RPM per-credential ceiling, so real end-to-end time is dominated by
+  the provider and is **not measured**.
+- Citation quality. Replay fixtures produce no evidence items, so
+  `meridian_citation_pass_rate` stays at its initial value here; the
+  citation numbers come from the verification measurement above instead.
+- A warm vector index. Chroma started empty, so retrieval had less to scan
+  than a production instance with a 15,468-chunk corpus, and peak RSS is
+  correspondingly low.
+
+---
+
 ## Not yet measured
 
-- End-to-end analysis latency (p50/p95/p99), throughput, error rate, peak memory
-- Live vs replay pipeline cost
+- Live end-to-end latency (replay is measured above; live is provider-bound)
+- A Grafana dashboard screenshot from sustained traffic
+- A rollback performed and timed against a running deployment
 - OpenTelemetry span timings per pipeline stage
 - Provider failover behaviour under a real 429 storm

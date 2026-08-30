@@ -39,7 +39,9 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 | Release pipeline | **~4 min** (was ~22 min under QEMU) |
 | Citation check accepts | **88.7%** of excerpts that appear verbatim in the chunk they cite |
 | Capacity-exhaustion detection | **9 failed calls**, all credentials open ([INCIDENT-001](docs/INCIDENT-001.md)) |
-| End-to-end analysis latency | *not measured* |
+| End-to-end latency (replay) | **p50 4.9 s · p95 6.9 s**, 0 server errors |
+| Backpressure under load | 45 admitted, **36 refused with 429** — never queued |
+| End-to-end latency (live) | *not measured — provider-bound* |
 
 **Operations:** [RUNBOOK.md](docs/RUNBOOK.md) — SLOs with targets and measured
 values kept separate, five failure modes with detection → diagnosis →

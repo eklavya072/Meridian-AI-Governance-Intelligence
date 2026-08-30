@@ -27,6 +27,7 @@ from src.brief_generator import generate_executive_brief_text
 from src.brief_synthesis import generate_brief as generate_brief_v2
 from src.brief_synthesis import render_brief_markdown
 from src.chat import chat as chat_fn
+from src.concurrency import CapacityFull, get_slots
 from src.db_models import Base, ChatMessage, ChatSession, Report, WorkspaceStatus
 from src.framework_library import get_framework_library
 from src.framework_sync import FrameworkSyncService
@@ -248,6 +249,13 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("framework_counts_warm_skipped")
     yield
+
+    # Graceful shutdown: stop admitting analyses, then give in-flight work a
+    # bounded window to finish. Dropping it outright is what makes the
+    # startup orphan sweep necessary in the first place.
+    slots = get_slots()
+    slots.begin_drain()
+    await slots.wait_for_idle()
     if _engine:
         await _engine.dispose()
 
@@ -403,6 +411,17 @@ async def readyz(response: Response):
             "credentials_open": health["open"],
         }
         if not has_capacity:
+            ready = False
+    except Exception as exc:
+        ready = False
+        checks["llm_provider"] = {"ok": False, "error": str(exc)[:200]}
+
+    # Saturation is a readiness signal, not an error: the process is healthy,
+    # it simply cannot take more work right now.
+    try:
+        slots = get_slots().snapshot()
+        checks["analysis_slots"] = {"ok": slots["available"] > 0, **slots}
+        if slots["available"] <= 0 or slots["draining"]:
             ready = False
     except Exception as exc:
         ready = False
@@ -818,6 +837,27 @@ async def run_analysis(
                     "message": "The uploaded files are no longer on disk. Please upload them again.",
                 },
             )
+
+        # Admission control BEFORE the status flips to PROCESSING, so a
+        # refused run does not leave the workspace claiming to be running.
+        try:
+            get_slots().acquire()
+        except CapacityFull as exc:
+            await ws_service.update_status(
+                workspace_id,
+                WorkspaceStatus.QUEUED,
+                detail="Server at capacity. Run the analysis again shortly.",
+            )
+            metrics.analysis_runs.labels(outcome="rejected_capacity").inc()
+            raise HTTPException(
+                429,
+                detail={
+                    "error": "capacity_full",
+                    "message": str(exc),
+                    "in_flight": exc.in_flight,
+                    "limit": exc.limit,
+                },
+            ) from exc
 
         await ws_service.update_status(
             workspace_id,

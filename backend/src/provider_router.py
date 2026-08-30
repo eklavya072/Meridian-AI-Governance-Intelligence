@@ -374,6 +374,16 @@ def get_provider() -> LLMProvider:
     if _provider is not None:
         return _provider
 
+    # Checked before anything reads a credential, so replay mode works with
+    # no key configured at all — which is the point: CI and load tests must
+    # not need one.
+    from src.replay import ReplayProvider, is_replay_enabled
+
+    if is_replay_enabled():
+        _provider = ReplayProvider()
+        _original_provider = "replay"
+        return _provider
+
     preferred = os.getenv("LLM_PROVIDER", "gemini").lower()
 
     if preferred == "gemini":

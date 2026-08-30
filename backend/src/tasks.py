@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from src import metrics
+from src.concurrency import get_slots
 from src.db_models import WorkspaceStatus
 from src.gap_analyzer import (
     CoverageLevel,
@@ -526,3 +527,8 @@ async def run_full_analysis_pipeline(
                 "status": "error",
                 "error": str(exc),
             }
+        finally:
+            # Whatever happened, the slot goes back. A leaked slot silently
+            # shrinks capacity until a restart, which looks like the server
+            # getting slower for no reason.
+            get_slots().release()
