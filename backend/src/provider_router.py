@@ -11,6 +11,7 @@ from typing import Any
 import structlog
 from pydantic import ValidationError
 
+from src import metrics
 from src.key_health import get_registry
 from src.llm_provider import (
     GeminiProvider,
@@ -249,15 +250,23 @@ class RequestThrottle:
 _gemini_rpm_throttles: list[RequestThrottle] = []
 
 
-def _gemini_throttles() -> list[RequestThrottle]:
-    """Per-key RPM throttles, sized to the configured key count.
+def _gemini_throttles(provider: LLMProvider | None = None) -> list[RequestThrottle]:
+    """Per-key RPM throttles, sized to the key count of the provider in use.
 
     Each Gemini key has its own free-tier RPM ceiling, so the pool's real
-    headroom is keys x per-key RPM. Falls back to a single throttle when the
-    provider is unknown (pre-init / tests)."""
+    headroom is keys x per-key RPM.
+
+    `provider` is an argument rather than the module-global `_provider` for a
+    reason. generate_with_retry indexes the returned list with a key index
+    derived from the provider it was HANDED, while this used to size the list
+    from the global. Whenever the two differed the index ran off the end and
+    the call died with an IndexError mid-analysis instead of degrading —
+    reachable whenever a caller holds a provider reference across a
+    reset_provider(), and reliably in any test that constructs its own.
+    """
     global _gemini_rpm_throttles
     n = 1
-    provider = _provider
+    provider = provider if provider is not None else _provider
     if isinstance(provider, GeminiProvider) and provider.api_keys:
         n = len(provider.api_keys)
     if len(_gemini_rpm_throttles) != n:
@@ -527,7 +536,7 @@ def generate_with_retry(
             # throttle paces each attempt so a full 16-call run stays under
             # the free tier instead of discovering the limit reactively on
             # a 429.
-            throttles = _gemini_throttles()
+            throttles = _gemini_throttles(provider)
             key_index = _pick_healthy_key(provider)
             if key_index is None:
                 # Every credential is either circuit-open or out of daily
@@ -662,16 +671,31 @@ def generate_with_retry(
                 f"error={error_str[:200]}"
             )
 
-            # ── Step 1: Try rotating to next Gemini key ───────────────
+            # ── Step 1: retry on another credential, if one is healthy ──
+            #
+            # This used to call provider.rotate_key(), whose "is another key
+            # available" test is `current_key_index < len(api_keys) - 1`. That
+            # made sense when the index only ever moved forward on a 429, but
+            # _pick_healthy_key round-robins with next_key() BEFORE each call,
+            # so the index is wherever the rotation happened to land. Landing
+            # on the last one — a 1-in-N chance every call — made a single 429
+            # report every credential exhausted while N-1 were untried, and
+            # sent the run to a fallback that cannot serve analysis prompts.
+            #
+            # The circuit breaker already knows which credentials can serve, so
+            # it decides. rotate_key() is left alone for callers that still use
+            # it directly.
             if isinstance(provider, GeminiProvider):
-                if provider.rotate_key():
+                healthy = get_registry().available_keys(key_ids_for(provider))
+                if healthy and attempt < max_attempts:
                     print(
-                        f"[DEBUG] Rotated to Gemini key #{provider.current_key_index + 1}/"
-                        f"{len(provider.api_keys)}, retrying immediately"
+                        f"[DEBUG] {len(healthy)} credential(s) still healthy, retrying on another"
                     )
                     _debug_stats["retries"] += 1
+                    metrics.provider_failover.labels(event="key_rotation").inc()
                     time.sleep(_jittered_wait(RETRY_BACKOFF_SECONDS))
                     continue
+                metrics.provider_failover.labels(event="capacity_exhausted").inc()
 
             # ── Step 2: All Gemini keys exhausted — try Groq fallback ──
             #    Skip retry_delay on exhausted keys — fall back immediately
@@ -956,7 +980,7 @@ def generate_text_with_retry(
         gemini_throttle: RequestThrottle | None = None
         key_index: int | None = None
         if isinstance(provider, GeminiProvider):
-            throttles = _gemini_throttles()
+            throttles = _gemini_throttles(provider)
             key_index = provider.next_key()
             gemini_throttle = throttles[key_index]
             gemini_throttle.wait()

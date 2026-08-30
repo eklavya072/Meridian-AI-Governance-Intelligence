@@ -144,6 +144,15 @@ async def run_full_analysis_pipeline(
     async with _get_db_session() as db:
         ws_service = WorkspaceService(db)
 
+        # Declared BEFORE the try. The except block below reads this to
+        # persist whatever finished, and it used to be assigned only after
+        # ingestion — so any failure during ingestion (a corrupt PDF, a
+        # missing file, an unreachable vector store) made the handler itself
+        # raise UnboundLocalError. That masked the real error AND skipped the
+        # update_status(ERROR) call, leaving the workspace wedged in
+        # PROCESSING with nothing to explain why.
+        completed_dimensions: list[tuple[str, dict, dict]] = []
+
         try:
             await ws_service.update_status(workspace_id, WorkspaceStatus.PROCESSING)
 
@@ -251,8 +260,6 @@ async def run_full_analysis_pipeline(
                         existing_gaps[dim_name] = GovernanceGap(**data["result"])
                     except Exception:
                         pass
-
-            completed_dimensions: list[tuple[str, dict, dict]] = []
 
             def on_dimension(dim: str, gap: GovernanceGap, provider_info: dict) -> None:
                 completed_dimensions.append((dim, gap.model_dump(), provider_info))
