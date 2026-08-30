@@ -43,6 +43,12 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 | Backpressure under load | 45 admitted, **36 refused with 429** — never queued |
 | End-to-end latency (live) | *not measured — provider-bound* |
 
+**Observability:** `make observability` brings up Prometheus and Grafana with
+the dashboard provisioned from
+[a committed JSON file](observability/grafana/dashboards/meridian.json) —
+citation pass rate, coverage-ladder verdict distribution, per-stage latency,
+and provider failover events.
+
 **Operations:** [RUNBOOK.md](docs/RUNBOOK.md) — SLOs with targets and measured
 values kept separate, five failure modes with detection → diagnosis →
 response → recovery, and rollback tied to image digests.

@@ -19,7 +19,8 @@ UV           := uv
 RUN          := $(UV) run --project $(BACKEND)
 
 .PHONY: help setup env up down logs ready test test-container lint format \
-        typecheck check build build-prod bench bench-load deploy destroy clean measure ps shell
+        typecheck check build build-prod bench bench-load observability deploy destroy \
+        clean measure ps shell
 
 help: ## Show the available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -47,6 +48,11 @@ down: ## Stop the stack, keeping volumes
 
 logs: ## Follow the API logs
 	$(COMPOSE) logs -f api
+
+observability: env ## Bring up Prometheus + Grafana (dashboard provisioned as code)
+	$(COMPOSE) --profile observability up -d prometheus grafana
+	@echo "Grafana    http://localhost:3001  (dashboard: Meridian — pipeline and provider)"
+	@echo "Prometheus http://localhost:9090"
 
 ps: ## Show stack status
 	$(COMPOSE) ps

@@ -89,6 +89,39 @@ services:
       azurite:
         condition: service_healthy
 
+  # Observability, provisioned as code. Opt-in so `make up` stays light:
+  #   docker compose --profile observability up -d
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    profiles: ["observability"]
+    ports:
+      - "3001:3000"
+    environment:
+      # Local-only stack: anonymous viewing beats a password nobody rotates.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
   web:
     build:
       context: ./frontend
@@ -107,5 +140,7 @@ services:
 volumes:
   pgdata:
   azurite_data:
+  prometheus_data:
+  grafana_data:
   chroma_data:
   uploads_data:
