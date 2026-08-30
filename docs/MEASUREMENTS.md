@@ -191,9 +191,9 @@ from pretending it is not there.
 
 | | |
 |---|---|
-| Result | 798 passed, 18 skipped |
+| Result | 1,269 passed, 18 skipped |
 | Wall clock | ~10 s |
-| Coverage (`src`) | **61.0%** (9,223 statements, 3,600 missed) |
+| Coverage (`src`) | **78.1%** (9,229 statements, 2,019 missed) |
 
 The 18 skips are deliberate and all need external state: 9 Azurite storage
 integration tests (they run in CI, where Azurite is a service container),
@@ -201,9 +201,38 @@ integration tests (they run in CI, where Azurite is a service container),
 3 integration tests behind `RUN_INTEGRATION_TESTS=1`, and 1 needing a PDF
 with a real text layer.
 
-Lowest-covered modules, honestly: `tasks.py` 0%, `workspace.py` 29%,
-`chat.py` 10%, `governance_advisor.py` 17%, `llm_provider.py` 24%.
-`provider_router.py` rose from 26% as the resilience tests landed. The CI gate is set at **58%** — just below measured,
+### Bugs the coverage work found
+
+Writing the first test that exercised a module found six real defects, none
+of which any existing test would have caught:
+
+| Defect | Effect |
+|---|---|
+| `_gemini_throttles()` sized its list from a module global while the caller indexed it from a different provider | `IndexError` mid-analysis instead of degrading |
+| `rotate_key()` reported exhaustion whenever round-robin landed on the last credential | one 429 declared the whole pool spent while N-1 were untried |
+| `completed_dimensions` was read by the except block but assigned after ingestion | any ingestion failure raised `UnboundLocalError`, masking the real error and wedging the workspace in `PROCESSING` |
+| `_estimate_chunk_page` truncated with `int()` | a section's last page was unreachable; every page estimate biased low, turning correct citations into page mismatches |
+| NLI label order read positionally | 89.8% of citations labelled "contradicts" (see above) |
+| `CrossEncoder.predict` logits compared to probability thresholds | same |
+
+Coverage moved 60% -> 78% by testing the modules that had none rather than
+by padding the ones that already did. The largest movers:
+
+| Module | Before | After |
+|---|---|---|
+| `tasks.py` (the orchestrator) | 0% | 60% |
+| `main.py` (every API route) | 36% | 73% |
+| `provider_router.py` | 26% | 78% |
+| `chat.py` | 10% | 64% |
+| `governance_advisor.py` | 17% | 71% |
+| `gap_analyzer.py` | 72% | 83% |
+
+Still low and stated plainly: `framework_sync.py` 31% (it downloads PDFs),
+`vectorstore.py` 50% (the rest needs a real Chroma collection), and
+`document_overview.py` 39%.
+
+The CI gate is **76%** — just below measured, so it catches regression
+without being aspirational. The CI gate is set at **58%** — just below measured,
 so it catches regression without being aspirational.
 
 ---

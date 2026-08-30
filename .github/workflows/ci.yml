@@ -14,10 +14,10 @@ permissions:
   contents: read
 
 env:
-  # Set from the measured suite (59.57% at the time of writing), deliberately
+  # Set from the measured suite (78.1% at the time of writing), deliberately
   # just below it. An aspirational threshold lands red on the first push and
   # teaches everyone to ignore the badge. See docs/MEASUREMENTS.md.
-  COV_MIN: "58"
+  COV_MIN: "76"
 
 jobs:
   quality:
