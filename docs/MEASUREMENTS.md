@@ -128,6 +128,22 @@ taken this API down.
 **Date:** 2026-08-30 · `trivy` in the release pipeline, scanning the built
 `prod` image before it is pushed.
 
+### Before and after
+
+| Severity | First scan | After remediation |
+|---|---|---|
+| CRITICAL | 3 | 3 |
+| HIGH | 16 | **13** |
+| MEDIUM | 60 | **51** |
+| LOW | 75 | **57** |
+| UNKNOWN | 7 | 7 |
+| **Total** | **161** | **131** |
+
+Fixable HIGH/CRITICAL: **3 → 0**. The wider drop is a side effect of removing
+the CUDA stack and the base image's `pip`: fewer packages in the image is
+fewer things to have a CVE. What remains at HIGH/CRITICAL has no patch
+available upstream.
+
 ### Baseline — first scan
 
 | Severity | Count |
@@ -189,6 +205,26 @@ Lowest-covered modules, honestly: `tasks.py` 0%, `workspace.py` 29%,
 `chat.py` 10%, `governance_advisor.py` 17%, `llm_provider.py` 24%.
 `provider_router.py` rose from 26% as the resilience tests landed. The CI gate is set at **58%** — just below measured,
 so it catches regression without being aspirational.
+
+---
+
+## Release pipeline
+
+**Date:** 2026-08-30 · Measured on GitHub-hosted runners.
+
+| | QEMU emulation | Native runners |
+|---|---|---|
+| scan + SBOM | 4m18s | **2m23s** |
+| build linux/amd64 | — | **1m07s** |
+| build linux/arm64 | ~20 min (emulated) | **1m01s** |
+| publish manifest | — | **23s** |
+| **Total** | **~22 min** | **~4 min** |
+
+arm64 was built through QEMU emulation, which for a torch-sized image was
+slow enough that queued release runs piled up and got cancelled — and a
+cancelled run renders as a red badge. Native `ubuntu-24.04-arm` runners are
+free for public repositories; the two architectures now build in parallel and
+a manifest list is assembled from their digests.
 
 ---
 

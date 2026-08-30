@@ -32,10 +32,11 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 |---|---|
 | Tests | **798 passed, 18 skipped** |
 | Coverage (`src`) | **61.0%** — CI gate 58%, set from measurement |
-| Production image | **1,869 MB** (down from 5,683 MB) |
-| Vulnerabilities at first scan | **161** (3 CRITICAL, 16 HIGH, 60 MEDIUM, 75 LOW) |
+| Production image | **1,889 MB** (down from 5,683 MB) |
+| Vulnerabilities | **161 → 131** after remediation (3 fixable HIGH → 0) |
 | Fixable HIGH/CRITICAL | **3 → 0**, all fixed at source; `.trivyignore` is empty |
-| SBOM | 237 packages, SPDX 2.3, attached to every release |
+| SBOM | 238 packages, SPDX 2.3, attached to every release |
+| Release pipeline | **~4 min** (was ~22 min under QEMU) |
 | Citation check accepts | **88.7%** of excerpts that appear verbatim in the chunk they cite |
 | Capacity-exhaustion detection | **9 failed calls**, all credentials open ([INCIDENT-001](docs/INCIDENT-001.md)) |
 | End-to-end analysis latency | *not measured* |
