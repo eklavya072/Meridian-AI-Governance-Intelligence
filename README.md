@@ -30,8 +30,8 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 
 | | |
 |---|---|
-| Tests | **798 passed, 18 skipped** |
-| Coverage (`src`) | **61.0%** — CI gate 58%, set from measurement |
+| Tests | **1,269 passed, 18 skipped** |
+| Coverage (`src`) | **78.1%** — CI gate 76%, set from measurement |
 | Production image | **1,889 MB** (down from 5,683 MB) |
 | Vulnerabilities | **161 → 131** after remediation (3 fixable HIGH → 0) |
 | Fixable HIGH/CRITICAL | **3 → 0**, all fixed at source; `.trivyignore` is empty |
