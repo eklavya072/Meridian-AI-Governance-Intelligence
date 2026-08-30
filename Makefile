@@ -19,7 +19,7 @@ UV           := uv
 RUN          := $(UV) run --project $(BACKEND)
 
 .PHONY: help setup env up down logs ready test test-container lint format \
-        typecheck check build build-prod bench deploy destroy clean measure ps shell
+        typecheck check build build-prod bench bench-load deploy destroy clean measure ps shell
 
 help: ## Show the available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -93,8 +93,15 @@ build: ## Build the prod image locally
 
 build-prod: build ## Alias for build
 
-bench: ## Re-measure what docs/MEASUREMENTS.md reports (no Gemini calls)
+bench: ## Re-measure citation verification (no Gemini calls)
 	cd $(BACKEND) && $(UV) run python scripts_measure_verification.py
+
+bench-load: ## k6 load test against the real path, in replay mode (no Gemini calls)
+	@command -v k6 >/dev/null || (echo "k6 not installed: brew install k6"; exit 1)
+	@echo "Start the API in replay mode first:"
+	@echo "  cd backend && MERIDIAN_REPLAY=1 GEMINI_API_KEY=unused \\"
+	@echo "    uv run uvicorn main:app --port 8010"
+	cd loadtest && BASE_URL=$${BASE_URL:-http://localhost:8010} k6 run upload_to_brief.js
 
 measure: bench ## Alias for bench
 
