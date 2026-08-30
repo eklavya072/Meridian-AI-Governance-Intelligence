@@ -196,7 +196,10 @@ jobs:
       - name: Export the digest
         run: |
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          digest="${{ steps.build.outputs.digest }}"
+          # The artifact API rejects a colon in a filename, and a digest is
+          # "sha256:<hex>". The prefix is re-attached in the merge job.
+          touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload the digest
         uses: actions/upload-artifact@v4
