@@ -334,7 +334,13 @@ def _estimate_chunk_page(
         return section_pages[0]
     ratio = chunk_start / max(total_len, 1)
     page_range = max(section_pages) - min(section_pages)
-    return min(section_pages) + int(ratio * page_range)
+    # round(), not int(). Truncation biases every estimate DOWNWARD and makes
+    # the section's last page unreachable: a chunk 99% of the way through a
+    # section spanning pages 4-6 gives int(0.99 * 2) == 1, so page 5 — page 6
+    # is only ever reached at ratio exactly 1.0, which no chunk start hits.
+    # Page numbers feed verify_citation's page check, so a systematic
+    # off-by-one there turns correct citations into page mismatches.
+    return min(section_pages) + round(ratio * page_range)
 
 
 def _find_sentence_boundary(text: str, start: int, max_end: int) -> int:
