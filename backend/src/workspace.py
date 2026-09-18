@@ -162,7 +162,6 @@ class WorkspaceService:
         )
         await self.db.commit()
 
-
     async def get_dimension_results(self, workspace_id: str) -> dict[str, Any]:
         ws = await self.get_workspace(workspace_id)
         if not ws or not ws.dimension_results:

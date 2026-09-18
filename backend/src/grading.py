@@ -94,8 +94,8 @@ CONSEQUENCE_RE = _words(
     "compensation",
     "damages",
     "prosecut*",
-    "punish*",          # standard in civil-law translation; absent from
-                        # Anglo drafting and therefore missed until China
+    "punish*",  # standard in civil-law translation; absent from
+    # Anglo drafting and therefore missed until China
     "offence",
     "offense",
     "imprisonment",
@@ -166,7 +166,11 @@ SUBJECTION_RE = re.compile(
     r"\b(?:is|are|shall\s+be|must\s+be|will\s+be|being|been)\s+subject(?:ed)?\s+to\b"
     r"|\b(?:supervis|monitor|audit|inspect|investigat|overse|certifi|accredit)\w*\s+by\s+"
     r"(?:the\s+|a\s+|an\s+)?[A-Za-z]"
-    r"|\bunder\s+the\s+(?:supervision|oversight|inspection|control|authority)\s+of\b"
+    # "control" and "authority" are NOT here. "logs under the control of the
+    # provider" and "an environment under the control of the prospective
+    # provider" say what that party CONTROLS, which is the opposite of being
+    # subject to something — both reached Obligatory on it.
+    r"|\bunder\s+the\s+(?:supervision|oversight|inspection)\s+of\b"
     r"|\bsubject\s+to\s+(?:the\s+)?(?:supervision|oversight|inspection|audit|investigation|"
     r"certification|accreditation|approval|review|sanction|penalt)\w*",
     re.IGNORECASE,
@@ -211,9 +215,7 @@ def _classify_base(
     has_gov = bool(GOV_BODY_RE.search(probe))
     bearer = "regulated" if has_regulated else ("government" if has_gov else "none")
 
-    has_consequence = bool(CONSEQUENCE_RE.search(probe)) or bool(
-        ADMIN_SANCTION_RE.search(probe)
-    )
+    has_consequence = bool(CONSEQUENCE_RE.search(probe)) or bool(ADMIN_SANCTION_RE.search(probe))
     has_oversight = bool(OVERSIGHT_RE.search(probe))
     has_subjection = bool(SUBJECTION_RE.search(probe))
     has_obligation = (
@@ -224,9 +226,7 @@ def _classify_base(
     has_commitment = bool(COMMITMENT_RE.search(probe))
     # "order corrections" and "give warnings" are exercises of administrative
     # power, not just their outcomes — a bare "order" stays excluded.
-    has_authority = bool(AUTHORITY_VERB_RE.search(probe)) or bool(
-        ADMIN_SANCTION_RE.search(probe)
-    )
+    has_authority = bool(AUTHORITY_VERB_RE.search(probe)) or bool(ADMIN_SANCTION_RE.search(probe))
     hedged = bool(HEDGE_RE.search(probe))
 
     tier = TIER_ASPIRATIONAL
@@ -248,9 +248,7 @@ def _classify_base(
     elif has_regulated and (has_consequence or has_subjection):
         tier = TIER_OBLIGATORY
         enforcement_credit = has_consequence
-    elif LEGAL_INSTRUMENT_RE.search(probe) and (
-        has_obligation or has_consequence or has_oversight
-    ):
+    elif LEGAL_INSTRUMENT_RE.search(probe) and (has_obligation or has_consequence or has_oversight):
         tier = TIER_ASSIGNED
     elif has_commitment:
         tier = TIER_INTENTIONAL
@@ -312,7 +310,9 @@ def detect_enforcement_regime(sample_texts: Iterable[str], min_signals: int | No
 
     texts = [t for t in sample_texts if t]
     sentences = [sent for t in texts for sent in _split_sentences_for_scoring(t)]
-    needed = min_signals if min_signals is not None else required_enforcement_signals(len(sentences))
+    needed = (
+        min_signals if min_signals is not None else required_enforcement_signals(len(sentences))
+    )
     signals = 0
     for t in texts:
         for sent in _split_sentences_for_scoring(t):
@@ -500,7 +500,8 @@ def corpus_completeness(
         referenced |= referenced_instruments(text)
 
     missing = sorted(
-        r for r in referenced
+        r
+        for r in referenced
         if not any(tok in supplied for tok in _norm(r).split() if len(tok) > 4)
     )
     return {
@@ -580,9 +581,10 @@ def dimension_enforcement_backing(
         if doc not in documents_with_regime:
             continue
         for s in sents:
-            if _classify_base(
-                s, dimension=dimension, own_jurisdiction=own_jurisdiction
-            ).tier >= TIER_OBLIGATORY:
+            if (
+                _classify_base(s, dimension=dimension, own_jurisdiction=own_jurisdiction).tier
+                >= TIER_OBLIGATORY
+            ):
                 return True
     return False
 
@@ -643,6 +645,49 @@ def evidence_is_sufficient(n_scored: int, n_binding: int) -> bool:
     if n_binding > 0:
         return True
     return n_scored >= MIN_SCORED_FOR_ABSENCE
+
+
+def verdict_confidence(
+    n_scored: int,
+    n_binding: int,
+    n_enforceable: int,
+    mechanisms_bound: int = 0,
+) -> tuple[str, str]:
+    """How much evidence stands behind one cell, and why.
+
+    A verdict resting on 274 provisions and one resting on 2 currently render
+    identically, so a reader has no way to tell which to check before quoting.
+    That is the honest limit of the instrument — per-dimension validation
+    reaches 38% of cells — and the answer is not to hide it but to publish it
+    per cell, so "verify before you quote this" points somewhere specific.
+
+    Deliberately three coarse bands and not a 0-100 number. A precise-looking
+    confidence score invented from counts would be exactly the kind of
+    unearned precision the rest of this module exists to avoid.
+    """
+    if n_scored == 0:
+        return "none", "no provisions were scored for this dimension"
+    if not evidence_is_sufficient(n_scored, n_binding):
+        return "insufficient", (
+            f"only {n_scored} provisions were scored and none binds, below the "
+            f"{MIN_SCORED_FOR_ABSENCE} needed before an absence is publishable"
+        )
+    if n_binding == 0:
+        return "moderate", (
+            f"{n_scored} provisions were read and none imposes a duty — enough "
+            f"to stand behind the absence, but the finding is what is MISSING"
+        )
+    if n_binding >= 5 and (n_enforceable >= 1 or mechanisms_bound >= 2):
+        return "strong", (
+            f"{n_binding} binding provisions"
+            + (f", {n_enforceable} backed by a consequence" if n_enforceable else "")
+            + (f", carrying {mechanisms_bound} expected mechanisms" if mechanisms_bound else "")
+        )
+    return "moderate", (
+        f"{n_binding} binding provision(s) out of {n_scored} scored"
+        + (f", {n_enforceable} enforceable" if n_enforceable else ", none enforceable")
+        + " — read the provisions before quoting this cell"
+    )
 
 
 def aggregate_depth_gated(
@@ -873,10 +918,9 @@ def sentence_function(sentence: str, is_recital: bool = False) -> str:
         return "recital"
     if _INTERROGATIVE_RE.search(s) or _ERRATUM_RE.match(s) or _DELIBERATIVE_RE.search(s):
         return "consultative"
-    if (
-        len(_INSTITUTION_NOUN_RE.findall(s)) >= _INSTITUTIONS_FOR_LIST
-        and not _GOVERNING_MODAL_RE.search(s)
-    ):
+    if len(
+        _INSTITUTION_NOUN_RE.findall(s)
+    ) >= _INSTITUTIONS_FOR_LIST and not _GOVERNING_MODAL_RE.search(s):
         # Names bodies, commands nobody.
         return "institutional_list"
     if _HEADING_RE.match(s) and not _MODAL_ANY_RE.search(s):
@@ -899,7 +943,7 @@ def recital_boundary(chunks: Sequence[dict[str, Any]]) -> int | None:
     """
     first = None
     for c in chunks:
-        text = (c.get("text") or "")
+        text = c.get("text") or ""
         if re.search(
             r"\bArticle\s+1\b.{0,80}?\b(Subject matter|Scope|Purpose)\b", text, re.I | re.S
         ):
@@ -1204,8 +1248,11 @@ def classify_provision(
     # The result must always quote the document, never our normalisation.
     if normalised is not probe_src:
         scored = ScoredSentence(
-            " ".join(probe_src.split()), scored.tier, scored.duty_bearer,
-            scored.has_enforcement, excluded=scored.excluded,
+            " ".join(probe_src.split()),
+            scored.tier,
+            scored.duty_bearer,
+            scored.has_enforcement,
+            excluded=scored.excluded,
         )
     if scored.excluded or scored.tier >= TIER_OBLIGATORY:
         return scored

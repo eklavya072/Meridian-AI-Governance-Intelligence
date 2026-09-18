@@ -258,12 +258,12 @@ class TestDailyBudget:
         for key_id in pr.key_ids_for(provider):
             pr.get_registry().record_failure(key_id, FailureKind.QUOTA_DAILY, "429 per day")
 
-        with pytest.raises(RuntimeError, match="per-day quota"):
+        with pytest.raises(RuntimeError, match="no usable retry window"):
             _call(provider)
 
         assert provider.calls == []
 
-    def test_quota_status_reports_what_was_observed_not_what_was_configured(self, monkeypatch):
+    def test_quota_status_reports_a_lower_bound_not_a_limit(self, monkeypatch):
         from src.provider_errors import FailureKind
 
         monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", None)
@@ -276,8 +276,9 @@ class TestDailyBudget:
 
         status = pr.quota_status()
 
-        assert status["daily_limit"] == 7
-        assert status["daily_limit_source"] == "observed"
+        # A LOWER BOUND on what the credential served, never "the daily limit":
+        # this counter restarts whenever the health record is cleared.
+        assert status["requests_before_refusal"] == 7
         assert status["credentials_daily_exhausted"] == 1
         # One credential is spent, the other is not — there is still headroom.
         assert status["has_headroom"] is True
@@ -361,3 +362,42 @@ class TestDebugSummary:
         pr.print_debug_summary()
 
         assert "Successful" in capsys.readouterr().out
+
+
+class TestShortCooldownsAreWaitedOut:
+    """The free tier's binding limit is per-minute; a run must sit through it."""
+
+    def test_a_short_cooldown_is_waited_out_rather_than_failed(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr(pr.time, "sleep", lambda s: slept.append(s))
+        provider = FakeGemini(keys=1)
+        registry = pr.get_registry()
+        # Every credential cooling down, but only briefly.
+        monkeypatch.setattr(registry, "seconds_until_any_available", lambda _ids: 40.0)
+        picks = iter([None, 0, 0, 0])
+        monkeypatch.setattr(pr, "_pick_healthy_key", lambda _p: next(picks))
+
+        assert _call(provider).answer == "ok"
+        assert slept and slept[0] >= 40.0
+
+    def test_a_long_cooldown_still_raises(self, monkeypatch):
+        monkeypatch.setattr(pr.time, "sleep", lambda *_: None)
+        provider = FakeGemini(keys=1)
+        registry = pr.get_registry()
+        monkeypatch.setattr(registry, "seconds_until_any_available", lambda _ids: 3600.0)
+        monkeypatch.setattr(pr, "_pick_healthy_key", lambda _p: None)
+
+        with pytest.raises(pr.CapacityExhausted):
+            _call(provider)
+
+        assert provider.calls == []
+
+    def test_a_spent_day_is_not_waited_out(self, monkeypatch):
+        monkeypatch.setattr(pr.time, "sleep", lambda *_: None)
+        provider = FakeGemini(keys=1)
+        registry = pr.get_registry()
+        monkeypatch.setattr(registry, "seconds_until_any_available", lambda _ids: float("inf"))
+        monkeypatch.setattr(pr, "_pick_healthy_key", lambda _p: None)
+
+        with pytest.raises(pr.CapacityExhausted, match="retry tomorrow"):
+            _call(provider)

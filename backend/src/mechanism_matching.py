@@ -152,7 +152,7 @@ class MechanismMatch:
     """
 
     dimension: str = ""
-    present: dict[str, int] = field(default_factory=dict)   # mechanism -> max tier
+    present: dict[str, int] = field(default_factory=dict)  # mechanism -> max tier
     absent: list[str] = field(default_factory=list)
     matched_by: dict[str, str] = field(default_factory=dict)  # mechanism -> "cue" | "semantic"
 
@@ -288,7 +288,7 @@ def detect_mechanisms(
         try:
             sent_vecs = np.array(list(_embedder().embed(texts)), dtype=float)
             sent_vecs /= np.linalg.norm(sent_vecs, axis=1, keepdims=True) + 1e-9
-            sims = sent_vecs @ gloss.T          # (sentences x mechanisms)
+            sims = sent_vecs @ gloss.T  # (sentences x mechanisms)
             thr = SEMANTIC_MECHANISM_THRESHOLD if threshold is None else threshold
             # ARGMAX PER SENTENCE, not per mechanism. Calibration showed the
             # absolute scores overlap badly across mechanisms — a consent

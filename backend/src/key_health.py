@@ -85,11 +85,14 @@ class KeyHealth:
     # Set from a provider's own Retry-After, so the cooldown reflects what it
     # actually asked for rather than our default guess.
     retry_after_until: float | None = None
-    # Set when the provider refused on a per-day quota. `observed_daily_limit`
-    # is how many requests this credential actually served before that refusal
-    # — the real limit, measured, rather than the number we guessed in .env.
+    # Set when the provider refused on a quota this credential cannot wait out.
+    # `requests_at_exhaustion` is how many requests THIS COUNTER had recorded
+    # when that happened — which is a lower bound on the day's allowance, not
+    # the allowance itself. The counter restarts whenever the health record is
+    # cleared, so reporting it as "the observed daily limit" once claimed a
+    # limit of 6 on a day the same keys had already served 68 requests.
     daily_exhausted: bool = False
-    observed_daily_limit: int | None = None
+    requests_at_exhaustion: int | None = None
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -102,7 +105,7 @@ class KeyHealth:
             "last_error": self.last_error,
             "seconds_until_probe": self.seconds_until_probe(),
             "daily_exhausted": self.daily_exhausted,
-            "observed_daily_limit": self.observed_daily_limit,
+            "requests_at_exhaustion": self.requests_at_exhaustion,
         }
 
     def seconds_until_probe(self) -> float:
@@ -184,8 +187,8 @@ class KeyHealthRegistry:
             if raw.get("daily_exhausted"):
                 health.daily_exhausted = True
                 health.state = CircuitState.OPEN
-                if health.observed_daily_limit is None:
-                    health.observed_daily_limit = raw.get("observed_daily_limit")
+                if health.requests_at_exhaustion is None:
+                    health.requests_at_exhaustion = raw.get("requests_at_exhaustion")
 
     def refresh_if_stale(self) -> None:
         """Re-read the shared ledger at most every SHARED_REFRESH_SECONDS.
@@ -223,7 +226,7 @@ class KeyHealthRegistry:
                 tokens=int(raw.get("tokens", 0)),
                 failures=int(raw.get("failures", 0)),
                 daily_exhausted=bool(raw.get("daily_exhausted", False)),
-                observed_daily_limit=raw.get("observed_daily_limit"),
+                requests_at_exhaustion=raw.get("requests_at_exhaustion"),
             )
 
     def _persist_locked(self) -> None:
@@ -235,7 +238,7 @@ class KeyHealthRegistry:
                     "tokens": h.tokens,
                     "failures": h.failures,
                     "daily_exhausted": h.daily_exhausted,
-                    "observed_daily_limit": h.observed_daily_limit,
+                    "requests_at_exhaustion": h.requests_at_exhaustion,
                 }
                 for k, h in self._keys.items()
             },
@@ -310,7 +313,7 @@ class KeyHealthRegistry:
             # configured, and it is what the readiness probe should report.
             if kind is FailureKind.QUOTA_DAILY and not health.daily_exhausted:
                 health.daily_exhausted = True
-                health.observed_daily_limit = health.requests
+                health.requests_at_exhaustion = health.requests
                 logger.warning(
                     "provider_daily_quota_exhausted",
                     key_id=key_id,
@@ -408,8 +411,10 @@ class KeyHealthRegistry:
                 # What the provider actually allowed today, per credential,
                 # before it started refusing. Empty until something refuses —
                 # a measured limit has to be measured.
-                "observed_daily_limits": [
-                    k["observed_daily_limit"] for k in keys if k["observed_daily_limit"] is not None
+                "requests_at_exhaustion_all": [
+                    k["requests_at_exhaustion"]
+                    for k in keys
+                    if k["requests_at_exhaustion"] is not None
                 ],
             }
 
@@ -428,4 +433,3 @@ def get_registry() -> KeyHealthRegistry:
         limit_raw = os.getenv("GEMINI_RPD_LIMIT_PER_KEY", "").strip()
         _registry = KeyHealthRegistry(daily_limit=int(limit_raw) if limit_raw else None)
     return _registry
-

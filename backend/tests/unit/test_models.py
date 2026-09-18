@@ -126,9 +126,7 @@ class TestDepthAssessment:
             (ImplementationDepthLevel.CONTINUOUS_MONITORING_AND_ENFORCEMENT, CoverageLevel.COVERED),
         ]
         for level, expected_coverage in cases:
-            ma = DepthAssessment(
-                dimension="Test", depth_level=level, coverage=expected_coverage
-            )
+            ma = DepthAssessment(dimension="Test", depth_level=level, coverage=expected_coverage)
             assert ma.depth_level == level
             assert ma.coverage == expected_coverage
 

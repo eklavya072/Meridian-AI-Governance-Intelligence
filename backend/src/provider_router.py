@@ -26,6 +26,11 @@ logger = structlog.get_logger()
 
 MAX_RETRIES = int(os.getenv("PROVIDER_MAX_RETRIES", "3"))
 RETRY_BACKOFF_SECONDS = float(os.getenv("PROVIDER_RETRY_BACKOFF", "2.0"))
+# A cooldown shorter than this is waited out rather than failed on. The free
+# tier's binding limit is per-MINUTE (20 requests on gemini-3.6-flash), and a
+# full analysis is 16 calls, so every run trips it; the cooldowns that follow
+# are tens of seconds. Longer than this and the caller deserves the error.
+CAPACITY_WAIT_CEILING_SECONDS = float(os.getenv("PROVIDER_CAPACITY_WAIT", "90"))
 
 
 def _jittered_wait(base: float, spread: float = 0.5) -> float:
@@ -38,7 +43,6 @@ def _jittered_wait(base: float, spread: float = 0.5) -> float:
     low = base * (1.0 - spread)
     high = max(base * (1.0 + spread), low + 0.01)
     return random.uniform(low, high)
-
 
 
 # ── Gemini free-tier throttle ────────────────────────────────────────────
@@ -204,8 +208,6 @@ class TokenThrottle:
         self._entries.clear()
 
 
-
-
 class RequestThrottle:
     """Rolling-window REQUEST-COUNT throttle (RPM), for providers whose
     binding constraint is requests/minute rather than tokens/minute (Gemini
@@ -314,11 +316,14 @@ def quota_status() -> dict[str, Any]:
     configured = configured_gemini_keys()
     snap = get_registry().snapshot()
     exhausted = snap["daily_exhausted"]
-    observed = snap["observed_daily_limits"]
+    observed = snap["requests_at_exhaustion_all"]
     return {
         "requests_today": used,
-        "daily_limit": max(observed) if observed else None,
-        "daily_limit_source": "observed" if observed else "not yet observed",
+        # NOT "the daily limit". This counter restarts whenever the health
+        # record is cleared or the process starts fresh, so it is a LOWER
+        # BOUND on what a credential served before being refused. Reported as
+        # a limit once, it claimed 6 on a day the same keys served 68.
+        "requests_before_refusal": max(observed) if observed else None,
         "self_imposed_cap": GEMINI_RPD_LIMIT,
         "credentials": configured,
         "credentials_daily_exhausted": exhausted,
@@ -342,13 +347,11 @@ def _check_gemini_daily_budget() -> None:
     snap = get_registry().snapshot()
     exhausted = snap["daily_exhausted"]
     if configured and exhausted >= configured:
-        observed = snap["observed_daily_limits"]
-        served = f"{min(observed)}-{max(observed)}" if observed else "0"
         raise RuntimeError(
             f"Every configured Gemini credential ({configured}) has been refused "
-            f"on its per-day quota, after serving {served} requests each today. "
-            f"Nothing recovers this before the provider's quota window resets — "
-            f"add a credential, enable billing, or continue tomorrow."
+            f"on a quota with no usable retry window, after {_daily_gemini_requests} "
+            f"requests today. A rate limit would have said when to come back; this "
+            f"did not — add a credential, enable billing, or continue tomorrow."
         )
 
     if GEMINI_RPD_LIMIT:
@@ -383,7 +386,6 @@ _debug_stats: dict[str, Any] = {
     "quota_errors": 0,
     "retries": 0,
 }
-
 
 
 def get_provider() -> LLMProvider:
@@ -548,12 +550,23 @@ def generate_with_retry(
             key_index = _pick_healthy_key(provider)
             if key_index is None:
                 # Every credential is either circuit-open or out of daily
-                # budget. Degrade honestly with a time rather than spinning
-                # through the retry budget re-asking keys we were just told
-                # are spent.
+                # budget. The registry knows how long until one returns, so
+                # a SHORT cooldown is something to wait out, not to fail on:
+                # the free tier's binding limit is per-minute, a 16-call run
+                # trips it routinely, and failing the dimension over a 40s
+                # wait threw away a whole analysis to save forty seconds.
                 wait = get_registry().seconds_until_any_available(
                     [_key_id(provider, i) for i in range(len(provider.api_keys))]
                 )
+                if wait <= CAPACITY_WAIT_CEILING_SECONDS and attempt < max_attempts:
+                    print(
+                        f"[DEBUG] REQ #{req_num} | {operation} | every credential "
+                        f"cooling down; waiting {wait:.0f}s "
+                        f"(attempt {attempt + 1}/{max_attempts})"
+                    )
+                    _debug_stats["retries"] += 1
+                    time.sleep(wait + 1.0)
+                    continue
                 raise CapacityExhausted(
                     f"Provider capacity exhausted for '{operation}'. "
                     + (
@@ -614,7 +627,6 @@ def generate_with_retry(
 
             request_info["output_tokens"] = _estimate_tokens(str(result))
             _debug_stats["primary_requests"].append(request_info)
-
 
             return result
 
@@ -693,9 +705,7 @@ def generate_with_retry(
                 last_error = exc
                 time.sleep(wait)
                 continue
-            raise RuntimeError(
-                f"All Gemini API keys exhausted for '{operation}'."
-            ) from exc
+            raise RuntimeError(f"All Gemini API keys exhausted for '{operation}'.") from exc
 
         # ── Terminal: retrying cannot help ────────────────────────────
         except TerminalProviderError as exc:
@@ -842,15 +852,12 @@ def print_debug_summary() -> None:
     print(f"  Estimated Total Input Tokens:  {total_input_tokens}")
     print(f"  Estimated Total Output Tokens: {total_output_tokens}")
     _snap = get_registry().snapshot()
-    _observed = _snap["observed_daily_limits"]
+    _observed = _snap["requests_at_exhaustion_all"]
     print(
         f"  Gemini requests today:         {_daily_gemini_requests}"
         + (f" (observed per-key limit: {max(_observed)})" if _observed else "")
     )
-    print(
-        f"  Credentials spent for the day: "
-        f"{_snap['daily_exhausted']}/{configured_gemini_keys()}"
-    )
+    print(f"  Credentials spent for the day: {_snap['daily_exhausted']}/{configured_gemini_keys()}")
     if total_actual_tokens > 0:
         print(f"  Actual Input Tokens:           {total_actual_input_tokens}")
         print(f"  Actual Output Tokens:          {total_actual_output_tokens}")
@@ -1019,9 +1026,7 @@ def generate_text_with_retry(
                         f"a {retry_delay:.0f}s wait."
                     ) from exc
                 continue
-            raise RuntimeError(
-                f"Chat '{operation}' failed: all Gemini keys exhausted."
-            ) from exc
+            raise RuntimeError(f"Chat '{operation}' failed: all Gemini keys exhausted.") from exc
 
         except RetryableError as exc:
             last_error = exc

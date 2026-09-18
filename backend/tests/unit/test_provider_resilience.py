@@ -45,15 +45,29 @@ class TestClassification:
         assert failure.kind is FailureKind.QUOTA
         assert failure.retry_after_seconds == 12
 
-    def test_a_per_day_429_is_not_a_rate_limit(self):
-        """Google names the metric it refused on; the day is over for that key."""
+    def test_a_per_minute_429_is_not_benched_for_the_day(self):
+        """The regression this replaces.
+
+        Gemini names GenerateRequestsPerDayPerProjectPerModel-FreeTier in the
+        violation details of a PER-MINUTE refusal too. Matching "perday" in
+        that text benched healthy credentials until midnight over a limit that
+        clears in twenty seconds. The retry window is what decides.
+        """
         failure = classify(
             _ProviderError(
-                "429 RESOURCE_EXHAUSTED: quota metric "
-                "GenerateRequestsPerDayPerProjectPerModel-FreeTier, retry in 5s",
+                "429 RESOURCE_EXHAUSTED: Quota exceeded for metric: "
+                "generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash. "
+                "Please retry in 19.558740881s. quotaId: "
+                "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
                 429,
             )
         )
+
+        assert failure.kind is FailureKind.QUOTA
+        assert failure.retry_after_seconds == 19.558740881
+
+    def test_a_wait_no_run_can_sit_through_is_treated_as_spent(self):
+        failure = classify(_ProviderError("429 RESOURCE_EXHAUSTED: retry in 7200s", 429))
 
         assert failure.kind is FailureKind.QUOTA_DAILY
 
@@ -322,8 +336,8 @@ class TestSharedQuotaLedger:
         reg = KeyHealthRegistry(
             path=tmp_path / "h.json", dsn="postgresql://nobody@127.0.0.1:1/nope"
         )
-        reg.record_success("k:0")          # write falls through to the file
-        reg.refresh_if_stale()             # read fails quietly
+        reg.record_success("k:0")  # write falls through to the file
+        reg.refresh_if_stale()  # read fails quietly
 
         assert reg._health("k:0").requests == 1
 
@@ -333,8 +347,9 @@ class TestSharedQuotaLedger:
 
         reg = KeyHealthRegistry(path="/dev/null", dsn="")
         reg._health("k:0").requests = 2
-        reg._merge({"keys": {"k:0": {"requests": 9, "daily_exhausted": True,
-                                     "observed_daily_limit": 9}}})
+        reg._merge(
+            {"keys": {"k:0": {"requests": 9, "daily_exhausted": True, "requests_at_exhaustion": 9}}}
+        )
 
         assert reg._health("k:0").requests == 9
         assert reg._health("k:0").state is CircuitState.OPEN

@@ -103,9 +103,7 @@ class TestAggregationPenalisesImbalance:
     """OECD/JRC Handbook; UNDP switched the HDI to a geometric mean in 2010."""
 
     # Every dimension governed, none of them brilliantly.
-    BALANCED = dict.fromkeys(
-        ["Transparency", "Accountability", "Privacy", "Safety"], "Delegated"
-    )
+    BALANCED = dict.fromkeys(["Transparency", "Accountability", "Privacy", "Safety"], "Delegated")
     # Three dimensions governed superbly and one not governed at all — the
     # profile the arithmetic mean cannot distinguish from real strength.
     HOLED = {
@@ -150,8 +148,7 @@ class TestAggregationPenalisesImbalance:
         means publishing all three rather than only the headline."""
         out = aggregate_depth(self.HOLED).as_dict()
         assert out["implementation_depth_index"] == out["depth_geometric"]
-        for key in ("depth_arithmetic", "depth_geometric",
-                    "depth_penalised", "depth_imbalance"):
+        for key in ("depth_arithmetic", "depth_geometric", "depth_penalised", "depth_imbalance"):
             assert isinstance(out[key], float), key
 
 
@@ -261,8 +258,11 @@ class TestDuplicateProvisions:
     def test_whitespace_variants_are_one_provision(self):
         from src.grading import dedupe_sentences
 
-        variants = [self.EGYPT, self.EGYPT.replace("Provider/", "Provider /"),
-                    self.EGYPT.replace("  ", " ").replace(" during", "  during")]
+        variants = [
+            self.EGYPT,
+            self.EGYPT.replace("Provider/", "Provider /"),
+            self.EGYPT.replace("  ", " ").replace(" during", "  during"),
+        ]
         assert len(dedupe_sentences(variants)) == 1
 
     def test_genuinely_different_provisions_survive(self):
@@ -279,8 +279,12 @@ class TestDuplicateProvisions:
     def test_counters_no_longer_double_count(self):
         """One duty repeated four times must not clear a bar needing two."""
         duty = "A provider of a high-risk system must maintain an audit trail."
-        repeated = [duty, duty.replace("a high-risk", "a  high-risk"),
-                    duty.replace("must ", "must  "), duty]
+        repeated = [
+            duty,
+            duty.replace("a high-risk", "a  high-risk"),
+            duty.replace("must ", "must  "),
+            duty,
+        ]
         p = _build_profile_base(repeated, dimension="Transparency", own_jurisdiction="Testland")
         assert p.n_scored == 1, "four copies of one provision are one provision"
         assert p.n_binding == 1
@@ -293,8 +297,10 @@ class TestSentenceFunctionGate:
         from src.grading import sentence_function
 
         # EU AI Act Recital 178 — the one that collapsed the EU run once before.
-        s = ("Providers of high-risk AI systems are encouraged to start to comply, on a "
-             "voluntary basis, with the relevant obligations of this Regulation.")
+        s = (
+            "Providers of high-risk AI systems are encouraged to start to comply, on a "
+            "voluntary basis, with the relevant obligations of this Regulation."
+        )
         assert sentence_function(s, is_recital=True) == "recital"
         assert sentence_function(s, is_recital=False) == "operative"
 
@@ -303,7 +309,10 @@ class TestSentenceFunctionGate:
 
         chunks = [
             {"text": "(1) The purpose of this Regulation is...", "metadata": {"page_number": 5}},
-            {"text": "Article 1\nSubject matter\n1. The purpose...", "metadata": {"page_number": 43}},
+            {
+                "text": "Article 1\nSubject matter\n1. The purpose...",
+                "metadata": {"page_number": 43},
+            },
         ]
         assert recital_boundary(chunks) == 43
 
@@ -311,14 +320,17 @@ class TestSentenceFunctionGate:
         """A strategy or guideline must not be treated as having recitals."""
         from src.grading import recital_boundary
 
-        assert recital_boundary([{"text": "Pillar 1: build capacity", "metadata": {"page_number": 3}}]) is None
+        assert (
+            recital_boundary([{"text": "Pillar 1: build capacity", "metadata": {"page_number": 3}}])
+            is None
+        )
 
     def test_definitions_headings_descriptions_housekeeping(self):
         from src.grading import sentence_function
 
         cases = {
             "definition": "Diversity, non-discrimination and fairness means that AI systems "
-                          "are developed in a way that includes diverse actors.",
+            "are developed in a way that includes diverse actors.",
             "housekeeping": "In appointing members, the Cabinet Secretary shall ensure gender balance.",
             "descriptive": "Organizations are investing in vendor risk management and monitoring.",
             "heading": "(Restrictions on Provision of Personal Data to Third Parties)",
@@ -338,8 +350,10 @@ class TestStructuralRelevance:
 
     # EU AI Act Article 17(1)(e), verbatim shape: a duty on a named party that
     # Transparency's vocabulary has no word for ("logging", not "audit trail").
-    ART12 = ("A provider of a high-risk AI system shall ensure the logging capabilities "
-             "record the period of each use of the system.")
+    ART12 = (
+        "A provider of a high-risk AI system shall ensure the logging capabilities "
+        "record the period of each use of the system."
+    )
 
     def test_a_duty_outside_the_vocabulary_is_admitted_on_structure(self):
         from src.deterministic import _sentence_has_core_term
@@ -410,10 +424,14 @@ class TestListItemSeverance:
     instruments that are strongest, because statutes are list-heavy.
     """
 
-    WHOLE = ("Providers of high-risk AI systems shall implement appropriate measures "
-             "to detect, prevent and mitigate possible biases.")
-    ITEM = ("(g) appropriate measures to detect, prevent and mitigate possible biases "
-            "identified according to point (f);")
+    WHOLE = (
+        "Providers of high-risk AI systems shall implement appropriate measures "
+        "to detect, prevent and mitigate possible biases."
+    )
+    ITEM = (
+        "(g) appropriate measures to detect, prevent and mitigate possible biases "
+        "identified according to point (f);"
+    )
 
     def test_the_same_duty_scores_differently_whole_and_severed(self):
         from src.evidence_strength import TIER_OBLIGATORY
@@ -429,8 +447,10 @@ class TestListItemSeverance:
 class TestListItemRepair:
     """v5. Statutes enumerate; the splitter severed items from their stem."""
 
-    STEM = ("Training, validation and testing data sets shall be subject to data "
-            "governance practices concerning in particular:")
+    STEM = (
+        "Training, validation and testing data sets shall be subject to data "
+        "governance practices concerning in particular:"
+    )
     ITEM_F = "(f) examination in view of possible biases likely to affect health and safety"
     ITEM_G = "(g) appropriate measures to detect, prevent and mitigate possible biases"
 
@@ -453,9 +473,14 @@ class TestListItemRepair:
     def test_a_list_cannot_reach_across_into_the_next_provision(self):
         from src.grading import rejoin_list_items
 
-        out = rejoin_list_items([self.STEM, self.ITEM_F,
-                                 "This Regulation shall apply from 2 August 2026.",
-                                 "(a) an item belonging to something else"])
+        out = rejoin_list_items(
+            [
+                self.STEM,
+                self.ITEM_F,
+                "This Regulation shall apply from 2 August 2026.",
+                "(a) an item belonging to something else",
+            ]
+        )
         assert not out[-1].startswith(self.STEM)
 
     def test_an_item_with_no_stem_is_left_alone(self):
@@ -471,9 +496,11 @@ class TestArtifactBorneDuties:
         from src.evidence_strength import TIER_OBLIGATORY
         from src.grading import _classify_base, classify_provision
 
-        for s in ("High-risk AI systems shall be accompanied by instructions for use.",
-                  "Training data sets shall be subject to data governance practices.",
-                  "An AI system shall be designed to enable human oversight."):
+        for s in (
+            "High-risk AI systems shall be accompanied by instructions for use.",
+            "Training data sets shall be subject to data governance practices.",
+            "An AI system shall be designed to enable human oversight.",
+        ):
             assert _classify_base(s).tier == 0, "v2 misses it"
             assert classify_provision(s).tier >= TIER_OBLIGATORY, s
 
@@ -496,7 +523,8 @@ class TestArtifactBorneDuties:
         plain = classify_provision("High-risk AI systems shall be accompanied by logs.")
         assert plain.tier == TIER_OBLIGATORY
         withpen = classify_provision(
-            "High-risk AI systems shall be accompanied by logs, and a fine applies on breach.")
+            "High-risk AI systems shall be accompanied by logs, and a fine applies on breach."
+        )
         assert withpen.tier == TIER_ENFORCEABLE
 
 
@@ -524,23 +552,29 @@ class TestConsultationDocuments:
     def test_a_consultation_question_is_not_a_duty(self):
         from src.grading import sentence_function
 
-        for q in ("Are there other measures we could require of organisations "
-                  "to improve transparency for AI?",
-                  "2: Are there other measures we could require of organisations?"):
+        for q in (
+            "Are there other measures we could require of organisations "
+            "to improve transparency for AI?",
+            "2: Are there other measures we could require of organisations?",
+        ):
             assert sentence_function(q) == "consultative", q
 
     def test_an_erratum_is_not_a_duty(self):
         from src.grading import sentence_function
 
-        s = ("Text should read: 1: Do you agree that requiring organisations to make "
-             "it clear when they are using AI would improve transparency?")
+        s = (
+            "Text should read: 1: Do you agree that requiring organisations to make "
+            "it clear when they are using AI would improve transparency?"
+        )
         assert sentence_function(s) == "consultative"
 
     def test_deliberation_by_the_author_is_not_a_duty(self):
         from src.grading import sentence_function
 
-        s = ("We recognise the need to consider which actors should be responsible "
-             "and liable for complying with the principles.")
+        s = (
+            "We recognise the need to consider which actors should be responsible "
+            "and liable for complying with the principles."
+        )
         assert sentence_function(s) == "consultative"
 
     def test_real_duties_are_untouched(self):
@@ -566,10 +600,11 @@ class TestAgentlessEnforcement:
         from src.evidence_strength import TIER_ENFORCEABLE
         from src.grading import classify_provision
 
-        for s in ("Where a crime is constituted, criminal liability shall be pursued "
-                  "in accordance with the law.",
-                  "Public security administrative sanctions shall be imposed in "
-                  "accordance with the law."):
+        for s in (
+            "Where a crime is constituted, criminal liability shall be pursued "
+            "in accordance with the law.",
+            "Public security administrative sanctions shall be imposed in accordance with the law.",
+        ):
             assert classify_provision(s).tier == TIER_ENFORCEABLE, s
 
     def test_punish_is_in_the_consequence_lexicon(self):
@@ -592,8 +627,10 @@ class TestAgentlessEnforcement:
         from src.grading import classify_provision
 
         assert classify_provision("AI should be developed responsibly.").tier == 0
-        assert classify_provision(
-            "The Ministry shall develop guidelines for the sector.").tier == TIER_ASSIGNED
+        assert (
+            classify_provision("The Ministry shall develop guidelines for the sector.").tier
+            == TIER_ASSIGNED
+        )
 
     def test_a_voluntary_instrument_still_caps_it(self):
         from src.evidence_strength import TIER_INTENTIONAL
@@ -608,8 +645,10 @@ class TestBeToObligation:
     (Quirk et al.). Added on grammatical grounds, NOT from the held-out data
     that revealed it — so China remains a test of the rule, not its source."""
 
-    ART21 = ("Article 21: Where providers violate these Measures, penalties are to be "
-             "given by the relevant regulatory departments in accordance with the law.")
+    ART21 = (
+        "Article 21: Where providers violate these Measures, penalties are to be "
+        "given by the relevant regulatory departments in accordance with the law."
+    )
 
     def test_a_penalty_article_written_with_be_to_is_enforceable(self):
         from src.evidence_strength import TIER_ENFORCEABLE
@@ -642,8 +681,12 @@ class TestBeToObligation:
         from src.evidence_strength import TIER_ASSIGNED, TIER_OBLIGATORY
         from src.grading import classify_provision
 
-        assert classify_provision(
-            "Providers of high-risk AI systems shall maintain an audit trail.").tier == TIER_OBLIGATORY
+        assert (
+            classify_provision(
+                "Providers of high-risk AI systems shall maintain an audit trail."
+            ).tier
+            == TIER_OBLIGATORY
+        )
         assert classify_provision("The Ministry shall develop guidelines.").tier == TIER_ASSIGNED
         assert classify_provision("AI should be transparent.").tier == 0
 
@@ -655,25 +698,33 @@ class TestImpositionLexiconSenses:
         """Kenya's entire Inclusivity verdict rested on this one sentence."""
         from src.grading import classify_provision
 
-        s = ("Non-tech professionals including policymakers, educators, and business "
-             "leaders require AI fluency for ethical and inclusive deployment.")
+        s = (
+            "Non-tech professionals including policymakers, educators, and business "
+            "leaders require AI fluency for ethical and inclusive deployment."
+        )
         assert classify_provision(s).tier == 0
 
     def test_every_deontic_form_of_require_still_binds(self):
         from src.evidence_strength import TIER_OBLIGATORY
         from src.grading import classify_provision
 
-        for s in ("Providers of high-risk AI systems are required to maintain an audit trail.",
-                  "The regulation requires that providers publish a registry.",
-                  "Providers shall comply with the requirements of this Article."):
+        for s in (
+            "Providers of high-risk AI systems are required to maintain an audit trail.",
+            "The regulation requires that providers publish a registry.",
+            "Providers shall comply with the requirements of this Article.",
+        ):
             assert classify_provision(s).tier >= TIER_OBLIGATORY, s
 
     def test_barriers_is_not_a_prohibition(self):
         """`bar*` matched barriers(26), baringo(2 — a Kenyan county), barometer(1)."""
         from src.grading import classify_provision
 
-        assert classify_provision(
-            "Addressing barriers to adoption remains a priority for the sector.").tier == 0
+        assert (
+            classify_provision(
+                "Addressing barriers to adoption remains a priority for the sector."
+            ).tier
+            == 0
+        )
 
     def test_compelling_is_not_compulsion(self):
         """`compel*` matched exactly one token in the corpus: 'compelling'."""
@@ -696,26 +747,35 @@ class TestOversightNeedsSubjection:
         """Carried 8% of the corpus's binding evidence on nothing."""
         from src.grading import classify_provision
 
-        assert classify_provision(
-            "Organizations are investing in vendor risk management and "
-            "continuous monitoring.").tier == 0
+        assert (
+            classify_provision(
+                "Organizations are investing in vendor risk management and continuous monitoring."
+            ).tier
+            == 0
+        )
 
     def test_being_subject_to_supervision_binds(self):
         from src.evidence_strength import TIER_OBLIGATORY
         from src.grading import classify_provision
 
-        for s in ("Providers are subject to supervision by the competent authority.",
-                  "Deployers operate under the supervision of the national authority.",
-                  "Operators shall be subject to periodic inspection."):
+        for s in (
+            "Providers are subject to supervision by the competent authority.",
+            "Deployers operate under the supervision of the national authority.",
+            "Operators shall be subject to periodic inspection.",
+        ):
             assert classify_provision(s).tier >= TIER_OBLIGATORY, s
 
     def test_self_assessment_still_does_not_bind(self):
         """Egypt calls its own audit instrument a 'Self Assessment checklist'."""
         from src.grading import classify_provision
 
-        assert classify_provision(
-            "Organizations should complete the comprehensive self assessment "
-            "checklist covering audit and monitoring practices.").tier < 3
+        assert (
+            classify_provision(
+                "Organizations should complete the comprehensive self assessment "
+                "checklist covering audit and monitoring practices."
+            ).tier
+            < 3
+        )
 
 
 class TestAdministrativeSanctions:
@@ -725,17 +785,23 @@ class TestAdministrativeSanctions:
         from src.evidence_strength import TIER_ENFORCEABLE
         from src.grading import classify_provision
 
-        s = ("Departments performing personal information protection duties are to "
-             "order corrections, confiscate unlawful gains, and give warnings.")
+        s = (
+            "Departments performing personal information protection duties are to "
+            "order corrections, confiscate unlawful gains, and give warnings."
+        )
         assert classify_provision(s).tier == TIER_ENFORCEABLE
 
     def test_in_order_to_is_still_not_a_power(self):
         """A bare 'order' stays excluded — 'in order to' is everywhere."""
         from src.grading import classify_provision
 
-        assert classify_provision(
-            "The Commission shall establish a working group in order to "
-            "coordinate research across member states.").tier < 3
+        assert (
+            classify_provision(
+                "The Commission shall establish a working group in order to "
+                "coordinate research across member states."
+            ).tier
+            < 3
+        )
 
     def test_early_warning_system_is_not_a_sanction(self):
         from src.grading import ADMIN_SANCTION_RE
@@ -761,9 +827,10 @@ class TestSourceScopedForce:
         from src.grading import classify_provision
 
         duty = "Providers must publish a model card for each deployed system."
-        assert classify_provision(
-            duty, document_is_nonbinding=True, document_is_unenforced=True
-        ).tier == TIER_INTENTIONAL
+        assert (
+            classify_provision(duty, document_is_nonbinding=True, document_is_unenforced=True).tier
+            == TIER_INTENTIONAL
+        )
 
     def test_profile_caps_each_sentence_by_its_own_source(self):
         from src.grading import SOURCE_UNENFORCED
@@ -793,30 +860,36 @@ class TestVoluntarinessIsDetectedAsWritten:
         """Japan's AI Guidelines for Business, verbatim."""
         from src.evidence_strength import detect_nonbinding_document
 
-        assert detect_nonbinding_document([
-            "Thus, it was decided to draw up guidelines on the basis of the "
-            "goal-based concept that would lead to the achievement of purposes "
-            "through soft laws without any legally binding force."
-        ])
+        assert detect_nonbinding_document(
+            [
+                "Thus, it was decided to draw up guidelines on the basis of the "
+                "goal-based concept that would lead to the achievement of purposes "
+                "through soft laws without any legally binding force."
+            ]
+        )
 
     def test_diagnosis_of_the_status_quo_is_not_a_disclaimer(self):
         """India's guidelines say this ABOUT other frameworks, not themselves."""
         from src.evidence_strength import detect_nonbinding_document
 
-        assert not detect_nonbinding_document([
-            "Current voluntary frameworks lack legal enforceability, and there "
-            "is insufficient clarity on how liability should be attributed."
-        ])
+        assert not detect_nonbinding_document(
+            [
+                "Current voluntary frameworks lack legal enforceability, and there "
+                "is insufficient clarity on how liability should be attributed."
+            ]
+        )
 
     def test_early_compliance_recital_is_still_not_a_disclaimer(self):
         """EU AI Act Recital 178 — the false positive that capped the Act."""
         from src.evidence_strength import detect_nonbinding_document
 
-        assert not detect_nonbinding_document([
-            "Providers are encouraged to start to comply, on a voluntary basis, "
-            "with the relevant obligations of this Regulation already during "
-            "the transitional period."
-        ])
+        assert not detect_nonbinding_document(
+            [
+                "Providers are encouraged to start to comply, on a voluntary basis, "
+                "with the relevant obligations of this Regulation already during "
+                "the transitional period."
+            ]
+        )
 
 
 class TestAccessibilitySenses:
@@ -828,16 +901,20 @@ class TestAccessibilitySenses:
 
         assert _sentence_has_core_term(
             "Providers shall ensure full compliance with accessibility "
-            "requirements, including Directive (EU) 2016/2102.", "Inclusivity")
+            "requirements, including Directive (EU) 2016/2102.",
+            "Inclusivity",
+        )
 
     def test_merely_accessible_information_is_not(self):
         from src.deterministic import _sentence_has_core_term
 
-        for s in ("Providers shall supply relevant, accessible and comprehensible "
-                  "information to deployers.",
-                  "The information shall be accessible only to market surveillance "
-                  "authorities and the Commission.",
-                  "A space is publicly accessible if access is subject to conditions."):
+        for s in (
+            "Providers shall supply relevant, accessible and comprehensible "
+            "information to deployers.",
+            "The information shall be accessible only to market surveillance "
+            "authorities and the Commission.",
+            "A space is publicly accessible if access is subject to conditions.",
+        ):
             assert not _sentence_has_core_term(s, "Inclusivity"), s
 
 
@@ -851,7 +928,8 @@ class TestDutyBearersTheCorpusUses:
 
         scored = classify_provision(
             "Personal information handlers shall take necessary measures to "
-            "ensure the security of personal information.")
+            "ensure the security of personal information."
+        )
         assert scored.tier >= TIER_OBLIGATORY
         assert scored.duty_bearer == "regulated"
 
@@ -859,16 +937,21 @@ class TestDutyBearersTheCorpusUses:
         from src.evidence_strength import TIER_OBLIGATORY
         from src.grading import classify_provision
 
-        assert classify_provision(
-            "Notified bodies shall participate in coordination activities as "
-            "referred to in Article 38.").tier >= TIER_OBLIGATORY
+        assert (
+            classify_provision(
+                "Notified bodies shall participate in coordination activities as "
+                "referred to in Article 38."
+            ).tier
+            >= TIER_OBLIGATORY
+        )
 
     def test_a_commissioner_is_a_government_body(self):
         from src.grading import classify_provision
 
         scored = classify_provision(
             "The Commissioner shall investigate complaints and may impose a "
-            "penalty notice under this Part.")
+            "penalty notice under this Part."
+        )
         assert scored.duty_bearer == "government"
         assert scored.has_enforcement
 
@@ -881,9 +964,11 @@ class TestVocabularyOutsideTheGdprTradition:
         from src.grading import classify_provision
         from src.mechanism_matching import detect_mechanisms
 
-        s = ("Article 21: Where the providers of algorithmic recommendation services "
-             "market goods or provide services to consumers, they shall protect the "
-             "consumers' rights to fair transactions.")
+        s = (
+            "Article 21: Where the providers of algorithmic recommendation services "
+            "market goods or provide services to consumers, they shall protect the "
+            "consumers' rights to fair transactions."
+        )
         found = detect_mechanisms([classify_provision(s, dimension="Fairness")], "Fairness")
         assert "non-discrimination duty" in found.present
 
@@ -891,9 +976,11 @@ class TestVocabularyOutsideTheGdprTradition:
         from src.grading import classify_provision
         from src.mechanism_matching import detect_mechanisms
 
-        s = ("Article 19: When the providers of algorithmic recommendation services "
-             "provide seniors with services, they shall safeguard the rights and "
-             "interests lawfully enjoyed by the seniors.")
+        s = (
+            "Article 19: When the providers of algorithmic recommendation services "
+            "provide seniors with services, they shall safeguard the rights and "
+            "interests lawfully enjoyed by the seniors."
+        )
         found = detect_mechanisms([classify_provision(s, dimension="Fairness")], "Fairness")
         assert "protected characteristics" in found.present
 
@@ -906,12 +993,108 @@ class TestEcologicalIsNotEnvironmental:
 
         assert not _sentence_has_core_term(
             "Providers shall strengthen the ecological management of algorithm "
-            "recommendation service pages.", "Environmental Sustainability")
+            "recommendation service pages.",
+            "Environmental Sustainability",
+        )
 
     def test_the_genuine_senses_still_match(self):
         from src.deterministic import _sentence_has_core_term
 
-        for s in ("Providers shall report the ecological footprint of training runs.",
-                  "The assessment shall cover the ecological impact of the system.",
-                  "Deployers shall disclose energy consumption and carbon emissions."):
+        for s in (
+            "Providers shall report the ecological footprint of training runs.",
+            "The assessment shall cover the ecological impact of the system.",
+            "Deployers shall disclose energy consumption and carbon emissions.",
+        ):
             assert _sentence_has_core_term(s, "Environmental Sustainability"), s
+
+
+class TestFrameworkSalience:
+    """Ordering the gaps, never changing the verdict."""
+
+    def test_absent_mechanisms_rank_by_how_many_instruments_expect_them(self, monkeypatch):
+        from src import framework_salience as fs
+
+        monkeypatch.setattr(
+            fs,
+            "mechanism_salience",
+            lambda: {
+                "Safety|pre-deployment testing": 36,
+                "Safety|risk assessment": 29,
+                "Safety|human failsafe / shutdown": 5,  # below the consensus floor
+            },
+        )
+        ranked = fs.rank_absent(
+            "Safety", ["human failsafe / shutdown", "pre-deployment testing", "risk assessment"]
+        )
+
+        assert [r["mechanism"] for r in ranked] == ["pre-deployment testing", "risk assessment"]
+
+    def test_an_unreachable_corpus_shows_nothing_rather_than_guessing(self, monkeypatch):
+        """Salience is presentation, so losing it must not fail an analysis — and
+        must not invent a priority order it cannot justify either."""
+        from src import framework_salience as fs
+
+        monkeypatch.setattr(fs, "mechanism_salience", lambda: {})
+
+        assert fs.rank_absent("Safety", ["risk assessment", "pre-deployment testing"]) == []
+
+    def test_a_country_document_is_never_counted_as_a_reference(self):
+        """The corpus side of the count must exclude what is being assessed."""
+        import inspect
+
+        from src import framework_salience as fs
+
+        src = inspect.getsource(fs.mechanism_salience)
+        assert 'md.get("workspace_id")' in src and "continue" in src
+
+
+class TestPriorityFloor:
+    """A minority expectation is not a priority."""
+
+    def test_sub_consensus_gaps_are_dropped_not_ranked_last(self, monkeypatch):
+        """ "purpose limitation, expected by 1 of 43" made the panel look arbitrary."""
+        from src import framework_salience as fs
+
+        monkeypatch.setattr(
+            fs,
+            "mechanism_salience",
+            lambda: {
+                "Privacy|purpose limitation": 1,
+                "Privacy|consent": 30,
+            },
+        )
+        ranked = fs.rank_absent("Privacy", ["purpose limitation", "consent"])
+
+        assert [r["mechanism"] for r in ranked] == ["consent"]
+
+    def test_the_denominator_is_counted_not_inferred(self):
+        """It returned the largest salience value, printing "31 of 39" over 43."""
+        import inspect
+
+        from src import framework_salience as fs
+
+        src = inspect.getsource(fs.framework_count)
+        assert "max(" not in src
+
+
+class TestSubjectionIsNotControl:
+    """ "Under the control of X" says what X controls, not what X answers to."""
+
+    def test_control_and_authority_are_not_subjection(self):
+        from src.grading import SUBJECTION_RE
+
+        for s in (
+            "logs to the extent they are under the control of the provider",
+            "a data processing environment under the control of the prospective provider",
+        ):
+            assert not SUBJECTION_RE.search(s), s
+
+    def test_real_subjection_still_matches(self):
+        from src.grading import SUBJECTION_RE
+
+        for s in (
+            "deployers operating under the supervision of the authority",
+            "systems placed under the oversight of the Commission",
+            "premises under the inspection of the notified body",
+        ):
+            assert SUBJECTION_RE.search(s), s

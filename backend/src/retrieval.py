@@ -215,7 +215,6 @@ class RetrievalPipeline:
         self._lexical_cache_locks: dict[str, threading.Lock] = {}
         self._lexical_cache_locks_guard = threading.Lock()
 
-
     @staticmethod
     def _select_incident_pool(
         candidates: list[dict[str, Any]],
@@ -403,7 +402,6 @@ class RetrievalPipeline:
         }
         return aspects_map.get(dimension, [definition])
 
-
     def _search_vectorstore(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
         "document" in query.lower() or "report" in query.lower()
         results = self.vectorstore.search(query, top_k=top_k)
@@ -446,7 +444,6 @@ class RetrievalPipeline:
         except Exception:
             pass
         return scored
-
 
     # ── Module 1 + Module 2 combined budget retrieval ─────────────────
 

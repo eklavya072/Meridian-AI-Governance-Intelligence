@@ -14,6 +14,7 @@ chunks that collapse to 20 distinct passages. Retrieval dedups near-duplicates
 but only pulls 3x headroom, so it could not recover the recall it discarded and
 the modules were starved of framework evidence. Nothing errored.
 """
+
 import os
 import time
 
@@ -35,10 +36,13 @@ for i, fw in enumerate(load_frameworks_config(), 1):
     r = svc.sync_framework(fw)
     if r.get("status") == "synced":
         ok += 1
-        print(f"[{i:2d}/33] {name[:52]:<52} {n0:>6} -> {r.get('chunk_count',0):<6}", flush=True)
+        print(f"[{i:2d}/33] {name[:52]:<52} {n0:>6} -> {r.get('chunk_count', 0):<6}", flush=True)
     else:
         err += 1
-        print(f"[{i:2d}/33] {name[:52]:<52} ERROR {r.get('error','')[:60]}", flush=True)
+        print(f"[{i:2d}/33] {name[:52]:<52} ERROR {r.get('error', '')[:60]}", flush=True)
 
-print(f"\nRESYNC DONE: {ok} synced, {err} errored, "
-      f"collection {before} -> {vs.collection.count()} in {(time.time()-t0)/60:.1f} min", flush=True)
+print(
+    f"\nRESYNC DONE: {ok} synced, {err} errored, "
+    f"collection {before} -> {vs.collection.count()} in {(time.time() - t0) / 60:.1f} min",
+    flush=True,
+)

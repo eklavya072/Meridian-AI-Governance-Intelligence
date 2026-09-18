@@ -284,4 +284,3 @@ def reset_storage() -> None:
     """Drop the cached backend (tests, and config reloads)."""
     global _storage
     _storage = None
-

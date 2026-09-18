@@ -107,9 +107,7 @@ def timed_stage(stage: str):
         stage_seconds.labels(stage=stage).observe(time.monotonic() - started)
 
 
-def record_citation_results(
-    results: Iterable[dict[str, Any]], dimension: str = "all"
-) -> None:
+def record_citation_results(results: Iterable[dict[str, Any]], dimension: str = "all") -> None:
     """Count verification outcomes and refresh the pass-rate gauge.
 
     Takes the verified-evidence dicts produced by

@@ -244,4 +244,3 @@ class FrameworkSyncService:
         target_path.write_bytes(response.content)
         logger.info("pdf_downloaded", name=name, path=str(target_path), size=len(response.content))
         return target_path
-

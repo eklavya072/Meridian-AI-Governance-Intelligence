@@ -77,17 +77,14 @@ _QUOTA_MARKERS = (
     "too many requests",
 )
 
-# A 429 that names a per-DAY quota is not a rate limit. The credential is done
-# until the provider's quota window rolls over, and rotating to it again only
-# spends attempts. Gemini names the metric it refused on
-# ("GenerateRequestsPerDayPerProjectPerModel-FreeTier").
-_DAILY_QUOTA_MARKERS = (
-    "perday",
-    "per day",
-    "per_day",
-    "daily limit",
-    "daily quota",
-)
+# Whether a 429 is waitable is decided by the RETRY WINDOW, never by the quota
+# id. Gemini lists "GenerateRequestsPerDayPerProjectPerModel-FreeTier" in the
+# violation details of a PER-MINUTE refusal too — "limit: 20 ... Please retry
+# in 19.5s" — so matching "perday" in that text benched healthy credentials
+# for the rest of the day over a limit that clears in twenty seconds. When the
+# API says when to come back, it is a rate limit.
+# Above this, "come back later" is not a rate limit any run can wait out.
+_RATE_LIMIT_CEILING_SECONDS = 600.0
 
 _RETRYABLE_MARKERS = (
     "timeout",
@@ -166,16 +163,20 @@ def classify(exc: BaseException) -> ProviderFailure:
     if status == 429 or any(m in lowered for m in _QUOTA_MARKERS):
         # Which KIND of 429 decides whether the credential recovers in seconds
         # or is finished for the day, and the two need opposite handling. A
-        # rate limit tells you when to come back; a spent daily allowance does
-        # not, because nothing short of the quota window resetting will help.
-        # Treating them alike is what let five keys report "healthy" while
-        # Google refused every call.
-        daily = any(m in lowered for m in _DAILY_QUOTA_MARKERS) or retry_after is None
-        if daily:
-            return ProviderFailure(
-                FailureKind.QUOTA_DAILY, "daily quota exhausted", status, retry_after
-            )
-        return ProviderFailure(FailureKind.QUOTA, "rate limited", status, retry_after)
+        # rate limit tells you when to come back; a spent allowance does not,
+        # because nothing short of the quota window resetting will help.
+        #
+        # A usable retry delay settles it — the provider only says "retry in
+        # 19s" about something that clears in 19s. Only when it declines to
+        # say, or names a wait no run can sit through, is the credential
+        # treated as done for the day.
+        if retry_after is not None and retry_after <= _RATE_LIMIT_CEILING_SECONDS:
+            return ProviderFailure(FailureKind.QUOTA, "rate limited", status, retry_after)
+        # No usable window: either the provider declined to give one, or the
+        # one it gave is longer than any run can sit through.
+        return ProviderFailure(
+            FailureKind.QUOTA_DAILY, "quota with no usable retry window", status, retry_after
+        )
 
     if status in _TERMINAL_STATUS:
         return ProviderFailure(

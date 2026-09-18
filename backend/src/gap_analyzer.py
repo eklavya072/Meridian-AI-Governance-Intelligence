@@ -49,11 +49,13 @@ from src.framework_router import (
     resolve_frameworks,
     resolve_regional_frameworks,
 )
+from src.framework_salience import framework_count, rank_absent
 from src.grading import (
     SOURCE_UNENFORCED,
     SOURCE_VOLUNTARY,
     apply_mechanism_gate,
     sentence_function,
+    verdict_confidence,
 )
 from src.grading import build_provision_profile as build_provision_profile
 from src.llm_provider import LLMProvider
@@ -2133,7 +2135,6 @@ class GapAnalyzer:
 
         return match
 
-
     def _dimension_enforcement_backing(
         self,
         scoring_pool: list[dict[str, Any]],
@@ -2181,9 +2182,7 @@ class GapAnalyzer:
                 name = (md or {}).get("document_name") or "?"
                 by_doc.setdefault(name, []).append(text or "")
         except Exception as exc:
-            logger.warning(
-                "workspace_documents_failed", workspace_id=workspace_id, error=str(exc)
-            )
+            logger.warning("workspace_documents_failed", workspace_id=workspace_id, error=str(exc))
         return by_doc
 
     def _document_regimes(self, workspace_id: str) -> set[str]:
@@ -2226,9 +2225,7 @@ class GapAnalyzer:
             if detect_nonbinding_document(texts)
         }
         cache[workspace_id] = found
-        logger.info(
-            "voluntary_documents", workspace_id=workspace_id, documents=sorted(found)
-        )
+        logger.info("voluntary_documents", workspace_id=workspace_id, documents=sorted(found))
         return found
 
     def _scoring_pools(self, workspace_id: str) -> dict[str, list[dict[str, Any]]]:
@@ -2251,16 +2248,12 @@ class GapAnalyzer:
                     dimension=dimension, workspace_id=workspace_id
                 )
             except Exception as exc:
-                logger.warning(
-                    "dimension_scoring_pool_failed", dimension=dimension, error=str(exc)
-                )
+                logger.warning("dimension_scoring_pool_failed", dimension=dimension, error=str(exc))
                 pools[dimension] = []
         cache[workspace_id] = pools
         return pools
 
-    def _structural_candidates(
-        self, workspace_id: str
-    ) -> dict[str, list[tuple[str, str]]]:
+    def _structural_candidates(self, workspace_id: str) -> dict[str, list[tuple[str, str]]]:
         """Provisions admitted on structure rather than vocabulary, per dimension.
 
         Returned with the document each came from, so they are capped by their
@@ -2295,7 +2288,11 @@ class GapAnalyzer:
                 document = md.get("document_name") or "?"
                 if document not in boundaries:
                     boundaries[document] = recital_boundary(
-                        [c for c in pool if (c.get("metadata") or {}).get("document_name") == document]
+                        [
+                            c
+                            for c in pool
+                            if (c.get("metadata") or {}).get("document_name") == document
+                        ]
                     )
                 cut = boundaries.get(document)
                 page = md.get("page_number") or 0
@@ -2314,8 +2311,7 @@ class GapAnalyzer:
         texts_only = {d: [t for t, _ in v] for d, v in candidates.items()}
         kept = {d: set(v) for d, v in apply_specificity_guard(texts_only).items()}
         guarded = {
-            d: [pair for pair in v if pair[0] in kept.get(d, ())]
-            for d, v in candidates.items()
+            d: [pair for pair in v if pair[0] in kept.get(d, ())] for d, v in candidates.items()
         }
         cache[workspace_id] = guarded
         logger.info(
@@ -2384,9 +2380,7 @@ class GapAnalyzer:
 
         # Provisions that carry a duty for this dimension in the country's own
         # vocabulary, which the core-term table cannot anticipate.
-        for sent, document in self._structural_candidates(workspace_id).get(
-            dimension, []
-        ):
+        for sent, document in self._structural_candidates(workspace_id).get(dimension, []):
             if sent not in source_force:
                 sentences.append(sent)
                 source_force[sent] = _cap(document)
@@ -2413,9 +2407,7 @@ class GapAnalyzer:
         backing = self._dimension_enforcement_backing(
             scoring_pool, dimension, workspace_id, country or ""
         )
-        mat_label, mat_note = depth_from_profile(
-            profile, document_enforcement_regime=backing
-        )
+        mat_label, mat_note = depth_from_profile(profile, document_enforcement_regime=backing)
         # A dimension cannot be operating while none of the mechanisms it
         # needs is carried by a duty. Holds the stage down, never up.
         bound = sum(
@@ -3301,6 +3293,16 @@ class GapAnalyzer:
         _mech_present = dict(getattr(_mech, "present", {}) or {})
         _mech_absent = list(getattr(_mech, "absent", []) or [])
 
+        # How much this particular cell is worth, from the same counters the
+        # verdict was computed on — so the two can never disagree.
+        _prof = (determined or {}).get("profile")
+        _confidence_band, _confidence_reason = verdict_confidence(
+            n_scored=getattr(_prof, "n_scored", 0),
+            n_binding=getattr(_prof, "n_binding", 0),
+            n_enforceable=getattr(_prof, "n_enforceable", 0),
+            mechanisms_bound=sum(1 for t in _mech_present.values() if t >= TIER_OBLIGATORY),
+        )
+
         gap = GovernanceGap(
             dimension=dimension,
             coverage=coverage,
@@ -3319,6 +3321,10 @@ class GapAnalyzer:
             coverage_reasoning=coverage_reasoning,
             mechanisms_present=_mech_present,
             mechanisms_absent=_mech_absent,
+            priority_gaps=rank_absent(dimension, _mech_absent),
+            framework_corpus_size=framework_count(),
+            evidence_confidence=_confidence_band,
+            evidence_confidence_reason=_confidence_reason,
             gap_analysis="\n\n".join(
                 p
                 for p in [

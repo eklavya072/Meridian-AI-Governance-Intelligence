@@ -306,6 +306,22 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
           <p className="module-label font-bold mb-1.5">Implementation Depth</p>
           <DepthBadge level={depth} />
         </div>
+        {/* How much this particular cell is worth. Per-dimension external
+            validation reaches 38% of cells; for the rest the only honest
+            answer is to say what the verdict rests on, so "verify before you
+            quote this" points at something specific rather than at the whole
+            instrument. */}
+        {gap.evidence_confidence && (
+          <div>
+            <p className="module-label mb-1.5">Evidence Behind This Verdict</p>
+            <p className="module-value capitalize">{gap.evidence_confidence}</p>
+            {gap.evidence_confidence_reason && (
+              <p className="text-[11px] text-navy-600 mt-1">
+                {gap.evidence_confidence_reason}
+              </p>
+            )}
+          </div>
+        )}
         <div>
           <p className="module-label mb-1.5">Gap Detected</p>
           <p className="module-value">
@@ -1087,6 +1103,28 @@ function DecisionAnalyticsCard({
   analyses: Analysis[];
   currentAnalysisId: string;
 }) {
+  // Every dimension's absent mechanisms, pooled and ranked across the whole
+  // run. Pooling is the point: a reader wants the most consequential gaps in
+  // the document, not the worst gap inside each dimension separately.
+  const priorityGaps = useMemo(() => {
+    const rows = gaps.flatMap((g) =>
+      (g.priority_gaps || []).map((pg) => ({
+        dimension: g.dimension,
+        mechanism: pg.mechanism,
+        expected_by: pg.expected_by,
+      })),
+    );
+    return rows
+      .filter((r) => r.expected_by > 0)
+      .sort((a, b) => b.expected_by - a.expected_by)
+      .slice(0, 8);
+  }, [gaps]);
+
+  const corpusSize = useMemo(
+    () => Math.max(0, ...gaps.map((g) => g.framework_corpus_size || 0)),
+    [gaps],
+  );
+
   // The trajectory compares this run against what came before it — on the
   // very first run there is no "before", so it has nothing to show. Gated on
   // the run actually being VIEWED, not just on the workspace having more than
@@ -1272,6 +1310,53 @@ function DecisionAnalyticsCard({
           </p>
         </motion.div>
       </div>
+
+      {/* Row 4: what to fix first.
+
+          The mechanism inventory was computed, persisted and never shown. A
+          flat "4 of 6 provided" cannot answer the only question a ministry
+          actually has, which is which of the absent two matters more. Ordering
+          the gaps by how many reference instruments name each one answers it,
+          and grounds the answer outside our own opinion.
+
+          Deliberately NOT a score. Nothing here feeds coverage or depth; it
+          decides what a reader sees at the top of a list. */}
+      {priorityGaps.length > 0 && (
+        <motion.div
+          variants={staggerChild}
+          className="rounded-xl border border-[color:var(--border)] bg-white p-4 mt-4"
+        >
+          <p className="eyebrow mb-1">Priority Gaps</p>
+          <p className="text-[11px] text-navy-600 mb-3">
+            Mechanisms with no supporting provision in the evidence scored for
+            their dimension, shown only where at least half of the{" "}
+            {corpusSize || 43} indexed instruments expect them. Ordered by how
+            many expect each. This ranks what to look at first; it does not
+            affect any score.
+          </p>
+          <ul className="space-y-1.5">
+            {priorityGaps.map((g) => (
+              <li
+                key={`${g.dimension}-${g.mechanism}`}
+                className="flex items-center gap-3 text-sm"
+              >
+                <span
+                  className="h-1.5 rounded-full shrink-0"
+                  style={{
+                    width: `${Math.max(8, (g.expected_by / (corpusSize || 44)) * 84)}px`,
+                    background: "#A8483F",
+                  }}
+                />
+                <span className="font-medium text-navy-950">{g.mechanism}</span>
+                <span className="text-navy-600 text-[11px]">{g.dimension}</span>
+                <span className="ml-auto text-[11px] text-navy-600 tabular-nums">
+                  expected by {g.expected_by} of {corpusSize || 44}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </motion.div>
+      )}
 
       {/* Row 4: regulatory trajectory — only meaningful once a workspace
           holds more than one run. Shows what each added instrument actually

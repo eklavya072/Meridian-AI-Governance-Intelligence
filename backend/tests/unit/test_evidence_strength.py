@@ -794,11 +794,13 @@ class TestNonbindingDetectionCannotMisreadAStatute:
     """
 
     def test_voluntary_early_compliance_is_not_a_disclaimer(self):
-        assert not detect_nonbinding_document([
-            "Providers of high-risk AI systems are encouraged to start to comply, "
-            "on a voluntary basis, with the relevant obligations of this Regulation "
-            "already during the transitional period."
-        ])
+        assert not detect_nonbinding_document(
+            [
+                "Providers of high-risk AI systems are encouraged to start to comply, "
+                "on a voluntary basis, with the relevant obligations of this Regulation "
+                "already during the transitional period."
+            ]
+        )
 
     def test_a_real_disclaimer_still_registers(self):
         assert detect_nonbinding_document(
@@ -807,9 +809,11 @@ class TestNonbindingDetectionCannotMisreadAStatute:
 
     def test_enforcement_machinery_overrules_a_disclaimer(self):
         """A document that fines people is not voluntary, whatever it says."""
-        assert not detect_nonbinding_document([
-            "These guidelines are voluntary in nature.",
-            "The Authority may investigate any provider and impose administrative fines.",
-            "Providers shall be liable to penalties for non-compliance with this Act.",
-            "The supervisory authority may inspect operators and impose sanctions.",
-        ])
+        assert not detect_nonbinding_document(
+            [
+                "These guidelines are voluntary in nature.",
+                "The Authority may investigate any provider and impose administrative fines.",
+                "Providers shall be liable to penalties for non-compliance with this Act.",
+                "The supervisory authority may inspect operators and impose sanctions.",
+            ]
+        )

@@ -42,11 +42,11 @@ logger = structlog.get_logger()
 class LegalUnit:
     """One addressable division of an instrument."""
 
-    kind: str          # recital | article | annex | preamble
-    number: str        # "10", "178", "III"
+    kind: str  # recital | article | annex | preamble
+    number: str  # "10", "178", "III"
     title: str = ""
     text: str = ""
-    path: str = ""     # "Article 10", "Recital 178"
+    path: str = ""  # "Article 10", "Recital 178"
     operative: bool = True
 
     @property
@@ -61,7 +61,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 # an earlier version let them, and every article came back empty.
 _DIV_RE = re.compile(
     r'<div[^>]*\bid="(?P<id>(?:rct|art|anx)_[A-Za-z0-9]+)"[^>]*>'
-    r'(?P<body>.*?)'
+    r"(?P<body>.*?)"
     # \Z so the LAST division is not lost when the markup is truncated or
     # has no closing body tag.
     r'(?=<div[^>]*\bid="(?:rct|art|anx)_[A-Za-z0-9]+"|</body|\Z)',

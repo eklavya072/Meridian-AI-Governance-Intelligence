@@ -2176,4 +2176,3 @@ class DeterministicPlausibilityValidator:
             trace_lines.append(f"6) Adjustments applied: {'; '.join(adjustments)}")
 
         return "\n".join(trace_lines)
-

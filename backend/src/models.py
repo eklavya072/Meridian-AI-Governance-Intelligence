@@ -359,6 +359,22 @@ class GovernanceGap(BaseModel):
     # everything and binds almost none of it.
     mechanisms_present: dict[str, int] = {}
     mechanisms_absent: list[str] = []
+    # The absent mechanisms, most widely expected first, each with the number
+    # of reference instruments that name it. Ordering only — it decides which
+    # gap a reader is shown at the top, never what the verdict is. A ministry
+    # asking "what do I fix first" is asking this question, and a flat list of
+    # absences cannot answer it.
+    priority_gaps: list[dict[str, Any]] = []
+    #: How many instruments the counts above were taken over.
+    framework_corpus_size: int = 0
+    # How much evidence stands behind THIS cell: strong | moderate |
+    # insufficient | none, with the reason. A verdict resting on 171 binding
+    # provisions and one resting on 1 render identically without it, so a
+    # reader cannot tell which to verify before quoting. Per-dimension
+    # external validation reaches 38% of cells; this is how the other 62%
+    # tell you what they are worth.
+    evidence_confidence: str = ""
+    evidence_confidence_reason: str = ""
     # ── Module 1 + Module 2 (expanded analysis) ──
     implementation_depth: ImplementationDepth = ImplementationDepth.UNADDRESSED
     depth_reasoning: str = ""

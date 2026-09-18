@@ -88,7 +88,10 @@ class TestDivisionScopedDutyBearer:
 
         scored = classify_division(self.FRAGS, dimension="Fairness")
         assert any(s.tier >= TIER_OBLIGATORY and "bias" in s.text.lower() for s in scored)
-        assert detect_mechanisms(scored, "Fairness").present.get("bias mitigation", 0) >= TIER_OBLIGATORY
+        assert (
+            detect_mechanisms(scored, "Fairness").present.get("bias mitigation", 0)
+            >= TIER_OBLIGATORY
+        )
 
     def test_evidence_still_quotes_the_document_not_our_reconstruction(self):
         from src.grading import classify_division
@@ -102,8 +105,10 @@ class TestDivisionScopedDutyBearer:
         from src.grading import classify_division
 
         scored = classify_division(
-            ["The Authority shall maintain the register.",
-             "It shall in particular: (a) publish annual reports;"],
+            [
+                "The Authority shall maintain the register.",
+                "It shall in particular: (a) publish annual reports;",
+            ],
             dimension="Transparency",
         )
         assert all(s.tier <= TIER_ASSIGNED for s in scored)

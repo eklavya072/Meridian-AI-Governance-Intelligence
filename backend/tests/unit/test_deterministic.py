@@ -189,10 +189,7 @@ class TestDeterministicPlausibilityValidator:
         )
         assert result.validated_depth_level >= 1
         assert result.validated_coverage == "Partial"
-        assert (
-            "doc_type" in result.depth_trace.lower()
-            or "strategy" in result.depth_trace.lower()
-        )
+        assert "doc_type" in result.depth_trace.lower() or "strategy" in result.depth_trace.lower()
 
     def test_level_0_with_evidence_raises(self, validator):
         result = validator.validate(

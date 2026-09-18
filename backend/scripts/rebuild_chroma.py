@@ -12,6 +12,7 @@ their cited evidence afterwards.
 Writes to a staging directory first and swaps only once filtered queries are
 verified against it — never edit the live store in place.
 """
+
 import os
 import sqlite3
 import sys
@@ -51,18 +52,25 @@ print(f"loaded {len(ids)} chunks from sqlite", flush=True)
 
 model = SentenceTransformer("BAAI/bge-small-en-v1.5")
 client = chromadb.PersistentClient(path=DEST)
-coll = client.get_or_create_collection(COLLECTION_NAME,
-                                       embedding_function=NullEmbeddingFunction(),
-                                       metadata={"hnsw:space": "cosine"})
+coll = client.get_or_create_collection(
+    COLLECTION_NAME, embedding_function=NullEmbeddingFunction(), metadata={"hnsw:space": "cosine"}
+)
 
 BATCH, t0 = 256, time.time()
 for i in range(0, len(ids), BATCH):
     sl = slice(i, i + BATCH)
-    embs = model.encode(texts[sl], normalize_embeddings=True,
-                        batch_size=32, show_progress_bar=False).tolist()
+    embs = model.encode(
+        texts[sl], normalize_embeddings=True, batch_size=32, show_progress_bar=False
+    ).tolist()
     coll.add(ids=ids[sl], documents=texts[sl], embeddings=embs, metadatas=metas[sl])
     done = min(i + BATCH, len(ids))
     rate = done / max(time.time() - t0, 1e-9)
-    print(f"  {done}/{len(ids)}  {rate:.0f}/s  eta {(len(ids)-done)/max(rate,1e-9)/60:.1f}min", flush=True)
+    print(
+        f"  {done}/{len(ids)}  {rate:.0f}/s  eta {(len(ids) - done) / max(rate, 1e-9) / 60:.1f}min",
+        flush=True,
+    )
 
-print(f"REBUILD COMPLETE: {coll.count()} chunks in {DEST} ({(time.time()-t0)/60:.1f} min)", flush=True)
+print(
+    f"REBUILD COMPLETE: {coll.count()} chunks in {DEST} ({(time.time() - t0) / 60:.1f} min)",
+    flush=True,
+)

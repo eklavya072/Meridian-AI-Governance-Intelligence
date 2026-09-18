@@ -83,6 +83,24 @@ export interface GovernanceGap {
   mechanisms_present?: Record<string, number>;
   /** Expected mechanisms the document does not address at all. */
   mechanisms_absent?: string[];
+  /**
+   * The absent mechanisms ordered by how many reference instruments name
+   * each. Ordering only — nothing here changes a verdict. "You provide 4 of
+   * 6" does not tell a ministry which of the missing two to fix first, and
+   * that is the question they have.
+   */
+  priority_gaps?: { mechanism: string; expected_by: number }[];
+  /** How many instruments the expected_by counts were taken over. */
+  framework_corpus_size?: number;
+  /**
+   * How much evidence stands behind THIS cell: strong | moderate |
+   * insufficient | none. A verdict resting on 171 binding provisions and one
+   * resting on 1 otherwise render identically, so a reader cannot tell which
+   * to verify before quoting it.
+   */
+  evidence_confidence?: string;
+  /** Why that band, in the counters the verdict itself was computed on. */
+  evidence_confidence_reason?: string;
   module_1?: Module1Evaluation | null;
   module_2?: Module2Recommendation | null;
   // ── Module 3 + Module 4 (conditional, Part 2) ──
