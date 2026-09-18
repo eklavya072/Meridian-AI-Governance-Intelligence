@@ -33,6 +33,18 @@ RETRY_BACKOFF_SECONDS = float(os.getenv("PROVIDER_RETRY_BACKOFF", "2.0"))
 CAPACITY_WAIT_CEILING_SECONDS = float(os.getenv("PROVIDER_CAPACITY_WAIT", "90"))
 
 
+def _honour_retry_after(retry_delay: float) -> float:
+    """Wait at least as long as the provider asked, plus jitter.
+
+    _jittered_wait draws from [0.5x, 1.5x], so jittering an explicit
+    Retry-After can come back UNDER it — the log read "the API asked for 37s —
+    waiting 27s", and a retry sent before the window reopens is another 429
+    and one fewer attempt. Jitter still de-synchronises concurrent dimensions;
+    it just adds now rather than scaling.
+    """
+    return retry_delay + random.uniform(0.5, max(2.0, retry_delay * 0.15))
+
+
 def _jittered_wait(base: float, spread: float = 0.5) -> float:
     """Backoff with jitter: base * uniform(1 - spread, 1 + spread).
 
@@ -710,7 +722,7 @@ def generate_with_retry(
             _debug_stats["primary_requests"].append(request_info)
             retry_delay = _extract_retry_delay(error_str)
             if retry_delay is not None and retry_delay <= 120.0 and attempt < MAX_RETRIES:
-                wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
+                wait = _honour_retry_after(max(retry_delay, RETRY_BACKOFF_SECONDS))
                 print(
                     f"[DEBUG] REQ #{req_num} | {operation} | all keys exhausted; the "
                     f"API asked for {retry_delay:.0f}s — waiting {wait:.0f}s "
@@ -1033,7 +1045,7 @@ def generate_text_with_retry(
                 continue
             retry_delay = _extract_retry_delay(str(exc))
             if retry_delay is not None and retry_delay <= 120.0 and attempt < attempts:
-                wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
+                wait = _honour_retry_after(max(retry_delay, RETRY_BACKOFF_SECONDS))
                 print(f"[DEBUG] Chat Gemini retry delay {retry_delay:.0f}s — waiting {wait:.0f}s")
                 if not _sleep_within_budget(wait):
                     raise ChatDeadlineExceeded(
