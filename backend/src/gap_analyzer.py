@@ -1417,6 +1417,9 @@ class GapAnalyzer:
             chunk_id = c.get("chunk_id", "") if isinstance(c, dict) else getattr(c, "chunk_id", "")
             quote = c.get("quote", "") if isinstance(c, dict) else getattr(c, "quote", "")
             page = c.get("page_number") if isinstance(c, dict) else getattr(c, "page_number", None)
+            # What this passage is evidence FOR. Carried through because a
+            # quote nobody can tie to a step cannot be checked.
+            claim = (c.get("claim", "") if isinstance(c, dict) else getattr(c, "claim", "")) or ""
             if self._is_no_citation_entry(chunk_id, quote):
                 verified_list.append(
                     ModuleCitation(
@@ -1502,6 +1505,7 @@ class GapAnalyzer:
                     source_type=source_type,
                     document_name=doc_name or None,
                     page_number=page,
+                    claim=claim,
                     verified=result.passed,
                     verification=result.to_dict(),
                 )
@@ -3414,6 +3418,12 @@ class GapAnalyzer:
             chunk_id: str
             quote: str
             page_number: int | None = None
+            # The prompt asks which step each passage supports, but without a
+            # field to put it in the answer was dropped at parse time: every
+            # one of 94 stored roadmap citations carried an empty claim, and
+            # it read like the model ignoring an instruction it had in fact
+            # followed. A quote nobody can tie to a step cannot be checked.
+            claim: str = ""
 
         class IncidentSchema(BaseModel):
             incident_name: str

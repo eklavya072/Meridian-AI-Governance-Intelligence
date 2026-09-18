@@ -296,7 +296,10 @@ RECOMMENDATION_AND_FINAL_SYSTEM = (
     "- remaining_limitations: str\n"
     "- evidence_analysis: str (trace each claim to specific policy provisions)\n"
     "- framework_synthesis: str (compare against international expectations)\n"
-    "- recommendations: list of str (each identifies which mechanism it extends)\n"
+    "- recommendations: list of str (each identifies which mechanism it extends,\n"
+    "  and NAMES the reference instrument and provision that expects it — e.g.\n    'per NIST AI RMF MANAGE-4.1', 'as UNESCO Recommendation \u00a7 35 requires'.\n"
+    "  Never write 'international best practice' or 'global standards' when the\n"
+    "  actual instrument is in the framework context above.)\n"
     "- smallest_effective_improvement: str\n"
     "- uncertainty_note: str\n"
     '- confidence_in_assessment: "High" | "Medium" | "Low"\n'
@@ -528,6 +531,17 @@ write gap-closing recommendations and do NOT set a priority.
    the LAST resort, only when nothing in the document relates. Also
    identify WHICH practical toolkit/step (from Module 2 sources) it
    operationalises.
+   AND NAME THE REFERENCE INSTRUMENT THAT EXPECTS IT, with its provision
+   where the context gives one — "per NIST AI RMF MANAGE-4.1", "as UNESCO
+   Recommendation paragraph 35 requires", "the OECD AI Principles' robustness
+   duty". The instruments are in the framework context above; a recommendation
+   that names the document's own mechanism but not the external expectation
+   behind it reads as our opinion rather than an international one, and a
+   ministry cannot check it. Measured: only 4% of recommendations named an
+   instrument while the synthesis field named them for the same dimension —
+   so carry that name INTO the recommendation, do not leave it behind.
+   FORBIDDEN in a recommendation: "international best practice", "global
+   standards", "recognised frameworks" — name the instrument instead.
    VARY THE ANCHOR, don't default to "Article N" every time — a document's
    mechanism can be named by its INSTITUTION ("the Safety Research
    Institute's existing testing mandate"), its PROGRAMME/INSTRUMENT ("the
