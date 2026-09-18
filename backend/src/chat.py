@@ -54,7 +54,6 @@ from src.verify import (
 
 logger = structlog.get_logger()
 
-MAX_HISTORY_MESSAGES = 6
 
 # Chat modes:
 #   "advisor"           -> Mode A (general educational, unscoped) when no
@@ -201,7 +200,7 @@ def build_drill_down_context(finding_context: dict[str, Any]) -> str:
     The point of this context is that "why is this Partial and not Missing"
     must be answered from the ACTUAL computed reasoning — the deterministic
     ladder rules (R1/R2 trigger details embedded in coverage_reasoning), the
-    maturity rule applied, the confidence GeoMean components, and the Module
+    depth rule applied, the confidence GeoMean components, and the Module
     3+4 roadmap/incident evidence when present — never a vague restatement.
     """
     ctx = finding_context or {}
@@ -224,12 +223,12 @@ def build_drill_down_context(finding_context: dict[str, Any]) -> str:
     if ctx.get("gap_found") is not None:
         lines.append(f"Gap detected: {ctx.get('gap_found')}")
 
-    maturity = ctx.get("governance_maturity")
-    if maturity:
-        lines.append(f"Governance maturity: {maturity}")
-        maturity_reasoning = ctx.get("maturity_reasoning")
-        if maturity_reasoning:
-            lines.append(f"  Maturity rule applied: {maturity_reasoning}")
+    depth = ctx.get("implementation_depth")
+    if depth:
+        lines.append(f"Governance depth: {depth}")
+        depth_reasoning = ctx.get("depth_reasoning")
+        if depth_reasoning:
+            lines.append(f"  Implementation depth rule applied: {depth_reasoning}")
 
     risk = ctx.get("risk_level")
     if risk:
@@ -1071,7 +1070,7 @@ def chat(
 
                 llm_start = time.time()
                 # Quota discipline: chat calls go through the same RPD/RPM
-                # throttle + key rotation + Groq fallback as analysis calls.
+                # throttle + key rotation as analysis calls.
                 enrichment = generate_text_with_retry(
                     provider=provider,
                     prompt=llm_prompt,

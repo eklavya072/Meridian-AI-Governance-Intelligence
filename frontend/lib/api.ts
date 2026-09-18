@@ -72,8 +72,8 @@ export interface GovernanceGap {
   unverifiable_citations?: string[];
   /** Citation numbers that appear nowhere in the uploaded document. */
   fabricated_citations?: string[];
-  governance_maturity?: string;
-  maturity_reasoning?: string;
+  implementation_depth?: string;
+  depth_reasoning?: string;
   /**
    * Which of the dimension's expected governance mechanisms the document
    * provides, and at what normative force (0 Aspirational -> 4 Enforceable).
@@ -117,8 +117,8 @@ export interface Module1Evaluation {
   coverage_reasoning: string;
   /** Fully Covered tier only: document-grounded examples leading to the Covered verdict. */
   coverage_example?: string;
-  governance_maturity: string;
-  maturity_reasoning: string;
+  implementation_depth: string;
+  depth_reasoning: string;
   document_evidence: ModuleCitation[];
   framework_evidence: ModuleCitation[];
 }
@@ -218,11 +218,12 @@ export interface DecisionAnalytics {
   missing: number;
   insufficient_evidence: number;
   analysis_failed: number;
-  /** BINDING FORCE, 0-100: how much authority the instruments carry. Displayed
-   *  as "Implementation Depth" — "maturity" read as a report card, which is not what
-   *  this measures. Paired with coverage_index below; the interesting cases are
-   *  the ones where the two diverge. */
-  maturity_index: number;
+  /** IMPLEMENTATION DEPTH, 0-100: how far the governance has been built out,
+   *  from stated intent to enforced machinery. The mean of the per-dimension
+   *  stage scores (Unaddressed 0 / Emerging 50 / Delegated 65 /
+   *  Operationalized 78 / Institutionalized 100). Paired with coverage_index
+   *  below; the interesting cases are the ones where the two diverge. */
+  implementation_depth_index: number;
   /** COVERAGE, 0-100: share of framework-required mechanisms addressed at all,
    *  regardless of the force behind them. Deliberately not tier-weighted. */
   coverage_index: number;
@@ -232,7 +233,7 @@ export interface DecisionAnalytics {
   /** Of the mechanisms present, the share carried by an actual duty (tier >= 3). */
   binding_share: number;
   /** Per-stage counts (Unaddressed/Emerging/Delegated/Operationalized/Institutionalized) for histograms. */
-  maturity_distribution: Record<string, number>;
+  depth_distribution: Record<string, number>;
   assessed_dimensions: number;
   average_confidence: number;
   highest_priority_dimensions: string[];
@@ -284,7 +285,7 @@ export interface BriefRiskOverview {
 export interface BriefDimensionRow {
   dimension: string;
   coverage: string;
-  maturity: string;
+  depth: string;
   basis: string;
   absent_mechanisms: string[];
   confidence: number | null;
@@ -316,7 +317,7 @@ export interface BriefSections {
   areas_of_strength: string[];
   areas_requiring_attention: string[];
   risk_overview: BriefRiskOverview;
-  /** Deterministic per-dimension detail — coverage, maturity, evidence basis. */
+  /** Deterministic per-dimension detail — coverage, depth, evidence basis. */
   dimension_assessment?: BriefDimensionRow[];
   priority_recommendations: BriefRecommendation[];
   /** Sequenced Module 3 actions for the gapped dimensions. */

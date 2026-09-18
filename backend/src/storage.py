@@ -32,7 +32,6 @@ database that already holds rows.
 from __future__ import annotations
 
 import os
-import shutil
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -286,7 +285,3 @@ def reset_storage() -> None:
     global _storage
     _storage = None
 
-
-def free_disk_bytes(path: Path | str) -> int:
-    """Bytes free on the filesystem holding `path`."""
-    return shutil.disk_usage(Path(path)).free

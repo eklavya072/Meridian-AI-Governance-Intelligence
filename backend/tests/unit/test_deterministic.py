@@ -102,7 +102,7 @@ class TestDeterministicFrameworkMatcher:
             ],
         )
         assert "synthesis" in result.to_dict()
-        assert "implementation_maturity_comparison" in result.to_dict()
+        assert "implementation_depth_comparison" in result.to_dict()
 
     def test_beyond_framework_detection(self, matcher):
         result = matcher.match(
@@ -154,7 +154,7 @@ class TestDeterministicPlausibilityValidator:
     def test_no_adjustment_needed(self, validator):
         result = validator.validate(
             dimension="Transparency",
-            maturity_level=3,
+            depth_level=3,
             coverage="Partial",
             evidence_strength="Explicitly Addressed",
             document_type="legislation",
@@ -167,14 +167,14 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=3,
             missing_aspects=[],
         )
-        assert result.validated_maturity_level == 3
+        assert result.validated_depth_level == 3
         assert result.validated_coverage == "Covered"
         assert result.confidence_in_assessment == "High"
 
     def test_strategy_missing_override(self, validator):
         result = validator.validate(
             dimension="Transparency",
-            maturity_level=0,
+            depth_level=0,
             coverage="Missing",
             evidence_strength="Implicitly Addressed",
             document_type="strategy",
@@ -187,17 +187,17 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=1,
             missing_aspects=["Audit", "Reporting"],
         )
-        assert result.validated_maturity_level >= 1
+        assert result.validated_depth_level >= 1
         assert result.validated_coverage == "Partial"
         assert (
-            "doc_type" in result.maturity_trace.lower()
-            or "strategy" in result.maturity_trace.lower()
+            "doc_type" in result.depth_trace.lower()
+            or "strategy" in result.depth_trace.lower()
         )
 
     def test_level_0_with_evidence_raises(self, validator):
         result = validator.validate(
             dimension="Accountability",
-            maturity_level=0,
+            depth_level=0,
             coverage="Missing",
             evidence_strength="Weakly Demonstrated",
             document_type="legislation",
@@ -210,13 +210,13 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=1,
             missing_aspects=["Oversight", "Redress"],
         )
-        assert result.validated_maturity_level >= 1
+        assert result.validated_depth_level >= 1
         assert result.validated_coverage == "Partial"
 
     def test_level_5_lowered_when_no_strong_evidence(self, validator):
         result = validator.validate(
             dimension="Safety",
-            maturity_level=5,
+            depth_level=5,
             coverage="Covered",
             evidence_strength="Explicitly Addressed",
             document_type="legislation",
@@ -229,13 +229,13 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=3,
             missing_aspects=[],
         )
-        assert result.validated_maturity_level <= 4
+        assert result.validated_depth_level <= 4
         assert result.validated_coverage == "Covered"
 
     def test_level_5_with_strong_evidence_kept(self, validator):
         result = validator.validate(
             dimension="Transparency",
-            maturity_level=5,
+            depth_level=5,
             coverage="Covered",
             evidence_strength="Strongly Operationalised",
             document_type="legislation",
@@ -248,12 +248,12 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=4,
             missing_aspects=[],
         )
-        assert result.validated_maturity_level == 5
+        assert result.validated_depth_level == 5
 
     def test_distributed_governance_raises_level(self, validator):
         result = validator.validate(
             dimension="Inclusivity",
-            maturity_level=1,
+            depth_level=1,
             coverage="Partial",
             evidence_strength="Implicitly Addressed",
             document_type="strategy",
@@ -266,12 +266,12 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=4,
             missing_aspects=[],
         )
-        assert result.validated_maturity_level >= 2
+        assert result.validated_depth_level >= 2
 
     def test_missing_with_demonstrated_capability_raises(self, validator):
         result = validator.validate(
             dimension="Privacy",
-            maturity_level=0,
+            depth_level=0,
             coverage="Missing",
             evidence_strength="Not Demonstrated",
             document_type="other",
@@ -284,13 +284,13 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=1,
             missing_aspects=["Data protection"],
         )
-        assert result.validated_maturity_level >= 1
+        assert result.validated_depth_level >= 1
         assert result.validated_coverage == "Partial"
 
     def test_confidence_high_with_good_evidence(self, validator):
         result = validator.validate(
             dimension="Transparency",
-            maturity_level=4,
+            depth_level=4,
             coverage="Covered",
             evidence_strength="Strongly Operationalised",
             document_type="legislation",
@@ -308,7 +308,7 @@ class TestDeterministicPlausibilityValidator:
     def test_confidence_low_with_weak_evidence(self, validator):
         result = validator.validate(
             dimension="Fairness",
-            maturity_level=1,
+            depth_level=1,
             coverage="Partial",
             evidence_strength="Weakly Demonstrated",
             document_type="strategy",
@@ -326,7 +326,7 @@ class TestDeterministicPlausibilityValidator:
     def test_maturity_trace_generated(self, validator):
         result = validator.validate(
             dimension="Accountability",
-            maturity_level=2,
+            depth_level=2,
             coverage="Partial",
             evidence_strength="Explicitly Addressed",
             document_type="strategy",
@@ -339,9 +339,9 @@ class TestDeterministicPlausibilityValidator:
             num_aspect_groups=3,
             missing_aspects=[],
         )
-        assert "Document Type" in result.maturity_trace
-        assert "Level selected" in result.maturity_trace
-        assert "functional equivalence" in result.maturity_trace.lower()
+        assert "Document Type" in result.depth_trace
+        assert "Level selected" in result.depth_trace
+        assert "functional equivalence" in result.depth_trace.lower()
 
     def test_level_to_coverage_mapping(self):
         assert LEVEL_TO_COVERAGE[0] == "Missing"
@@ -670,7 +670,7 @@ class TestFunctionalEquivalenceGate:
         assert rules == []
 
     def test_principle_mention_without_mechanism_stays_missing(self):
-        # principle mentioned → still Missing (maturity reflects the
+        # principle mentioned → still Missing (depth reflects the
         # acknowledgment); mechanism exists → Partial. A bare "recognizes
         # the importance of privacy" carries no obligation and must not
         # floor.

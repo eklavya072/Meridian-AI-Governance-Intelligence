@@ -242,7 +242,7 @@ derived from real pipeline state, never an LLM self-assessment.
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLAlchemy (async) |
 | Vector store | ChromaDB (persistent, embedded) + `BAAI/bge-small-en-v1.5` embeddings |
-| LLM | **Gemini** (primary; quota-aware routing, per-key RPM/RPD throttles, failover and backoff across configured credentials), **Groq** fallback |
+| LLM | **Gemini** (quota-aware routing, per-key RPM/RPD throttles, failover and backoff across configured credentials) |
 | Verification | `BAAI/bge-small-en-v1.5` embedding similarity (default); `cross-encoder/nli-deberta-v3-base` NLI available behind a flag |
 | Database | PostgreSQL 16 |
 | Frontend | Next.js 14 (fully static output), React 18, TypeScript, Tailwind, Motion (Framer Motion), Recharts |
@@ -257,7 +257,7 @@ derived from real pipeline state, never an LLM self-assessment.
   `data/gemini_rpd.json` so restarts don't reset the day's count);
 - retries with **jittered backoff** so concurrent dimension calls don't
   re-collide on the same quota window;
-- falls back to **Groq** when all Gemini keys are exhausted.
+- honours the delay the API itself asks for when every key is exhausted.
 
 ---
 
@@ -305,10 +305,8 @@ Run `make` with no arguments for the same list.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg` | PostgreSQL connection |
-| `LLM_PROVIDER` | `gemini` | `gemini` \| `groq` |
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini model |
 | `GEMINI_API_KEY` | — | Primary Gemini key (add `_2`/`_3`/`_4` for rotation) |
-| `GROQ_API_KEY` | — | Groq fallback provider |
 | `CHROMA_PERSIST_DIR` | `./data/chroma` | Vector store location |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed browser origins |
 | `LADDER_FLOOR_ENABLED` | `1` | Enable the R1 commitment floor (see methodology) |
@@ -386,11 +384,16 @@ make test-container  # the same suite INSIDE the built image, as CI does
 make check           # lint, types and tests, in CI's order
 ```
 
-**721 passed, 9 skipped. Coverage 60%** on `src` (measured 2026-08-30; see
-[docs/MEASUREMENTS.md](docs/MEASUREMENTS.md)). The CI gate is 58% — set just
+**1,269 passed, 18 skipped. Coverage 78.1%** on `src` (see
+[docs/MEASUREMENTS.md](docs/MEASUREMENTS.md)). The CI gate is 76% — set just
 below measured, so it catches regression without being aspirational.
 
-The nine skips are deliberate and need external state:
+<!-- This block read "721 passed, 9 skipped. Coverage 60%", contradicting the
+     Measured table at the top of this same file (1,269 / 78.1%). The landing
+     page cites the table, and the page's footer links here, so anyone
+     checking the citation found the source disagreeing with itself. -->
+
+The eighteen skips are deliberate and need external state:
 
 ```bash
 RUN_INTEGRATION_TESTS=1 make test   # requires running services
@@ -461,8 +464,8 @@ aura-sdg/
 │   │   ├── retrieval.py          # Per-dimension retrieval + dimension-tagged budget reserves
 │   │   ├── framework_router.py   # Deterministic framework selection (roles, tags, regions)
 │   │   ├── deterministic.py      # Coverage ladder (R1/R2), maturity, low-information filter
-│   │   ├── provider_router.py    # LLM routing: Gemini rotation, throttles, Groq fallback
-│   │   ├── llm_provider.py       # Provider clients (Gemini / Groq)
+│   │   ├── provider_router.py    # LLM routing: Gemini key rotation, throttles, backoff
+│   │   ├── llm_provider.py       # Provider client (Gemini)
 │   │   ├── verify.py             # Citation verification (chunk / page / NLI text support)
 │   │   ├── nli_verifier.py       # NLI cross-encoder wrapper (opt-in)
 │   │   ├── ingestion.py          # PDF parsing + structure-aware chunking

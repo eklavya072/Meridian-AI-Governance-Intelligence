@@ -80,12 +80,12 @@ def truncate(text: str, max_chars: int) -> str:
     return text[:max_chars] + "..."
 
 
-# ── Integrated Governance Maturity Framework ──────────────────────────────
-# Replaces DOCUMENT_TYPE_AWARENESS, MATURITY_LEVELS, FALSE_NEGATIVE_SAFEGUARDS,
+# ── Integrated Implementation Depth Framework ──────────────────────────────
+# Replaces DOCUMENT_TYPE_AWARENESS, DEPTH_LEVELS, FALSE_NEGATIVE_SAFEGUARDS,
 # MULTI_CAPABILITY_ASSESSMENT, CAPABILITY_DISTINCTION_GUIDE, and UNCERTAINTY_LANGUAGE
 # with a single integrated framework. Same logic, ~65% fewer tokens.
 
-INTEGRATED_MATURITY_FRAMEWORK = """
+INTEGRATED_DEPTH_FRAMEWORK = """
 Document Type:
 - National AI strategy → assess governance direction, institutional commitments, and implementation roadmaps
 - Legislation/regulation → assess enforceable operational mechanisms
@@ -93,7 +93,7 @@ Document Type:
 - Code of conduct → assess governance philosophy and principles
 DO NOT penalise a strategy for lacking operational detail that belongs in companion legislation.
 
-Maturity Levels (each level assumes all lower levels are met):
+Implementation depth Levels (each level assumes all lower levels are met):
 
 Level 0 — No Governance Intent (→ Missing)
 After exhausting ALL checks below: strategic objectives, institutional arrangements,
@@ -183,74 +183,10 @@ def build_evidence_interpretation_prompt(
     return system_prompt, prompt
 
 
-# ── Merged Stage 1+2: Evidence + Maturity (single LLM call) ───────────────
+# ── Stage 2: Implementation depth Assessment (simplified, integrated framework) ───────
 
-EVIDENCE_AND_MATURITY_SYSTEM = (
-    "You are a senior AI governance policy analyst.\n\n"
-    "{dimension_definition}\n\n"
-    "{integrated_framework}\n\n"
-    "Step 1 — Evidence Interpretation:\n"
-    "Analyse what the policy: (1) explicitly states, (2) reasonably implies, "
-    "(3) demonstrates capability for, (4) clearly omits.\n"
-    "Base analysis solely on the document. Do not compare against international frameworks.\n\n"
-    "Step 2 — Maturity Assessment:\n"
-    "1. Identify the document type. If a strategy, assess governance direction "
-    "and institutional commitments, not procedural completeness.\n"
-    "2. Apply functional equivalence BEFORE assigning a level.\n"
-    "3. Derive maturity level (0-5) from the framework above.\n"
-    "4. Derive coverage from semantic substance, not mechanical level mapping:\n"
-    "   - Covered: The document substantively addresses the dimension's core concepts, "
-    "principles, or objectives — even if it uses different terminology, synonyms, or "
-    "addresses the concept indirectly. A strategy-level document that sets direction "
-    "on the topic is Covered, not Partial.\n"
-    "   - Partial: The document touches on the dimension tangentially or names it "
-    "without substantive treatment, or covers only narrow sub-aspects.\n"
-    "   - Missing: No evidence of any substantive treatment, direct or indirect.\n"
-    "5. Before Missing, verify all functional equivalence checks. If uncertain, prefer Partial.\n\n"
-    "Output JSON with ALL of the following keys:\n"
-    "dimension: str,\n"
-    "explicit_evidence: list,\n"
-    "implicit_evidence: list,\n"
-    "demonstrated_capability: str,\n"
-    "absent_capability: str,\n"
-    "strong_evidence: list,\n"
-    "weak_evidence: list,\n"
-    "contradictory_evidence: list,\n"
-    'evidence_strength: "Strongly Operationalised" | "Explicitly Addressed" | '
-    '"Implicitly Addressed" | "Weakly Demonstrated" | "Not Demonstrated",\n'
-    "interpretation_summary: str,\n"
-    "maturity_level: int (0-5),\n"
-    "maturity_label: str,\n"
-    'coverage: "Covered" | "Partial" | "Missing",\n'
-    "maturity_reasoning: str,\n"
-    "level_justification: str,\n"
-    "uncertainty_flags: list,\n"
-    "false_negative_check: str,\n"
-    "maturity_trace: str"
-)
-
-
-def build_evidence_and_maturity_prompt(
-    dimension: str,
-    document_excerpt: str,
-    dimension_definition: str,
-) -> tuple[str, str]:
-    system_prompt = EVIDENCE_AND_MATURITY_SYSTEM.format(
-        dimension_definition=dimension_definition,
-        integrated_framework=INTEGRATED_MATURITY_FRAMEWORK,
-    )
-    prompt = (
-        f"Dimension: {dimension}\n\n"
-        f"--- National Policy Document ---\n{truncate(document_excerpt, 4000)}\n\n"
-        "Proceed through both steps. Output valid JSON with all required keys."
-    )
-    return system_prompt, prompt
-
-
-# ── Stage 2: Maturity Assessment (simplified, integrated framework) ───────
-
-MATURITY_ASSESSMENT_SYSTEM = (
-    "You are a senior AI governance policy analyst assessing the maturity "
+DEPTH_ASSESSMENT_SYSTEM = (
+    "You are a senior AI governance policy analyst assessing the depth "
     "of a national AI policy document.\n\n"
     "{dimension_definition}\n\n"
     "{integrated_framework}\n\n"
@@ -262,22 +198,22 @@ MATURITY_ASSESSMENT_SYSTEM = (
     "and related programmes regardless of terminology.\n"
     "3. Assess each governance capability independently. Mechanisms and enforcement "
     "carry more weight than intent alone.\n"
-    "4. Derive maturity level (0-5) from the framework above.\n"
+    "4. Derive depth level (0-5) from the framework above.\n"
     "5. Derive coverage from semantic substance: Level 0→Missing, Levels 1-2→Partial, Levels 3-5→Covered.\n"
     "6. Before Missing, verify all functional equivalence checks were considered. "
     "If uncertain, prefer Partial.\n\n"
-    "Output JSON: dimension (str), maturity_level (0-5), maturity_label (str), "
+    "Output JSON: dimension (str), depth_level (0-5), depth_label (str), "
     'coverage ("Covered"|"Partial"|"Missing"), '
-    "maturity_reasoning (str including document type, functional equivalence outcomes, "
+    "depth_reasoning (str including document type, functional equivalence outcomes, "
     "and how each capability assessment contributed), "
     "level_justification (str with specific evidence per level), "
     "uncertainty_flags (list), "
     "false_negative_check (str confirming checks performed), "
-    "maturity_trace (str with structured reasoning)"
+    "depth_trace (str with structured reasoning)"
 )
 
 
-def build_maturity_assessment_prompt(
+def build_depth_assessment_prompt(
     dimension: str,
     evidence_interpretation: dict[str, Any],
     dimension_definition: str,
@@ -290,9 +226,9 @@ def build_maturity_assessment_prompt(
     implicit = evidence_interpretation.get("implicit_evidence", [])
     absent = evidence_interpretation.get("absent_capability", [])
 
-    system_prompt = MATURITY_ASSESSMENT_SYSTEM.format(
+    system_prompt = DEPTH_ASSESSMENT_SYSTEM.format(
         dimension_definition=dimension_definition,
-        integrated_framework=INTEGRATED_MATURITY_FRAMEWORK,
+        integrated_framework=INTEGRATED_DEPTH_FRAMEWORK,
     )
 
     prompt_lines = [f"Dimension: {dimension}\n"]
@@ -320,8 +256,8 @@ def build_maturity_assessment_prompt(
     )
 
     prompt_lines.append(
-        "\nApply the maturity assessment framework. "
-        "Include maturity_trace with: 1) Document Type, 2) Functional Equivalence "
+        "\nApply the depth assessment framework. "
+        "Include depth_trace with: 1) Document Type, 2) Functional Equivalence "
         "findings, 3) Level selected, 4) Why that level, 5) Why final coverage label. "
         "Output valid JSON only."
     )
@@ -353,8 +289,8 @@ RECOMMENDATION_AND_FINAL_SYSTEM = (
     "Output JSON with these keys:\n"
     "- dimension: str\n"
     '- coverage: "Covered" | "Partial" | "Missing"\n'
-    "- maturity_level: int (0-5)\n"
-    "- maturity_label: str\n"
+    "- depth_level: int (0-5)\n"
+    "- depth_label: str\n"
     "- existing_strengths: str\n"
     "- governance_capability: str\n"
     "- remaining_limitations: str\n"
@@ -418,7 +354,7 @@ the normative benchmark.
    "Missing" when, after considering equivalent terminology, the document
    contains NO provision serving the dimension's purpose. If a mechanism
    exists but lacks operational detail, keep the mechanism (list it in
-   operational_mechanisms) and let the maturity assessment reflect the
+   operational_mechanisms) and let the depth assessment reflect the
    detail gap — do not erase the mechanism by declaring the dimension
    Missing. A strategy that sets direction on the topic is Covered even
    without a dedicated section.
@@ -477,7 +413,7 @@ the normative benchmark.
    content (not verbatim citations). When coverage is Partial or Missing,
    return "".
 6. principle_acknowledged: true if the document acknowledges the dimension's
-   principle even in passing (relevant to maturity computation).
+   principle even in passing (relevant to depth computation).
 7. operational_mechanisms: list concrete operational mechanisms the document
    actually specifies — a NAMED BODY (commission/board/authority/agency/
    ministry/council/office), a REPORTING REQUIREMENT (annual report, registry,
@@ -485,7 +421,7 @@ the normative benchmark.
    process, sanctions, audit, oversight, monitoring). Recognise mechanisms
    expressed in the policy's own terminology: a duty phrased as "shall",
    "must", "is required to", or "prohibits" IS a mechanism. If a mechanism
-   exists but lacks operational detail, list it anyway — the maturity and
+   exists but lacks operational detail, list it anyway — the depth and
    gap reasoning reflect the detail gap, the mechanism is not erased. If the
    document only names the principle without any mechanism, return [].
 8. document_evidence: citations supporting the evaluation FROM THE UPLOADED
@@ -711,7 +647,7 @@ claim, use "insufficient evidence for citation". Return JSON only.
 # dimensions never run this call). One combined call returns BOTH the
 # Implementation Roadmap (Module 3) and the Case Intelligence write-up
 # (Module 4) — same single-call discipline as Module 1+2. The Module 1+2
-# verdict (coverage, gap reasoning, maturity) is passed forward as text
+# verdict (coverage, gap reasoning, depth) is passed forward as text
 # context so this call addresses the ACTUAL gap instead of re-deriving it.
 #
 # Two highest-fabrication-risk fields get explicit no-fabrication rules:
@@ -744,7 +680,7 @@ assessments, assurance toolkits) — never generic "improve oversight" filler.1.
    - phase: "Phase 1" / "Phase 2"
    - timeline: ALWAYS leave "" (empty). The implementation timeline is
      computed deterministically by the system from the coverage tier, the
-     document's existing mechanisms, governance maturity, and the
+     document's existing mechanisms, implementation depth, and the
      responsible-agency grounding. NEVER guess a duration — any value you
      invent will be overwritten.
    - objective: one sentence on what this phase accomplishes
@@ -866,7 +802,7 @@ def build_module3_4_combined_prompt(
     see document_named_bodies.
 
     `dimension_verdict` is the carried-forward Module 1+2 result text (coverage,
-    gap reasoning, maturity, recommendations) so this call addresses the actual
+    gap reasoning, depth, recommendations) so this call addresses the actual
     gap rather than re-deriving it. `document_chunks` are included so the
     responsible-agency rule can be grounded in what the document actually names.
     `country` drives the same deterministic national-context block as Module 1+2
@@ -1069,7 +1005,7 @@ def build_module1_2_combined_prompt(
     parts.append(f"Dimension: {dimension}")
     parts.append("")
 
-    # The coverage and maturity verdict is decided BEFORE this call, from the
+    # The coverage and depth verdict is decided BEFORE this call, from the
     # document's own provisions (see _compute_deterministic_verdict). It is
     # given to the model as a FIXED INPUT to explain, not a judgment to make.
     # Previously the model formed its own verdict, wrote prose justifying it,
@@ -1079,7 +1015,7 @@ def build_module1_2_combined_prompt(
     if determined_verdict:
         parts.append("═══ [DETERMINED VERDICT — EXPLAIN THIS, DO NOT RE-JUDGE] ═══")
         parts.append(f"Coverage: {determined_verdict.get('coverage_label')}")
-        parts.append(f"Governance maturity: {determined_verdict.get('maturity_label')}")
+        parts.append(f"Governance depth: {determined_verdict.get('depth_label')}")
         basis = determined_verdict.get("basis")
         if basis:
             parts.append(f"Basis: {basis}")
@@ -1167,17 +1103,17 @@ def build_module1_2_combined_prompt(
 def build_recommendation_and_final_prompt(
     dimension: str,
     evidence_interpretation: dict[str, Any],
-    maturity_result: dict[str, Any],
+    depth_result: dict[str, Any],
     framework_synthesis: dict[str, Any],
     plausibility_result: dict[str, Any],
     dimension_definition: str,
     evidence_quotes: list[str] | None = None,
 ) -> tuple[str, str]:
     validated_level = plausibility_result.get(
-        "validated_maturity_level", maturity_result.get("maturity_level", 0)
+        "validated_depth_level", depth_result.get("depth_level", 0)
     )
     validated_coverage = plausibility_result.get(
-        "validated_coverage", maturity_result.get("coverage", "Missing")
+        "validated_coverage", depth_result.get("coverage", "Missing")
     )
     confidence = plausibility_result.get("confidence_in_assessment", "Medium")
 
@@ -1202,15 +1138,15 @@ def build_recommendation_and_final_prompt(
 
     prompt_lines = [
         f"Dimension: {dimension}",
-        f"Validated Maturity: Level {validated_level}",
+        f"Validated Implementation depth: Level {validated_level}",
         f"Validated Coverage: {validated_coverage}",
         f"Confidence: {confidence}",
         "",
         "Evidence Interpretation:",
         evidence_interpretation.get("interpretation_summary", ""),
         "",
-        "Maturity Reasoning:",
-        maturity_result.get("maturity_reasoning", ""),
+        "Implementation depth Reasoning:",
+        depth_result.get("depth_reasoning", ""),
         "",
         "Framework Synthesis:",
         synthesis_text,

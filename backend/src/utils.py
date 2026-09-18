@@ -60,12 +60,18 @@ def rrf_score(rank: int, k: int = 60) -> float:
 def reciprocal_rank_fusion(
     result_lists: list[list[tuple[str, float]]], k: int = 60
 ) -> list[tuple[str, float]]:
-    scores: dict[str, float] = {}
-    for results in result_lists:
-        for rank, (chunk_id, _) in enumerate(results):
-            scores[chunk_id] = scores.get(chunk_id, 0.0) + rrf_score(rank, k)
-    sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    return sorted_items
+    """Fuse scored result lists by RANK, highest fused score first.
+
+    The per-list scores are discarded on purpose — that is what makes RRF
+    robust across retrievers whose scores are not comparable. This wrapper
+    exists so there is one implementation of the formula: there were two, and
+    they disagreed about whether the first result is rank 0 or rank 1, which
+    is not something two copies of a published formula should differ on.
+    """
+    from src.hybrid_search import reciprocal_rank_fusion as _rrf
+
+    fused = _rrf([[cid for cid, _ in results] for results in result_lists], k=k)
+    return sorted(fused.items(), key=lambda kv: kv[1], reverse=True)
 
 
 def compute_keyword_overlap(text_a: str, text_b: str) -> float:

@@ -47,6 +47,27 @@ services:
       timeout: 5s
       retries: 10
 
+  # Chroma in server mode, behind the `scale` profile:
+  #   docker compose --profile scale up -d --scale api=3
+  # Embedded Chroma writes HNSW segments to a local directory, so two API
+  # processes on the same path corrupt each other — that, not the API itself,
+  # is what pinned this service to one instance. Pointing CHROMA_HOST at this
+  # container puts the index behind a network boundary and leaves the API
+  # stateless with respect to vectors.
+  chroma:
+    profiles: ["scale"]
+    image: chromadb/chroma:latest
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_server_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "cat < /dev/null > /dev/tcp/127.0.0.1/8000"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   api:
     build:
       context: .
@@ -64,6 +85,14 @@ services:
       DATABASE_URL: postgresql+asyncpg://aura:aura@postgres:5432/aura_sdg
       LOG_LEVEL: INFO
       CHROMA_PERSIST_DIR: /app/data/chroma
+      # Unset by default, so the store stays embedded and every existing data
+      # directory keeps working. `--profile scale` starts the chroma service
+      # and this is the one variable that moves the index behind it.
+      CHROMA_HOST: "${CHROMA_HOST:-}"
+      CHROMA_PORT: "${CHROMA_PORT:-8000}"
+      # Replicas share one quota ledger, or each rediscovers a spent
+      # credential by spending attempts on it. Same database, own table.
+      PROVIDER_HEALTH_DSN: "${PROVIDER_HEALTH_DSN:-}"
       # The startup sweep of the whole collection is an optimisation that has
       # been OOM-killed on constrained machines; off by default for dev.
       WARM_FRAMEWORK_COUNTS: "0"
@@ -143,4 +172,5 @@ volumes:
   prometheus_data:
   grafana_data:
   chroma_data:
+  chroma_server_data:
   uploads_data:

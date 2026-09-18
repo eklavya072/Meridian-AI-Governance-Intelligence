@@ -169,15 +169,14 @@ class TestTerminalFailures:
         snap = pr.get_registry().snapshot(pr.key_ids_for(provider))
         assert snap["open"] == 1
 
-    def test_a_terminal_error_never_reaches_the_groq_fallback(self, monkeypatch):
-        called = []
-        monkeypatch.setattr(pr, "_try_groq_fallback", lambda **kw: called.append(1))
+    def test_a_terminal_error_never_rotates_to_another_key(self):
+        """A retired model is retired on every key. Rotating just burns them."""
         provider = FakeGemini(keys=2, script=[TerminalProviderError("404 model not found")])
 
         with pytest.raises(TerminalProviderError):
             _call(provider)
 
-        assert called == []
+        assert len(provider.calls) == 1
 
 
 class TestRetryableFailures:
@@ -198,11 +197,15 @@ class TestRetryableFailures:
     def test_backoff_grows_between_attempts(self, monkeypatch):
         waits = []
         monkeypatch.setattr(pr.time, "sleep", lambda s: waits.append(s))
+        # Pin the jitter. Attempt 1 draws from [0.5B, 1.5B] and attempt 2 from
+        # [B, 3B] — overlapping ranges, so a live draw makes "later wait is
+        # longer" false roughly one run in eight. Neutralising the multiplier
+        # leaves the exponential base, which is what this test is about.
+        monkeypatch.setattr(pr.random, "uniform", lambda low, high: (low + high) / 2)
         provider = FakeGemini(keys=1, script=[RetryableError("503")] * 2)
 
         _call(provider)
 
-        # Exponential, and jittered — so assert on the trend, not on values.
         assert len(waits) >= 2
         assert waits[-1] > waits[0]
 
@@ -226,32 +229,69 @@ class TestSchemaRepair:
 
 
 class TestDailyBudget:
-    def test_an_exhausted_daily_budget_raises_before_calling(self, monkeypatch):
+    """The provider decides when the day is over; we only measure it."""
+
+    def test_the_self_imposed_cap_still_refuses_before_calling(self, monkeypatch):
         monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", 1)
         monkeypatch.setattr(pr, "_daily_gemini_requests", 5)
         provider = FakeGemini()
 
-        with pytest.raises(RuntimeError, match="daily request budget"):
+        with pytest.raises(RuntimeError, match="Self-imposed"):
             _call(provider)
 
         assert provider.calls == []
 
-    def test_quota_status_reports_headroom_honestly(self, monkeypatch):
-        monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", 10)
-        monkeypatch.setattr(pr, "_daily_gemini_requests", 10)
+    def test_no_cap_by_default(self, monkeypatch):
+        """The old default of 1000 was a guess that matched no real quota."""
+        monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", None)
+        monkeypatch.setattr(pr, "_daily_gemini_requests", 10_000)
+
+        assert _call(FakeGemini()).answer == "ok"
+
+    def test_every_credential_spent_for_the_day_halts_the_run(self, monkeypatch):
+        """The failure this replaces: 49/1000 'used' while Google refused all five."""
+        from src.provider_errors import FailureKind
+
+        monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", None)
+        monkeypatch.setattr(pr, "configured_gemini_keys", lambda: 2)
+        provider = FakeGemini(keys=2)
+        for key_id in pr.key_ids_for(provider):
+            pr.get_registry().record_failure(key_id, FailureKind.QUOTA_DAILY, "429 per day")
+
+        with pytest.raises(RuntimeError, match="per-day quota"):
+            _call(provider)
+
+        assert provider.calls == []
+
+    def test_quota_status_reports_what_was_observed_not_what_was_configured(self, monkeypatch):
+        from src.provider_errors import FailureKind
+
+        monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", None)
+        monkeypatch.setattr(pr, "configured_gemini_keys", lambda: 2)
+        provider = FakeGemini(keys=2)
+        key_ids = pr.key_ids_for(provider)
+        for _ in range(7):
+            pr.get_registry().record_success(key_ids[0])
+        pr.get_registry().record_failure(key_ids[0], FailureKind.QUOTA_DAILY, "429 per day")
 
         status = pr.quota_status()
 
-        assert status["remaining"] == 0
-        assert status["has_headroom"] is False
+        assert status["daily_limit"] == 7
+        assert status["daily_limit_source"] == "observed"
+        assert status["credentials_daily_exhausted"] == 1
+        # One credential is spent, the other is not — there is still headroom.
+        assert status["has_headroom"] is True
 
-    def test_remaining_never_goes_negative(self, monkeypatch):
-        monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", 10)
-        monkeypatch.setattr(pr, "_daily_gemini_requests", 99)
+    def test_headroom_is_false_only_when_nothing_can_serve(self, monkeypatch):
+        from src.provider_errors import FailureKind
 
-        # A negative "remaining" rendered on a dashboard reads as a bug in the
-        # dashboard rather than an exhausted budget.
-        assert pr.quota_status()["remaining"] == 0
+        monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", None)
+        monkeypatch.setattr(pr, "configured_gemini_keys", lambda: 2)
+        provider = FakeGemini(keys=2)
+        for key_id in pr.key_ids_for(provider):
+            pr.get_registry().record_failure(key_id, FailureKind.QUOTA_DAILY, "429 per day")
+
+        assert pr.quota_status()["has_headroom"] is False
 
 
 class TestKeyIdentity:

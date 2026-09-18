@@ -162,26 +162,6 @@ class WorkspaceService:
         )
         await self.db.commit()
 
-    async def set_dimension_failed(
-        self,
-        workspace_id: str,
-        dimension: str,
-        error: str,
-    ) -> None:
-        ws = await self.get_workspace(workspace_id)
-        if not ws:
-            return
-        existing = dict(ws.dimension_results) if ws.dimension_results else {}
-        existing[dimension] = {
-            "status": "failed",
-            "error": error,
-        }
-        await self.db.execute(
-            update(Workspace)
-            .where(Workspace.id == uuid.UUID(workspace_id))
-            .values(dimension_results=existing, updated_at=datetime.utcnow())
-        )
-        await self.db.commit()
 
     async def get_dimension_results(self, workspace_id: str) -> dict[str, Any]:
         ws = await self.get_workspace(workspace_id)

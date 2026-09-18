@@ -62,20 +62,6 @@ def log_analysis_run(
     )
 
 
-def log_guardrail_event(
-    query: str | None,
-    reason: str,
-    result: str,
-) -> None:
-    logger = structlog.get_logger()
-    logger.info(
-        "guardrail_event",
-        query_preview=query[:100] if query else None,
-        reason=reason,
-        result=result,
-    )
-
-
 def log_upload_rejection(
     filename: str,
     error_type: str,

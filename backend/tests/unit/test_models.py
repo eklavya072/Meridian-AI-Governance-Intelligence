@@ -4,13 +4,13 @@ from pydantic import ValidationError
 from src.models import (
     CalibratedConfidence,
     CoverageLevel,
+    DepthAssessment,
     EvidenceInterpretation,
     EvidenceStrength,
     FrameworkPositionRaw,
     FrameworkSynthesisResult,
     GovernanceGap,
-    GovernanceMaturityLevel,
-    MaturityAssessment,
+    ImplementationDepthLevel,
     PlausibilityReview,
     PolicyRecommendation,
     RetrievedEvidence,
@@ -18,24 +18,24 @@ from src.models import (
 )
 
 
-class TestGovernanceMaturityLevel:
+class TestImplementationDepthLevel:
     def test_level_values(self):
-        assert GovernanceMaturityLevel.ABSENT.value == 0
-        assert GovernanceMaturityLevel.GENERAL_ACKNOWLEDGEMENT.value == 1
-        assert GovernanceMaturityLevel.GOVERNANCE_OBJECTIVES_DEFINED.value == 2
-        assert GovernanceMaturityLevel.OPERATIONAL_MECHANISMS.value == 3
-        assert GovernanceMaturityLevel.IMPLEMENTATION_AND_OVERSIGHT.value == 4
-        assert GovernanceMaturityLevel.CONTINUOUS_MONITORING_AND_ENFORCEMENT.value == 5
+        assert ImplementationDepthLevel.ABSENT.value == 0
+        assert ImplementationDepthLevel.GENERAL_ACKNOWLEDGEMENT.value == 1
+        assert ImplementationDepthLevel.GOVERNANCE_OBJECTIVES_DEFINED.value == 2
+        assert ImplementationDepthLevel.OPERATIONAL_MECHANISMS.value == 3
+        assert ImplementationDepthLevel.IMPLEMENTATION_AND_OVERSIGHT.value == 4
+        assert ImplementationDepthLevel.CONTINUOUS_MONITORING_AND_ENFORCEMENT.value == 5
 
     def test_all_levels_accessible(self):
         for i in range(6):
-            assert GovernanceMaturityLevel(i) is not None
+            assert ImplementationDepthLevel(i) is not None
 
     def test_invalid_level_raises(self):
         with pytest.raises(ValueError):
-            GovernanceMaturityLevel(6)
+            ImplementationDepthLevel(6)
         with pytest.raises(ValueError):
-            GovernanceMaturityLevel(-1)
+            ImplementationDepthLevel(-1)
 
 
 class TestEvidenceStrength:
@@ -95,65 +95,65 @@ class TestEvidenceInterpretation:
         assert restored.interpretation_summary == "Strong safety framework"
 
 
-class TestMaturityAssessment:
+class TestDepthAssessment:
     def test_minimal_construction(self):
-        ma = MaturityAssessment(dimension="Accountability")
+        ma = DepthAssessment(dimension="Accountability")
         assert ma.dimension == "Accountability"
-        assert ma.maturity_level == GovernanceMaturityLevel.ABSENT
+        assert ma.depth_level == ImplementationDepthLevel.ABSENT
 
     def test_full_construction(self):
-        ma = MaturityAssessment(
+        ma = DepthAssessment(
             dimension="Accountability",
-            maturity_level=GovernanceMaturityLevel.OPERATIONAL_MECHANISMS,
-            maturity_label="Operational Mechanisms",
+            depth_level=ImplementationDepthLevel.OPERATIONAL_MECHANISMS,
+            depth_label="Operational Mechanisms",
             coverage=CoverageLevel.PARTIAL,
-            maturity_reasoning="Policy establishes grievance mechanisms",
+            depth_reasoning="Policy establishes grievance mechanisms",
             level_justification="Section 3 defines complaints process",
             uncertainty_flags=["Scope of mechanism unclear"],
             false_negative_check="All nine checks passed",
         )
-        assert ma.maturity_level == GovernanceMaturityLevel.OPERATIONAL_MECHANISMS
+        assert ma.depth_level == ImplementationDepthLevel.OPERATIONAL_MECHANISMS
         assert ma.coverage == CoverageLevel.PARTIAL
         assert len(ma.uncertainty_flags) == 1
 
     def test_level_conversion_to_coverage(self):
         cases = [
-            (GovernanceMaturityLevel.ABSENT, CoverageLevel.MISSING),
-            (GovernanceMaturityLevel.GENERAL_ACKNOWLEDGEMENT, CoverageLevel.PARTIAL),
-            (GovernanceMaturityLevel.GOVERNANCE_OBJECTIVES_DEFINED, CoverageLevel.PARTIAL),
-            (GovernanceMaturityLevel.OPERATIONAL_MECHANISMS, CoverageLevel.COVERED),
-            (GovernanceMaturityLevel.IMPLEMENTATION_AND_OVERSIGHT, CoverageLevel.COVERED),
-            (GovernanceMaturityLevel.CONTINUOUS_MONITORING_AND_ENFORCEMENT, CoverageLevel.COVERED),
+            (ImplementationDepthLevel.ABSENT, CoverageLevel.MISSING),
+            (ImplementationDepthLevel.GENERAL_ACKNOWLEDGEMENT, CoverageLevel.PARTIAL),
+            (ImplementationDepthLevel.GOVERNANCE_OBJECTIVES_DEFINED, CoverageLevel.PARTIAL),
+            (ImplementationDepthLevel.OPERATIONAL_MECHANISMS, CoverageLevel.COVERED),
+            (ImplementationDepthLevel.IMPLEMENTATION_AND_OVERSIGHT, CoverageLevel.COVERED),
+            (ImplementationDepthLevel.CONTINUOUS_MONITORING_AND_ENFORCEMENT, CoverageLevel.COVERED),
         ]
         for level, expected_coverage in cases:
-            ma = MaturityAssessment(
-                dimension="Test", maturity_level=level, coverage=expected_coverage
+            ma = DepthAssessment(
+                dimension="Test", depth_level=level, coverage=expected_coverage
             )
-            assert ma.maturity_level == level
+            assert ma.depth_level == level
             assert ma.coverage == expected_coverage
 
     def test_missing_dimension_raises(self):
         with pytest.raises(ValidationError):
-            MaturityAssessment()
+            DepthAssessment()
 
 
 class TestFrameworkSynthesisResult:
     def test_minimal_construction(self):
         fs = FrameworkSynthesisResult(dimension="Fairness")
         assert fs.dimension == "Fairness"
-        assert fs.implementation_maturity_comparison == {}
+        assert fs.implementation_depth_comparison == {}
 
     def test_with_implementation_comparison(self):
         fs = FrameworkSynthesisResult(
             dimension="Fairness",
-            implementation_maturity_comparison={
+            implementation_depth_comparison={
                 "Already implemented": ["Bias testing requirements"],
                 "Partially implemented": ["Demographic parity"],
                 "Missing implementation": ["Enforcement mechanisms"],
             },
         )
-        assert "Already implemented" in fs.implementation_maturity_comparison
-        assert len(fs.implementation_maturity_comparison["Already implemented"]) == 1
+        assert "Already implemented" in fs.implementation_depth_comparison
+        assert len(fs.implementation_depth_comparison["Already implemented"]) == 1
 
     def test_full_construction(self):
         fs = FrameworkSynthesisResult(
@@ -164,7 +164,7 @@ class TestFrameworkSynthesisResult:
             existing_mechanisms=["Accessibility requirements defined"],
             missing_mechanisms=["Digital divide provisions"],
             framework_specific_requirements={"UNESCO": ["Cultural inclusion"]},
-            implementation_maturity_comparison={
+            implementation_depth_comparison={
                 "Already implemented": ["Accessibility standards"],
                 "Framework-specific requirement": ["Cultural inclusion"],
             },
@@ -185,28 +185,28 @@ class TestPlausibilityReview:
     def test_full_construction(self):
         pr = PlausibilityReview(
             dimension="Safety",
-            original_maturity_level=2,
-            validated_maturity_level=3,
+            original_depth_level=2,
+            validated_depth_level=3,
             validated_coverage=CoverageLevel.PARTIAL,
             plausibility_checks=["Counter-argument constructed", "Original reasoning stronger"],
             adjustment_rationale="Counter-argument revealed implicit mechanisms",
             confidence_in_assessment="High",
             uncertainty_acknowledged=["Scope remains ambiguous"],
         )
-        assert pr.original_maturity_level == 2
-        assert pr.validated_maturity_level == 3
+        assert pr.original_depth_level == 2
+        assert pr.validated_depth_level == 3
         assert pr.validated_coverage == CoverageLevel.PARTIAL
         assert pr.confidence_in_assessment == "High"
 
     def test_adjustment_preserves_trace(self):
         pr = PlausibilityReview(
             dimension="Test",
-            original_maturity_level=1,
-            validated_maturity_level=3,
+            original_depth_level=1,
+            validated_depth_level=3,
             validated_coverage=CoverageLevel.COVERED,
             adjustment_rationale="Upgraded after counter-argument review",
         )
-        assert pr.original_maturity_level != pr.validated_maturity_level
+        assert pr.original_depth_level != pr.validated_depth_level
         assert pr.adjustment_rationale != ""
 
 
@@ -277,7 +277,7 @@ class TestGovernanceGap:
             framework_synthesis="OECD requires grievance mechanisms",
             confidence_score=0.75,
             confidence_method="GeoMean method",
-            coverage_reasoning="Level 2 maturity",
+            coverage_reasoning="Level 2 depth",
             evidence_quotes=["Section 5 mentions accountability"],
             aspects_addressed=["Grievance mechanism"],
             aspects_missing=["Enforcement"],

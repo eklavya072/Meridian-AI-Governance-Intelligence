@@ -175,9 +175,25 @@ Stated because a runbook that omits them is worse than none.
 - **`GEMINI_RPD_LIMIT` is our own accounting**, not a reading of Google's
   quota. It has been observed reading 146/1000 while every credential was
   already returning 429.
-- **The Groq fallback cannot serve analysis.** Prompts run ~16k tokens
-  against an 8,000 TPM organisation limit, so it returns 413 whenever it is
-  actually needed. Treat it as absent.
-- **Single instance.** Storage is now shared-ready (Azure Blob backend), but
-  Chroma is embedded and local, so horizontal scaling needs that solved
-  first.
+- **There is no fallback provider.** Gemini is the only one. A 503 is answered
+  by waiting the delay the API asks for, across `PROVIDER_MAX_RETRIES`
+  attempts. If a run reports failed dimensions, lower
+  `ANALYSIS_MAX_CONCURRENCY` and re-run — the pipeline reuses the dimensions
+  that already succeeded, so a retry only redoes the failures.
+- **Replicas need two variables, and nothing else.** Postgres and uploads
+  (Azure Blob backend) were already shared. The two that were not:
+
+      CHROMA_HOST=chroma            # index behind a server, not a local dir
+      PROVIDER_HEALTH_DSN=postgres… # one quota ledger, not one per replica
+
+  `docker compose --profile scale up -d --scale api=3` starts the Chroma
+  service and runs three API containers. Unset, both default to the embedded
+  single-instance behaviour and every existing data directory keeps working.
+
+  **What is still process-local, and what it costs.** Admission slots
+  (`get_slots()`) are per replica, so the in-flight cap is per replica rather
+  than per cluster — N replicas admit N times the work. The RPM throttle is
+  per replica too, so the pool can exceed a per-minute limit under load; the
+  per-DAY ledger is shared, which is the limit that actually ends a run.
+  Neither is a correctness bug, but do not describe the deployment as
+  horizontally scalable without saying which limits are still per process.

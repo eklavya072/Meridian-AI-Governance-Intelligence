@@ -51,8 +51,23 @@ function useInViewReplay<T extends HTMLElement = HTMLElement>(margin = 80) {
 }
 
 /** Steps forward on a timer while active, and rewinds when it leaves view. */
+/**
+ * Advances 0..steps once `active`, one step every `everyMs`, with an
+ * independent deadline beside the chain.
+ *
+ * The chain is one timeout per step, and a backgrounded or non-composited
+ * tab clamps repeat timers to roughly a second — so a seven-step sequence
+ * authored at 190ms runs for seven SECONDS there, with the later steps
+ * still invisible. The deadline is a single timeout armed once for the
+ * whole budget, and a lone long timeout is not subject to that clamp.
+ *
+ * The same fix already lives in ProductFrames' copy of this hook. Two
+ * copies of the same hook is one too many; they should be extracted the
+ * next time either is touched.
+ */
 function useSequence(active: boolean, steps: number, everyMs: number) {
   const [step, setStep] = useState(0);
+
   useEffect(() => {
     if (!active) {
       setStep(0);
@@ -62,6 +77,13 @@ function useSequence(active: boolean, steps: number, everyMs: number) {
     const t = setTimeout(() => setStep((s) => s + 1), everyMs);
     return () => clearTimeout(t);
   }, [active, step, steps, everyMs]);
+
+  useEffect(() => {
+    if (!active) return;
+    const deadline = setTimeout(() => setStep(steps), steps * everyMs + 900);
+    return () => clearTimeout(deadline);
+  }, [active, steps, everyMs]);
+
   return step;
 }
 
@@ -75,7 +97,7 @@ function IngestionVisual({ active }: { active: boolean }) {
     <ScreenPanel>
       <div className="relative p-5 sm:p-7">
         <div className="flex items-center gap-2 mb-5">
-          <span className="text-[11px] font-mono text-black/45 truncate">
+          <span className="text-[11px] font-mono text-black/62 truncate">
             national-ai-strategy.pdf
           </span>
           <span className="ml-auto text-[10px] font-mono uppercase tracking-[0.14em] text-[#3F7A52] border border-[#3F7A52]/40 rounded px-1.5 py-0.5">
@@ -96,7 +118,12 @@ function IngestionVisual({ active }: { active: boolean }) {
         {active && (
           <span
             aria-hidden
-            className="pointer-events-none absolute left-4 right-4 h-[2px] rounded-full bg-[#0B0C0E] shadow-[0_0_16px_rgba(11,12,14,0.55)] animate-[stage-scan_3.2s_ease-in-out_infinite]"
+            /* The scan line used to carry a 16px black glow, which is the
+               "shadow" that followed it up and down the panel forever. This
+               page has no shadows anywhere else; a permanently animating one
+               inside a product screen was the most conspicuous place to
+               break that. The line reads fine as a line. */
+            className="pointer-events-none absolute left-4 right-4 h-[2px] rounded-full bg-[#0B0C0E] animate-[stage-scan_3.2s_ease-in-out_infinite]"
           />
         )}
       </div>
@@ -133,7 +160,7 @@ function RetrievalVisual({ active }: { active: boolean }) {
       <div className="relative h-[19rem] sm:h-[21rem] overflow-hidden">
         <div className="absolute inset-0 origin-center scale-[0.62] sm:scale-[0.82] lg:scale-100">
           {/* The document the chunks come out of. */}
-          <div className="absolute left-1/2 top-1/2 w-28 h-40 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-black/15 bg-white p-3 flex flex-col gap-2.5 shadow-sm">
+          <div className="absolute left-1/2 top-1/2 w-28 h-40 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-black/15 bg-white p-3 flex flex-col gap-2.5">
             <Bar w="w-full" tone="bg-black/20" />
             <Bar w="w-4/5" tone="bg-black/12" />
             <Bar w="w-2/3" tone="bg-black/12" />
@@ -144,7 +171,7 @@ function RetrievalVisual({ active }: { active: boolean }) {
             return (
               <div
                 key={i}
-                className="absolute left-1/2 top-1/2 rounded-lg border border-black/12 bg-white/95 p-2.5 flex flex-col gap-1.5 shadow-sm"
+                className="absolute left-1/2 top-1/2 rounded-lg border border-black/12 bg-white/95 p-2.5 flex flex-col gap-1.5"
                 style={{
                   transform: out
                     ? `translate(calc(-50% + ${c.x}px), calc(-50% + ${c.y}px)) scale(1)`
@@ -160,7 +187,7 @@ function RetrievalVisual({ active }: { active: boolean }) {
                   className="h-1.5 rounded bg-black/15"
                   style={{ width: c.w * 0.7 }}
                 />
-                <span className="text-[9px] font-mono text-black/40">384-d</span>
+                <span className="text-[9px] font-mono text-black/62">384-d</span>
               </div>
             );
           })}
@@ -210,7 +237,7 @@ function AnalysisVisual({ active }: { active: boolean }) {
               }}
             >
               <div className="flex flex-wrap items-center gap-2.5 mb-4">
-                <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-black/50 border border-black/15 rounded px-1.5 py-0.5">
+                <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-black/62 border border-black/15 rounded px-1.5 py-0.5">
                   {c.chip}
                 </span>
                 <span className="text-base sm:text-lg font-medium text-black/85">
@@ -235,7 +262,7 @@ function AnalysisVisual({ active }: { active: boolean }) {
                 ))}
               </div>
               {c.footer && (
-                <p className="pt-4 text-[10px] font-mono uppercase tracking-[0.14em] text-black/40">
+                <p className="pt-4 text-[10px] font-mono uppercase tracking-[0.14em] text-black/62">
                   {c.footer}
                 </p>
               )}
@@ -256,7 +283,7 @@ function BriefVisual({ active }: { active: boolean }) {
   return (
     <ScreenPanel>
       <div className="p-5 sm:p-7 h-[19rem] sm:h-[21rem] flex flex-col">
-        <span className="self-start text-[10px] font-mono uppercase tracking-[0.16em] text-black/50 border border-black/15 rounded px-1.5 py-0.5">
+        <span className="self-start text-[10px] font-mono uppercase tracking-[0.16em] text-black/62 border border-black/15 rounded px-1.5 py-0.5">
           Executive brief
         </span>
         <h4 className="mt-3 mb-5 text-base sm:text-lg font-medium text-black/85">
@@ -297,7 +324,7 @@ function BriefVisual({ active }: { active: boolean }) {
           {["[1]", "[2]", "[3]", "[4]"].map((c, i) => (
             <span
               key={c}
-              className="text-[10px] font-mono text-black/45 border border-black/12 rounded px-1 py-0.5"
+              className="text-[10px] font-mono text-black/62 border border-black/12 rounded px-1 py-0.5"
               style={{
                 opacity: step >= 4 + SCORES.length ? 1 : 0,
                 transform:
@@ -315,71 +342,71 @@ function BriefVisual({ active }: { active: boolean }) {
 }
 
 /* ── The section ───────────────────────────────────────────────────────── */
+/* The pipeline's own names. They were briefly rewritten as four verbs —
+   Read, Match, Grade, Report — which is more parallel and less true: these
+   are the stages the system actually has, and an evaluator reading the
+   section should find the same words here as in the repository.
+
+   The bodies stay written to one length (~150 characters, two lines at the
+   section's measure) so that four rows are four of one thing rather than
+   four boxes of different heights. */
 const STAGES = [
   {
     n: "01",
     name: "Ingestion",
-    body: "The policy is read end to end and split on its own structure, headings and paragraphs kept intact. Nothing is summarised away before it is scored.",
+    body: "The document is split on its own headings, paragraphs intact. Nothing is summarised away before it is scored, and nothing is scored out of context.",
     Visual: IngestionVisual,
   },
   {
     n: "02",
     name: "Retrieval",
-    body: "Every passage is embedded and ranked per governance dimension, so each reading sees the paragraphs that actually bear on it and none of the ones that do not.",
+    body: "Each passage is embedded and ranked per governance dimension, so a reading sees the paragraphs that bear on it and none of the ones that do not.",
     Visual: RetrievalVisual,
   },
   {
     n: "03",
     name: "Analysis",
-    body: "Eight readings against the frameworks, then recommendations, then a roadmap. Deterministic guardrails sit under the verdict, so it is not something the model can talk itself into.",
+    body: "Eight readings against the frameworks that govern them. Deterministic guardrails sit under each verdict, so it is not one the model can talk itself into.",
     Visual: AnalysisVisual,
   },
   {
     n: "04",
     name: "Brief",
-    body: "The findings become a document a minister can act on: what is covered, what is missing, what to do first, and the citation behind every line of it.",
+    body: "The findings become a document a minister can act on: what is covered, what is missing, what to do first, and the citation behind every line.",
     Visual: BriefVisual,
   },
 ];
 
-function Stage({
+/* One stage, as a row. The sticky deck this replaces was a clever device
+   that cost the section its readability: three of the four cards spent most
+   of their scroll buried under the one on top, and a pipeline whose steps
+   you cannot see side by side is not showing you a pipeline. Rows let all
+   four be compared, and the alternation gives the eye somewhere new to land
+   on each one. */
+function StageRow({
   stage,
   index,
 }: {
   stage: (typeof STAGES)[number];
   index: number;
 }) {
-  const { ref, inView } = useInViewReplay<HTMLDivElement>();
-  const [entered, setEntered] = useState(false);
-  const [settled, setSettled] = useState(false);
-  const { Visual } = stage;
-  const visualFirst = index % 2 === 0;
-
-  /* The row's own entrance latches on first sight and never reverses, so a
-     stage the visitor has already read cannot fade back out under them. The
-     visual inside it still replays on every scroll-in, which is the part
-     worth seeing twice. `settled` then asserts the finished state with the
-     transition off, so a paused compositor cannot leave the row invisible. */
-  useEffect(() => {
-    if (!inView || entered) return;
-    setEntered(true);
-    const t = setTimeout(() => setSettled(true), 1400);
-    return () => clearTimeout(t);
-  }, [inView, entered]);
-
+  const { ref, inView } = useInViewReplay<HTMLDivElement>(120);
+  const visualFirst = index % 2 === 1;
   return (
     <div
       ref={ref}
-      className={`l-stage-row${entered ? " in" : ""}${settled ? " done" : ""}`}
-      data-visual-first={visualFirst}
+      className={`l-stage-row${inView ? " in" : ""}`}
+      data-visual-first={visualFirst ? "true" : "false"}
     >
-      <div className="l-stage-visual">
-        <Visual active={inView} />
-      </div>
       <div className="l-stage-copy">
-        <span className="l-label">{stage.n}</span>
-        <h3 className="l-stage-name">{stage.name}</h3>
-        <p className="l-body">{stage.body}</p>
+        <div className="l-stage-head">
+          <span className="l-stage-n">{stage.n}</span>
+          <h3 className="l-stage-name">{stage.name}</h3>
+        </div>
+        <p className="l-body l-stage-body">{stage.body}</p>
+      </div>
+      <div className="l-stage-visual">
+        <StageVisual stage={stage} />
       </div>
     </div>
   );
@@ -389,8 +416,19 @@ export default function PipelineStages() {
   return (
     <div className="l-stages">
       {STAGES.map((s, i) => (
-        <Stage key={s.n} stage={s} index={i} />
+        <StageRow key={s.n} stage={s} index={i} />
       ))}
+    </div>
+  );
+}
+
+/* The visual replays whenever its row is on screen. */
+function StageVisual({ stage }: { stage: (typeof STAGES)[number] }) {
+  const { ref, inView } = useInViewReplay<HTMLDivElement>();
+  const { Visual } = stage;
+  return (
+    <div ref={ref}>
+      <Visual active={inView} />
     </div>
   );
 }

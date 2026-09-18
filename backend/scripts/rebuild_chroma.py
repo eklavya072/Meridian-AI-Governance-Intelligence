@@ -1,20 +1,30 @@
-"""Rebuild the vector index by re-embedding the text Chroma kept in SQLite.
+"""Disaster recovery: rebuild the vector index from the text Chroma kept in SQLite.
 
-A torn HNSW segment left the store segfaulting on any read. The vectors lived
-only in that index — `embeddings` holds ids, and `embeddings_queue` had been
-pruned to 508 rows — but every chunk's TEXT and metadata survived in
-`embedding_metadata`. Re-embedding from there restores the corpus without
-re-parsing a single PDF, and keeps the original chunk ids, so cached analyses
-still resolve their evidence.
+Use this when the HNSW index is corrupt — the symptom is a segfault (exit 139)
+on any read, including a plain filtered query.
+
+It works because Chroma stores chunk TEXT and metadata in `embedding_metadata`
+separately from the vectors in the HNSW segment. So the corpus can be rebuilt
+by re-embedding that text, without re-parsing a single PDF. Critically it keeps
+the original chunk ids, so analyses already stored in Postgres still resolve
+their cited evidence afterwards.
+
+Writes to a staging directory first and swaps only once filtered queries are
+verified against it — never edit the live store in place.
 """
-import json, os, sqlite3, sys, time
+import os
+import sqlite3
+import sys
+import time
+
 os.environ["HF_HUB_OFFLINE"] = "1"
 
 SRC = "data/chroma/chroma.sqlite3"
 DEST = sys.argv[1] if len(sys.argv) > 1 else "data/chroma_rebuilt"
 
-from sentence_transformers import SentenceTransformer
 import chromadb
+from sentence_transformers import SentenceTransformer
+
 from src.vectorstore import COLLECTION_NAME, NullEmbeddingFunction
 
 con = sqlite3.connect(f"file:{SRC}?mode=ro", uri=True)

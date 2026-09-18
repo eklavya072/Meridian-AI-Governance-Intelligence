@@ -21,9 +21,7 @@ from src.provenance import render_provenance_lines
 # Design tokens — mirrors the frontend palette (app/globals.css).
 NAVY_950 = "#0A2E6E"
 NAVY_800 = "#14408D"
-NAVY_600 = "#3E6CB8"
 BODY_INK = "#1F2937"
-SURFACE = "#F7F9FC"
 
 BRAND_LINE = "MERIDIAN  ·  AI Governance Assessment Brief"
 
@@ -167,8 +165,8 @@ def render_docx(brief: dict[str, Any]) -> bytes:
             p = doc.add_paragraph()
             p.paragraph_format.space_after = Pt(2)
             label = f"{r['dimension']} — {r['coverage']}"
-            if r.get("maturity"):
-                label += f" · {r['maturity']}"
+            if r.get("depth"):
+                label += f" · {r['depth']}"
             run = p.add_run(label)
             run.font.bold = True
             run.font.color.rgb = ink
@@ -375,8 +373,8 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
         _h1("DIMENSION ASSESSMENT")
         for r in rows:
             label = f"{r['dimension']} — {r['coverage']}"
-            if r.get("maturity"):
-                label += f" · {r['maturity']}"
+            if r.get("depth"):
+                label += f" · {r['depth']}"
             _h2(label)
             if r.get("basis"):
                 _body(r["basis"])

@@ -36,11 +36,14 @@ export default function AnimatedSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const selectedIndex = Math.max(
-    0,
-    options.findIndex((o) => o.value === value)
-  );
-  const selected = options[selectedIndex];
+  // -1 when nothing is selected. Do NOT clamp this to 0: doing so rendered
+  // options[0]'s label while the parent's state was still empty, so the
+  // control showed a country, the caller held "", and the button next to it
+  // silently did nothing. Keyboard navigation still needs a real starting
+  // row, which is what activeIndex below is for.
+  const foundIndex = options.findIndex((o) => o.value === value);
+  const selected = foundIndex >= 0 ? options[foundIndex] : undefined;
+  const selectedIndex = Math.max(0, foundIndex);
 
   function openAndFocus() {
     setOpen(true);

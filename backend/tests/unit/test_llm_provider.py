@@ -14,7 +14,6 @@ from pydantic import BaseModel
 
 from src.llm_provider import (
     GeminiProvider,
-    GroqProvider,
     QuotaExceededError,
     RetryableError,
     TerminalProviderError,
@@ -31,7 +30,6 @@ def _clean_env(monkeypatch):
     for i in range(2, 10):
         monkeypatch.delenv(f"GEMINI_API_KEY_{i}", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     yield
 
 
@@ -216,22 +214,3 @@ class TestGeminiCalls:
         # The combined Module 1+2 JSON routinely exceeds 4096 tokens, and
         # truncation turned real dimensions into "Insufficient Evidence".
         assert fake_genai["config"]["max_output_tokens"] == 8192
-
-
-class TestGroqProvider:
-    def test_no_key_fails_loudly(self):
-        with pytest.raises(ValueError, match="GROQ_API_KEY"):
-            GroqProvider()
-
-    def test_the_model_default_is_a_live_one(self, monkeypatch):
-        monkeypatch.setenv("GROQ_API_KEY", "g")
-
-        # llama-3.3-70b was retired from Groq's catalog, and every quota
-        # exhaustion silently fell through to a dead fallback.
-        assert "llama-3.3-70b" not in GroqProvider().model_name
-
-    def test_the_model_can_be_overridden(self, monkeypatch):
-        monkeypatch.setenv("GROQ_API_KEY", "g")
-        monkeypatch.setenv("GROQ_MODEL", "custom/model")
-
-        assert GroqProvider().model_name == "custom/model"

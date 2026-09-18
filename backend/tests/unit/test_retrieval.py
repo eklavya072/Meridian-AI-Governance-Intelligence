@@ -1,24 +1,6 @@
 import pytest
 
-from src.retrieval import CrossEncoderReranker, RetrievalPipeline
-
-
-def test_reranker_initialization():
-    reranker = CrossEncoderReranker("BAAI/bge-reranker-v2-m3")
-    assert reranker._model_name == "BAAI/bge-reranker-v2-m3"
-    assert reranker._model is None
-    assert not reranker._load_attempted
-
-
-def test_reranker_unavailable_if_not_loaded():
-    reranker = CrossEncoderReranker("nonexistent-model")
-    assert not reranker.is_available or reranker._model is None
-
-
-def test_reranker_empty_candidates():
-    reranker = CrossEncoderReranker()
-    result = reranker.rerank("test query", [])
-    assert result == []
+from src.retrieval import RetrievalPipeline
 
 
 def test_rrf_score():

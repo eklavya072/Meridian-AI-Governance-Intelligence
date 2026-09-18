@@ -92,6 +92,11 @@ module.exports = {
         sans: ["var(--font-body)", "ui-sans-serif", "system-ui", "sans-serif"],
         /* Brand wordmark face (Unbounded) — see app/layout.tsx. */
         brand: ["var(--font-brand)", "ui-sans-serif", "system-ui", "sans-serif"],
+        /* Declared so `font-mono` resolves to IBM Plex Mono rather than
+           Tailwind's default ui-monospace stack. Without this entry the
+           product-screen labels were rendering in the raw system mono — a
+           whole extra family nobody chose, measured on the landing. */
+        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
 
       /* Real type scale — 12/14/16/18/24/32/48 with consistent line-height

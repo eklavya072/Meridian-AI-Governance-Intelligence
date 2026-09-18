@@ -28,7 +28,7 @@ def gaps():
             "coverage": "Partial",
             "risk_level": "Medium",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Emerging"},
+            "module_1": {"implementation_depth": "Emerging"},
             "module_2": {
                 "priority": "Medium",
                 "recommendations": [
@@ -42,7 +42,7 @@ def gaps():
             "coverage": "Missing",
             "risk_level": "High",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Unaddressed"},
+            "module_1": {"implementation_depth": "Unaddressed"},
             "module_2": {
                 "priority": "High",
                 "recommendations": ["Establish a responsible AI oversight body"],
@@ -53,7 +53,7 @@ def gaps():
             "coverage": "Covered",
             "risk_level": "Low",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Formalized"},
+            "module_1": {"implementation_depth": "Formalized"},
             "module_2": {
                 "priority": None,
                 "recommendations": [],
@@ -67,7 +67,7 @@ def gaps():
             "coverage": "Partial",
             "risk_level": "High",
             "analysis_error": None,
-            "module_1": {"governance_maturity": "Emerging"},
+            "module_1": {"implementation_depth": "Emerging"},
             "module_2": {"priority": "High", "recommendations": ["Pre-deployment safety testing"]},
             "module_4": {
                 "matched": True,
@@ -80,7 +80,7 @@ def gaps():
 def _synthesis():
     return BriefSynthesis(
         executive_summary="The strategy covers privacy well but has partial transparency and safety mechanisms.",
-        areas_of_strength=["Privacy is fully addressed at Formalized maturity."],
+        areas_of_strength=["Privacy is fully addressed at Formalized depth."],
         areas_requiring_attention=["Accountability has no owner mechanism."],
         priority_recommendations=[
             {

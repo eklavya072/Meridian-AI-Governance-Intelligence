@@ -73,6 +73,36 @@ class EmbeddingService:
         return self.model.encode(text, normalize_embeddings=True).tolist()
 
 
+def _build_client(persist_dir: Path):
+    """An embedded client, or an HTTP one when CHROMA_HOST is set.
+
+    Embedded Chroma writes to a local directory, so two API processes pointed
+    at the same path corrupt each other's HNSW segment — which is why this
+    service could only ever run one instance. Setting CHROMA_HOST moves the
+    store out of the process and behind a network boundary, and from there the
+    API is stateless with respect to vectors and can be replicated.
+
+    The default stays embedded: a single-container deployment should not have
+    to run a second service, and every existing data directory keeps working.
+    """
+    host = os.getenv("CHROMA_HOST", "").strip()
+    if not host:
+        persist_dir.mkdir(parents=True, exist_ok=True)
+        return chromadb.PersistentClient(
+            path=str(persist_dir),
+            settings=Settings(anonymized_telemetry=False),
+        )
+    port = int(os.getenv("CHROMA_PORT", "8000"))
+    ssl = os.getenv("CHROMA_SSL", "false").lower() == "true"
+    logger.info("vector_store_remote", host=host, port=port, ssl=ssl)
+    return chromadb.HttpClient(
+        host=host,
+        port=port,
+        ssl=ssl,
+        settings=Settings(anonymized_telemetry=False),
+    )
+
+
 class VectorStore:
     def __init__(
         self,
@@ -80,14 +110,8 @@ class VectorStore:
         embedding_service: EmbeddingService | None = None,
     ):
         self.persist_dir = Path(persist_dir)
-        self.persist_dir.mkdir(parents=True, exist_ok=True)
-
         self.embedding_service = embedding_service or EmbeddingService()
-
-        self.client = chromadb.PersistentClient(
-            path=str(self.persist_dir),
-            settings=Settings(anonymized_telemetry=False),
-        )
+        self.client = _build_client(self.persist_dir)
         try:
             self.collection = self.client.get_or_create_collection(
                 name=COLLECTION_NAME,
@@ -102,7 +126,11 @@ class VectorStore:
                 )
             else:
                 raise
-        logger.info("vector_store_initialized", persist_dir=str(self.persist_dir))
+        logger.info(
+            "vector_store_initialized",
+            backend="remote" if os.getenv("CHROMA_HOST", "").strip() else "embedded",
+            persist_dir=str(self.persist_dir),
+        )
 
     def add_chunks(self, chunks: list[Chunk]) -> int:
         if not chunks:

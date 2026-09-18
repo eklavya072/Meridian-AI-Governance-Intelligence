@@ -99,8 +99,14 @@ build: ## Build the prod image locally
 
 build-prod: build ## Alias for build
 
+rebuild-index: ## Rebuild the vector index from Chroma's own stored text (corrupt HNSW)
+	cd $(BACKEND) && $(UV) run python scripts/rebuild_chroma.py
+
+resync-frameworks: ## Re-chunk and re-index every framework in config/frameworks.yaml
+	cd $(BACKEND) && $(UV) run python scripts/resync_frameworks.py
+
 bench: ## Re-measure citation verification (no Gemini calls)
-	cd $(BACKEND) && $(UV) run python scripts_measure_verification.py
+	cd $(BACKEND) && $(UV) run python scripts/measure_verification.py
 
 bench-load: ## k6 load test against the real path, in replay mode (no Gemini calls)
 	@command -v k6 >/dev/null || (echo "k6 not installed: brew install k6"; exit 1)

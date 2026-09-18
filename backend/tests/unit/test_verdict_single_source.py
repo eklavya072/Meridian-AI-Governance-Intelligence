@@ -10,7 +10,7 @@ fix landed on one of them.
                   mechanisms ... Not addressed: consent, data minimisation".
                   The prompt said Partial. The stored verdict said Covered.
 
-    maturity      coverage's force bar was corrected; maturity kept its own
+    depth      coverage's force bar was corrected; depth kept its own
                   copy of the old degenerate threshold -> "Partial ... stands
                   alone rather than forming a developed regime" reported
                   alongside "Operationalized".
@@ -36,9 +36,9 @@ SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "gap_analyzer.py"
 # Anything downstream must read `determined`, never recompute.
 SINGLE_CALL_ONLY = {
     "coverage_from_profile": 1,
-    "maturity_from_profile": 1,
+    "depth_from_profile": 1,
     "detect_mechanisms": 1,
-    "build_profile": 1,
+    "build_provision_profile": 1,
     "retrieve_scoring_pool": 1,
 }
 
@@ -90,8 +90,8 @@ def test_determined_dict_exposes_everything_downstream_needs():
         "scoring_pool",
         "coverage_label",
         "coverage_note",
-        "maturity_label",
-        "maturity_note",
+        "depth_label",
+        "depth_note",
         "mechanisms",
     ):
         assert f'"{key}"' in returned, (

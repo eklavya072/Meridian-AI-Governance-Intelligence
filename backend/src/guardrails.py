@@ -100,5 +100,3 @@ class Guardrails:
 
         return GuardrailResult(passed=True)
 
-    def check_document_upload(self, query: str | None = None) -> GuardrailResult:
-        return GuardrailResult(passed=True)

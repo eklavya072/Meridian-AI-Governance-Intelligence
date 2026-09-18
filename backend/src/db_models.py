@@ -109,21 +109,6 @@ class Report(Base):
     workspace = relationship("Workspace", back_populates="reports")
 
 
-class FrameworkSyncRecord(Base):
-    __tablename__ = "framework_sync_records"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    framework_name = Column(String(500), nullable=False)
-    version = Column(String(100), nullable=True)
-    checksum = Column(String(128), nullable=True)
-    indexed_at = Column(DateTime, nullable=True)
-    status = Column(String(50), default="pending")  # pending, synced, error
-    error_message = Column(Text, nullable=True)
-    chunk_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-
 class UploadLog(Base):
     __tablename__ = "upload_logs"
 

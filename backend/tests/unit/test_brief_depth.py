@@ -21,7 +21,7 @@ GAPS = [
     {
         "dimension": "Accountability",
         "coverage": "Covered",
-        "governance_maturity": "Institutionalized",
+        "implementation_depth": "Institutionalized",
         "confidence_score": 0.80,
         "risk_basis": "The document imposes 26 binding requirement(s) here, 16 of "
         "them backed by supervisory or enforcement powers.",
@@ -36,7 +36,7 @@ GAPS = [
     {
         "dimension": "Environmental Sustainability",
         "coverage": "Partial",
-        "governance_maturity": "Emerging",
+        "implementation_depth": "Emerging",
         "confidence_score": 0.73,
         "risk_basis": "1 binding requirement(s) exist with no enforcement, audit or "
         "redress machinery behind them. Not addressed: carbon "

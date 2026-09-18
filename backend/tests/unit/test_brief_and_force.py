@@ -1,6 +1,6 @@
 """Brief assembly and the normative-force predicates behind every verdict.
 
-meets_force_bar is the single predicate coverage and maturity both read.
+meets_force_bar is the single predicate coverage and depth both read.
 Three places used to compute coverage independently and they drifted, which
 produced a document reading "Partial" and "Operationalized" in the same
 breath. Everything here is downstream of that fix.
@@ -20,12 +20,12 @@ from src.brief_synthesis import (
 )
 from src.evidence_strength import (
     EvidenceProfile,
-    detect_enforcement_regime,
     detect_nonbinding_document,
     is_structural_noise,
     is_third_party_attribution,
     meets_force_bar,
 )
+from src.grading import detect_enforcement_regime
 
 
 def _profile(**kw):
@@ -64,7 +64,7 @@ class TestForceBar:
     def test_the_predicate_is_pure(self):
         profile = _profile(n_scored=5, n_binding=2)
 
-        # Coverage and maturity both call this; a stateful predicate could
+        # Coverage and depth both call this; a stateful predicate could
         # give them different answers to the same question.
         assert meets_force_bar(profile) == meets_force_bar(profile)
 
@@ -169,7 +169,7 @@ class TestBriefSections:
         {
             "dimension": "Transparency",
             "coverage": "Covered",
-            "governance_maturity": "Operationalized",
+            "implementation_depth": "Operationalized",
             "risk_level": "Low",
             "reason_flagged": "Disclosure duties are binding.",
             "recommendation": "Maintain the current regime.",
@@ -187,7 +187,7 @@ class TestBriefSections:
         {
             "dimension": "Fairness",
             "coverage": "Missing",
-            "governance_maturity": "Unaddressed",
+            "implementation_depth": "Unaddressed",
             "risk_level": "High",
             "reason_flagged": "No bias testing requirement.",
             "recommendation": "Introduce a bias testing duty.",

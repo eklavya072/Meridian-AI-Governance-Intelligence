@@ -36,7 +36,7 @@ _OVERVIEW_MARKERS = re.compile(
     r"(overall|overview|summary|summarise|summarize|in general|across (the )?dimensions|"
     r"compare the dimensions|which dimensions?)|"
     r"how (many|much) .{0,24}(covered|partial|missing|dimensions)|"
-    r"(coverage index|maturity index|binding share|binding force|overall (score|result|picture))|"
+    r"(coverage index|maturity index|implementation depth|depth index|binding share|binding force|overall (score|result|picture))|"
     r"(what|where) .{0,24}(are|is) the (main|biggest|key) (gap|gaps|weakness|weaknesses|risk|risks)|"
     r"(rank|order) the dimensions|"
     r"(this|the) (analysis|run|assessment|result)s?\b.{0,30}(say|show|tell|mean|about)"
@@ -71,7 +71,7 @@ def _dimension_row(gap: dict[str, Any]) -> str:
 
     parts = [
         f"{gap.get('dimension', '?')}: {_fmt(gap.get('coverage'))}",
-        f"stage {_fmt(m1.get('governance_maturity') or gap.get('governance_maturity'))}",
+        f"stage {_fmt(m1.get('implementation_depth') or gap.get('implementation_depth'))}",
         f"risk {_fmt(gap.get('risk_level'))}",
     ]
     if present or absent:
@@ -131,7 +131,7 @@ def build_analysis_overview_context(analysis_results: dict[str, Any] | None) -> 
             f"Coverage index {_fmt(analytics.get('coverage_index'))} "
             f"(breadth: {_fmt(analytics.get('mechanisms_met'))} of "
             f"{_fmt(analytics.get('mechanisms_total'))} mechanisms addressed). "
-            f"Binding force / maturity index {_fmt(analytics.get('maturity_index'))}. "
+            f"Binding force / depth index {_fmt(analytics.get('implementation_depth_index'))}. "
             f"Binding share {_fmt(analytics.get('binding_share'), '%')} "
             f"({_fmt(analytics.get('mechanisms_binding'))} of the present mechanisms "
             "are carried by an actual duty)."
@@ -143,7 +143,7 @@ def build_analysis_overview_context(analysis_results: dict[str, Any] | None) -> 
                 "Highest-priority dimensions: "
                 + ", ".join(analytics["highest_priority_dimensions"])
             )
-        dist = analytics.get("maturity_distribution") or {}
+        dist = analytics.get("depth_distribution") or {}
         if dist:
             lines.append(
                 "Stage distribution: " + ", ".join(f"{k} {v}" for k, v in dist.items() if v)

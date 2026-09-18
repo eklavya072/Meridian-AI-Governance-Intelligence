@@ -76,7 +76,7 @@ COPY config/ /opt/config/
 # serve anything, and a transient DNS failure during one has already taken
 # this API down — the worker died with no traceback while uvicorn's reloader
 # kept holding the port, so the service looked up and answered nothing for
-# two hours (CLAUDE.md, "A torn vector index read as an out-of-memory death").
+# two hours (docs/ENGINEERING-NOTES.md, "A torn vector index read as an out-of-memory death").
 # ~130MB, and it makes both the test run and the container start hermetic.
 FROM builder AS models
 

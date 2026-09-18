@@ -1,15 +1,45 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Unbounded, Public_Sans, Newsreader, IBM_Plex_Mono } from "next/font/google";
+import {
+  Space_Grotesk,
+  Unbounded,
+  Public_Sans,
+  Newsreader,
+  Schibsted_Grotesk,
+  IBM_Plex_Mono,
+} from "next/font/google";
 import "./globals.css";
 import { MotionConfig } from "motion/react";
 import { ChatProvider } from "@/components/ChatProvider";
 import ChatPanel from "@/components/ChatPanel";
 import NavBar from "@/components/NavBar";
 
+/* The description asserted "UNDP DAI Hub", which claims an affiliation this
+   project does not have — and it is the string that renders in every search
+   result, LinkedIn card and Slack unfurl, aimed squarely at the audience
+   best placed to check it. It describes what Meridian does instead.
+
+   Open Graph and Twitter cards were absent entirely, so every share of this
+   link rendered as a bare URL. */
+const DESCRIPTION =
+  "Meridian reads a national AI strategy and reports what it obliges — " +
+  "every commitment graded from a stated aspiration to an enforceable duty, " +
+  "against forty-four international instruments, with a citation behind " +
+  "every line.";
+
 export const metadata: Metadata = {
   title: "Meridian — AI Governance Intelligence Workbench",
-  description:
-    "UNDP DAI Hub: Policy gap analysis against international AI governance frameworks.",
+  description: DESCRIPTION,
+  openGraph: {
+    title: "Meridian — AI Governance Intelligence Workbench",
+    description: DESCRIPTION,
+    siteName: "Meridian",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Meridian — AI Governance Intelligence Workbench",
+    description: DESCRIPTION,
+  },
 };
 
 /* ── Typeface pair ───────────────────────────────────────────────────────
@@ -57,6 +87,23 @@ const displaySerif = Newsreader({
   display: "swap",
 });
 
+/* Schibsted Grotesk (landing hero): the type that sits ON THE FILM.
+   Every reference system worth borrowing from sets its hero in a grotesk
+   with tight negative tracking — Roobert, LamboType, Helvetica Now Display,
+   Halyard — and none of them float a hairline serif over moving footage,
+   because a 300-weight serif at 96px over video is the exact costume a
+   "premium" page reaches for when it has not decided anything.
+
+   So the route runs TWO display voices with a job each: the grotesk speaks
+   over the film, and Newsreader keeps the printed argument on paper below
+   it. The split is the point — the hero is cinema, the page is a document. */
+const displayGrotesk = Schibsted_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-grotesk",
+  display: "swap",
+});
+
 const mono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
@@ -73,7 +120,7 @@ export default function RootLayout({
     <html lang="en" className="font-sans">
       {/* Font variables on <body> (not <html>) keeps the no-JS fallback
           surface clean and scopes them to app content. */}
-      <body className={`${display.variable} ${body.variable} ${brand.variable} ${displaySerif.variable} ${mono.variable}`}>
+      <body className={`${display.variable} ${body.variable} ${brand.variable} ${displaySerif.variable} ${displayGrotesk.variable} ${mono.variable}`}>
         {/* reducedMotion="user": every motion-driven animation in the app
             honors the user's prefers-reduced-motion preference — the CSS-only
             animations (status dot, progress bar) already have their own
@@ -81,7 +128,7 @@ export default function RootLayout({
         <MotionConfig reducedMotion="user">
           <ChatProvider>
             <NavBar />
-            <main className="max-w-7xl mx-auto px-4 pt-24 pb-8">{children}</main>
+            <main className="max-w-7xl mx-auto px-4 pt-[5.5rem] pb-8">{children}</main>
             <ChatPanel />
           </ChatProvider>
         </MotionConfig>

@@ -6,7 +6,7 @@
  * Three faithful, LIVE recreations of the real screens, rendered as
  * bezelled panels rather than captured stills:
  *
- *   AnalysisFrame   → /analysis   the coverage donut fills, the maturity
+ *   AnalysisFrame   → /analysis   the coverage donut fills, the depth
  *                                 gauge sweeps, the dimension verdicts pop
  *                                 in one after another
  *   AuditorFrame    → /auditor    the question types itself into the
@@ -18,10 +18,15 @@
  *                                 land in sequence
  *
  * They are built from the same tokens the real pages use — the light
- * surface, the black/grey scale, and the three muted coverage colours
- * (#3F7A52 covered / #C9AF7A partial / #A8483F missing) — so what the
- * landing page shows is what the product actually looks like, at any DPI,
- * with no image payload and no layout shift.
+ * surface and the black/grey scale — so what the landing page shows is what
+ * the product actually looks like, at any DPI, with no image payload and no
+ * layout shift.
+ *
+ * The coverage scale is the app's own: green, gold, red for Covered,
+ * Partial, Missing. These frames are a picture of the product, so they show
+ * what the product shows. The one accent rule governs the PAGE — its
+ * headlines, its marks, its indicators — not a screenshot of software that
+ * has its own established colour language.
  *
  * Each frame takes `active` (is it on screen) and `runId` (bumped on every
  * scroll-in). `runId` is used as a React key so the whole sequence
@@ -62,7 +67,25 @@ export function ScreenPanel({
   return (
     <div
       aria-hidden
-      className={`w-full overflow-hidden rounded-2xl bg-[#F5F5F5] shadow-[0_28px_80px_-12px_rgba(0,0,0,0.7)] ${className}`}
+      /* The shadow, rebuilt rather than removed.
+         It was one layer: `0 28px 80px -12px rgba(0,0,0,0.7)`. A single
+         huge, near-opaque blur is what made it read as a bloom trailing the
+         panel instead of as the panel sitting above the page — and taking
+         it away left a flat rectangle with a hard edge against a background
+         of nearly the same value, which is worse.
+
+         Three layers instead, the way real elevation falls off: a hairline
+         contact shadow, a short ambient one, and a long soft cast. Total
+         alpha is a fraction of what it was, and the panel reads as glass
+         over parchment rather than a dark cloud.
+
+         The glass is three things together, not a blur alone: the layered
+         cast underneath, an inset white ring for the lit top edge a pane of
+         glass catches, and 2px of backdrop blur so the parchment grain
+         behind it softens at the boundary. Blur on its own is the
+         decoration version of this effect; it is the ring and the cast that
+         make it read as a physical object above a surface. */
+      className={`w-full overflow-hidden rounded-2xl border border-[rgba(10,10,10,0.08)] bg-[#F5F5F5] shadow-[0_1px_2px_rgba(16,18,22,0.07),0_8px_20px_-8px_rgba(16,18,22,0.13),0_32px_64px_-28px_rgba(16,18,22,0.20)] ring-1 ring-inset ring-white/45 backdrop-blur-[2px] ${className}`}
     >
       {children}
     </div>
@@ -70,8 +93,15 @@ export function ScreenPanel({
 }
 
 /* Muted coverage tokens — identical to the analysis page's TIER_DOT. */
+/* The instrument's own three verdicts, in the instrument's own colours.
+   These were flattened to a gold ramp when the landing route went down to
+   one accent — which was right for the page's argument and wrong for this
+   one component, because these screens are a PICTURE OF THE PRODUCT. The
+   real /analysis draws Covered, Partial and Missing in green, gold and red;
+   a recreation that draws them in three browns is a recreation of something
+   that does not exist. Values are `--chart-*` verbatim. */
 const COVERED = "#3F7A52";
-const PARTIAL = "#C9AF7A";
+const PARTIAL = "#B08114";
 const MISSING = "#A8483F";
 
 function Dot({ color }: { color: string }) {
@@ -84,14 +114,44 @@ function Dot({ color }: { color: string }) {
 }
 
 /** Steps a counter 0→steps while `active`, pausing when it goes off screen. */
+/**
+ * Advances 0..steps once `active`, one step every `everyMs`.
+ *
+ * The chain of per-step timeouts is the nice version of this; the deadline
+ * beside it is the one that has to hold. A backgrounded or non-composited
+ * tab clamps repeat timers to roughly a second, so an eight-step sequence
+ * authored at 190ms becomes an eight-SECOND sequence there, and anything
+ * waiting on the chain to finish waits that long with content still at
+ * opacity zero.
+ *
+ * The deadline is a single timeout armed once, for the whole budget, and a
+ * lone long timeout is not subject to that clamp. So the sequence animates
+ * when the page can animate and simply arrives when it cannot — which is
+ * the rule this whole route is built on. Measured: without it, four of
+ * eight framework cards were still invisible four seconds in.
+ */
 function useSequence(active: boolean, steps: number, everyMs: number) {
   const [step, setStep] = useState(0);
+
   useEffect(() => {
     if (!active) return;
     if (step >= steps) return;
     const t = setTimeout(() => setStep((s) => s + 1), everyMs);
     return () => clearTimeout(t);
   }, [active, step, steps, everyMs]);
+
+  useEffect(() => {
+    if (!active) {
+      setStep(0);
+      return;
+    }
+    const deadline = setTimeout(
+      () => setStep(steps),
+      steps * everyMs + 900,
+    );
+    return () => clearTimeout(deadline);
+  }, [active, steps, everyMs]);
+
   return step;
 }
 
@@ -121,16 +181,16 @@ function useSettled(done: boolean, afterMs = 600) {
    donut + implementation-depth gauge) above the dimension verdicts, which
    land one at a time the way they do as the real page streams in. */
 
-/* Coverage verdicts and maturity stages are the instrument's own, not
+/* Coverage verdicts and depth stages are the instrument's own, not
    generic capability-model words: coverage is Covered / Partial / Missing,
-   and maturity runs Unaddressed, Emerging, Delegated, Operationalized,
+   and depth runs Unaddressed, Emerging, Delegated, Operationalized,
    Institutionalized. The spread below is a real run. */
 const ANALYSIS_ROWS = [
-  { dim: "Transparency", tier: "Covered", color: COVERED, maturity: "Operationalized", cites: 6 },
-  { dim: "Accountability", tier: "Covered", color: COVERED, maturity: "Institutionalized", cites: 9 },
-  { dim: "Privacy", tier: "Covered", color: COVERED, maturity: "Institutionalized", cites: 7 },
-  { dim: "Human Autonomy", tier: "Partial", color: PARTIAL, maturity: "Emerging", cites: 4 },
-  { dim: "Environmental", tier: "Missing", color: MISSING, maturity: "Unaddressed", cites: 0 },
+  { dim: "Transparency", tier: "Covered", color: COVERED, depth: "Operationalized", cites: 6 },
+  { dim: "Accountability", tier: "Covered", color: COVERED, depth: "Institutionalized", cites: 9 },
+  { dim: "Privacy", tier: "Covered", color: COVERED, depth: "Institutionalized", cites: 7 },
+  { dim: "Human Autonomy", tier: "Partial", color: PARTIAL, depth: "Emerging", cites: 4 },
+  { dim: "Environmental", tier: "Missing", color: MISSING, depth: "Unaddressed", cites: 0 },
 ];
 
 /* 4 covered / 3 partial / 1 missing across the 8 dimensions. */
@@ -207,7 +267,7 @@ function CoverageDonut({ active }: { active: boolean }) {
   );
 }
 
-function MaturityGauge({ active }: { active: boolean }) {
+function DepthGauge({ active }: { active: boolean }) {
   /* The index is a mean of stage scores over the assessed dimensions, on 0
      to 100. It was previously drawn as x/5, which is a scale this
      instrument does not have. The arc and the readout share one value so
@@ -282,16 +342,25 @@ export function AnalysisFrame({ active }: { active: boolean }) {
             <h3 className="font-display text-base font-extrabold tracking-tight text-[#0A0A0A] sm:text-xl">
               Governance Analysis
             </h3>
+            {/* This read "Kenya. National AI Strategy 2025-2030" over a
+                verdict spread, donut split and depth score that are a
+                REAL RUN ON A DIFFERENT COUNTRY — 63.2 is India's, per
+                docs/ENGINEERING-NOTES.md. Kenya has published a strategy of that name, so
+                the frame attributed one state's governance grade to
+                another, on a page whose stated position is that nothing is
+                asserted without a source. The label is now unattributed and
+                the frame is marked illustrative in the UI, not only in a
+                code comment. */}
             <p className="mt-0.5 truncate text-[10px] font-medium text-[#404040] sm:text-[11px]">
-              Kenya — National AI Strategy 2025–2030
+              Sample analysis · figures from a recorded run
             </p>
           </div>
-          <span className="shrink-0 rounded-lg bg-[#0A0A0A] px-2.5 py-1.5 text-[10px] font-medium text-white sm:text-[11px]">
-            Ask AI
+          <span className="shrink-0 rounded-lg border border-[rgba(10,10,10,0.14)] px-2.5 py-1.5 text-[10px] font-medium text-[#404040] sm:text-[11px]">
+            Illustrative
           </span>
         </div>
 
-        <div className="rounded-xl border border-[rgba(10,10,10,0.10)] bg-white p-3 shadow-sm sm:p-4">
+        <div className="rounded-xl border border-[rgba(10,10,10,0.10)] bg-white p-3 sm:p-4">
           <div className="mb-3 flex items-center justify-between">
             <p className="font-display text-[12px] font-bold text-[#0A0A0A] sm:text-sm">
               Decision Analytics
@@ -311,7 +380,7 @@ export function AnalysisFrame({ active }: { active: boolean }) {
               <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#737373]">
                 Binding Force
               </p>
-              <MaturityGauge active={active} />
+              <DepthGauge active={active} />
             </div>
           </div>
         </div>
@@ -330,7 +399,7 @@ export function AnalysisFrame({ active }: { active: boolean }) {
                   : { opacity: 0, y: 10, scale: 0.98 }
               }
               transition={{ duration: 0.32, ease: EASE.out }}
-              className="flex items-center gap-2.5 rounded-lg border border-[rgba(10,10,10,0.10)] bg-white px-3 py-2.5 shadow-sm"
+              className="flex items-center gap-2.5 rounded-lg border border-[rgba(10,10,10,0.10)] bg-white px-3 py-2.5"
             >
               <span className="min-w-0 flex-1 truncate font-display text-[12px] font-bold text-[#0A0A0A] sm:text-[13px]">
                 {r.dim}
@@ -340,7 +409,7 @@ export function AnalysisFrame({ active }: { active: boolean }) {
                 {r.tier}
               </span>
               <span className="hidden rounded-full border border-[rgba(10,10,10,0.12)] px-2 py-0.5 text-[9px] font-medium text-[#404040] md:inline">
-                {r.maturity}
+                {r.depth}
               </span>
               <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-[#3F7A52]">
                 <CheckGlyph className="h-3 w-3" />
@@ -378,7 +447,7 @@ const AUDITOR_A: { t: string; b?: boolean }[] = [
   { t: "HAIP Reporting Framework", b: true },
   {
     t:
-      " treats safety as a reporting duty, not a principle: organisations disclose risk identification, red-teaming results and incident handling on a recurring cycle — testing before deployment, monitoring after it.",
+      " treats safety as a reporting duty, not a principle: organisations disclose risk identification, red-teaming results and incident handling on a recurring cycle: testing before deployment, monitoring after it.",
   },
 ];
 const AUDITOR_A_LEN = AUDITOR_A.reduce((n, s) => n + s.t.length, 0);
@@ -471,11 +540,11 @@ export function AuditorFrame({ active }: { active: boolean }) {
     <ScreenPanel>
       <div className="flex flex-col gap-3 p-3.5 sm:p-5">
         <div className="flex items-center justify-between gap-2">
-          <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-[rgba(10,10,10,0.15)] bg-white px-2.5 py-1 text-[10px] font-medium text-[#404040] shadow-sm">
+          <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-[rgba(10,10,10,0.15)] bg-white px-2.5 py-1 text-[10px] font-medium text-[#404040]">
             <DocGlyph className="h-3 w-3 shrink-0 text-[#737373]" />
             <span className="truncate">rwanda_national_ai_policy.pdf</span>
           </span>
-          <span className="shrink-0 text-[10px] font-medium text-[#737373]">
+          <span className="shrink-0 text-[10px] font-medium text-[#5C5C5C]">
             AI Auditor
           </span>
         </div>
@@ -490,7 +559,7 @@ export function AuditorFrame({ active }: { active: boolean }) {
               transition={{ duration: 0.3, ease: EASE.out }}
               className="flex justify-end"
             >
-              <p className="max-w-[82%] rounded-2xl rounded-br-md bg-[#0A0A0A] px-3.5 py-2.5 text-[11px] leading-relaxed text-white shadow-md sm:text-[12.5px]">
+              <p className="max-w-[82%] rounded-2xl rounded-br-md bg-[#0A0A0A] px-3.5 py-2.5 text-[11px] leading-relaxed text-white sm:text-[12.5px]">
                 {AUDITOR_Q}
               </p>
             </motion.div>
@@ -498,7 +567,7 @@ export function AuditorFrame({ active }: { active: boolean }) {
 
           {phase === THINKING && (
             <div className="flex justify-start">
-              <span className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-[rgba(10,10,10,0.10)] bg-white px-3.5 py-3 shadow-sm">
+              <span className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-[rgba(10,10,10,0.10)] bg-white px-3.5 py-3">
                 {/* A settling pulse, not a bounce. Tailwind's animate-bounce
                     rides a hard cubic-bezier(0.8,0,1,1) that reads as a toy
                     next to the rest of this page's motion. */}
@@ -511,7 +580,7 @@ export function AuditorFrame({ active }: { active: boolean }) {
 
           {answered && (
             <div className="flex justify-start">
-              <div className="max-w-[88%] rounded-2xl rounded-bl-md border border-[rgba(10,10,10,0.10)] bg-white px-3.5 py-2.5 shadow-sm">
+              <div className="max-w-[88%] rounded-2xl rounded-bl-md border border-[rgba(10,10,10,0.10)] bg-white px-3.5 py-2.5">
                 <p className="text-[11px] leading-relaxed text-[#404040] sm:text-[12.5px]">
                   <AnswerText chars={aChars} />
                   {phase === ANSWERING && (
@@ -535,7 +604,7 @@ export function AuditorFrame({ active }: { active: boolean }) {
         </div>
 
         {/* Composer — the question is typed in here before it is sent. */}
-        <div className="flex items-center gap-2 rounded-[24px] border border-[rgba(10,10,10,0.15)] bg-white p-1.5 pl-3 shadow-[0_10px_40px_rgba(10,10,10,0.10)]">
+        <div className="flex items-center gap-2 rounded-[24px] border border-[rgba(10,10,10,0.15)] bg-white p-1.5 pl-3">
           <PaperclipGlyph className="h-4 w-4 shrink-0 text-[#737373]" />
           <span className="min-w-0 flex-1 truncate text-[11px] sm:text-[12.5px]">
             {qChars > 0 ? (
@@ -544,7 +613,7 @@ export function AuditorFrame({ active }: { active: boolean }) {
                 <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-[#0A0A0A]" />
               </span>
             ) : (
-              <span className="text-[#A3A3A3]">Ask anything about this policy…</span>
+              <span className="text-[#737373]">Ask anything about this document…</span>
             )}
           </span>
           <motion.span
@@ -592,11 +661,11 @@ function ArrowUpGlyph({ className }: { className?: string }) {
    the index reports in. */
 
 const FRAMEWORKS = [
-  { org: "UNDP", name: "Digital Strategy 2022–2025", version: "2022", chunks: 412 },
+  { org: "UNDP", name: "Digital Strategy 2022-2025", version: "2022", chunks: 412 },
   { org: "OECD", name: "AI Principles", version: "2024", chunks: 1320 },
   { org: "G7", name: "Hiroshima AI Process (HAIP)", version: "2023", chunks: 268 },
   { org: "UNESCO", name: "Recommendation on the Ethics of AI", version: "2021", chunks: 986 },
-  { org: "EU", name: "AI Act — Regulation 2024/1689", version: "2024", chunks: 2114 },
+  { org: "EU", name: "AI Act, Regulation 2024/1689", version: "2024", chunks: 2114 },
   { org: "NIST", name: "AI Risk Management Framework", version: "1.0", chunks: 744 },
   { org: "AU", name: "Continental AI Strategy", version: "2024", chunks: 503 },
   { org: "ASEAN", name: "Guide on AI Governance & Ethics", version: "2024", chunks: 361 },
@@ -615,7 +684,7 @@ export function FrameworksFrame({ active }: { active: boolean }) {
             </h3>
             <p className="mt-0.5 text-[10px] font-medium text-[#404040] sm:text-[11px]">
               <span className="tabular-nums">{shown === FRAMEWORKS.length ? 44 : shown * 5}</span>{" "}
-              instruments indexed — routed per dimension and region
+              instruments indexed, routed per dimension and region
             </p>
           </div>
           <span
@@ -646,7 +715,7 @@ export function FrameworksFrame({ active }: { active: boolean }) {
                   ? "none"
                   : "opacity 340ms cubic-bezier(0.16,1,0.3,1), transform 340ms cubic-bezier(0.16,1,0.3,1)",
               }}
-              className="flex flex-col rounded-lg border border-[rgba(10,10,10,0.10)] bg-white p-2.5 shadow-sm sm:p-3"
+              className="flex flex-col rounded-lg border border-[rgba(10,10,10,0.10)] bg-white p-2.5 sm:p-3"
             >
               <span className="font-display text-[10px] font-bold uppercase tracking-[0.14em] text-[#737373]">
                 {f.org}

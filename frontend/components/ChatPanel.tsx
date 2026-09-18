@@ -49,7 +49,7 @@ function IntentBadge({ intent }: { intent?: string }) {
 function ProviderLabel({ provider }: { provider?: string }) {
   if (!provider || provider === "template") return null;
   return (
-    <span className="text-[10px] text-gray-400 italic">
+    <span className="text-[10px] text-gray-500 italic">
       Enriched by {provider}
     </span>
   );
@@ -195,6 +195,18 @@ export default function ChatPanel() {
   const [input, setInput] = useState("");
   const [showSessions, setShowSessions] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /* React 18 does not forward `inert` as a prop — it is not in its known
+     attribute list, so it is silently dropped, and passing it through
+     framer-motion drops it again. Measured after trying the prop: the
+     drawer still exposed 11 focusable controls. Set on the element. */
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = drawerRef.current;
+    if (!el) return;
+    if (isOpen) el.removeAttribute("inert");
+    else el.setAttribute("inert", "");
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && workspaceId) {
@@ -233,11 +245,23 @@ export default function ChatPanel() {
 
       {/* Drawer: slide-in on a transform, not layout — the panel never
           reflows the page, it glides over it. Stays mounted so the input
-          and scroll state survive closing. */}
+          and scroll state survive closing.
+
+          Staying mounted is the right call for state and the wrong one for
+          everything else unless it is also inert. Translated off-screen it
+          kept `visibility: visible`, so it contributed eleven focusable
+          controls and an `<h2>` to every route that renders it — including
+          the landing page, where tabbing off the hero dropped a keyboard
+          user into a chat about an analysis that does not exist, and where
+          its heading sat in the document outline. `inert` removes it from
+          the tab order, the accessibility tree and find-in-page in one
+          attribute; `aria-hidden` is belt and braces for older engines. */}
       <motion.div
         initial={false}
         animate={{ x: isOpen ? "0%" : "100%" }}
         transition={{ duration: DUR.slow, ease: EASE.outSoft }}
+        ref={drawerRef}
+        aria-hidden={!isOpen || undefined}
         className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col"
       >
         {/* Header */}
@@ -248,7 +272,7 @@ export default function ChatPanel() {
             </h2>
             <button
               onClick={closePanel}
-              className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              className="text-gray-500 hover:text-gray-600 text-xl leading-none"
             >
               &times;
             </button>
@@ -283,7 +307,7 @@ export default function ChatPanel() {
           {showSessions && (
             <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
               {sessions.length === 0 && (
-                <p className="text-[11px] text-gray-400 italic">
+                <p className="text-[11px] text-gray-500 italic">
                   No previous sessions
                 </p>
               )}
@@ -306,7 +330,7 @@ export default function ChatPanel() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           {messages.length === 0 && (
-            <div className="text-center text-gray-400 text-sm mt-8 space-y-4">
+            <div className="text-center text-gray-500 text-sm mt-8 space-y-4">
               <p className="font-medium text-gray-500">AI Rapporteur</p>
               <p>
                 Ask about this analysis — how each dimension was scored, the

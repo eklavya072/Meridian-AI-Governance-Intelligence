@@ -38,11 +38,28 @@ class _ProviderError(Exception):
 
 
 class TestClassification:
-    def test_429_is_quota(self):
-        assert classify(_ProviderError("429 Too Many Requests", 429)).kind is FailureKind.QUOTA
+    def test_a_rate_limited_429_recovers_and_says_when(self):
+        """It carries a delay, so the credential is back shortly."""
+        failure = classify(_ProviderError("429 Too Many Requests, retry in 12s", 429))
 
-    def test_resource_exhausted_is_quota_without_a_status(self):
-        assert classify(Exception("RESOURCE_EXHAUSTED: quota met")).kind is FailureKind.QUOTA
+        assert failure.kind is FailureKind.QUOTA
+        assert failure.retry_after_seconds == 12
+
+    def test_a_per_day_429_is_not_a_rate_limit(self):
+        """Google names the metric it refused on; the day is over for that key."""
+        failure = classify(
+            _ProviderError(
+                "429 RESOURCE_EXHAUSTED: quota metric "
+                "GenerateRequestsPerDayPerProjectPerModel-FreeTier, retry in 5s",
+                429,
+            )
+        )
+
+        assert failure.kind is FailureKind.QUOTA_DAILY
+
+    def test_a_429_with_no_retry_delay_is_treated_as_a_spent_day(self):
+        """Nothing told us when to come back, so rotating again is a guess."""
+        assert classify(Exception("RESOURCE_EXHAUSTED: quota met")).kind is FailureKind.QUOTA_DAILY
 
     def test_retired_model_is_terminal_not_quota(self):
         # The bug this file exists for. A 404 was raised as QuotaExceededError,
@@ -283,3 +300,53 @@ class TestConcurrency:
         # The analysis pipeline runs dimensions concurrently; an unguarded
         # read-modify-write silently loses requests from the daily tally.
         assert registry.snapshot(["k1"])["total_requests"] == 200
+
+
+class TestSharedQuotaLedger:
+    """Quota belongs to the credential, not to the process holding it."""
+
+    def test_without_a_dsn_nothing_changes(self, tmp_path):
+        """The default is the local file, byte-for-byte as before."""
+        from src.key_health import KeyHealthRegistry
+
+        reg = KeyHealthRegistry(path=tmp_path / "h.json", dsn="")
+        reg.record_success("k:0")
+
+        assert (tmp_path / "h.json").exists()
+        reg.refresh_if_stale()  # a no-op without a ledger, and must not raise
+
+    def test_a_ledger_outage_does_not_stop_analysis(self, tmp_path):
+        """An unreachable ledger degrades to the local file; it never raises."""
+        from src.key_health import KeyHealthRegistry
+
+        reg = KeyHealthRegistry(
+            path=tmp_path / "h.json", dsn="postgresql://nobody@127.0.0.1:1/nope"
+        )
+        reg.record_success("k:0")          # write falls through to the file
+        reg.refresh_if_stale()             # read fails quietly
+
+        assert reg._health("k:0").requests == 1
+
+    def test_merge_takes_the_worse_view_of_a_credential(self):
+        """Counters take the max; exhaustion is sticky and drops it from rotation."""
+        from src.key_health import CircuitState, KeyHealthRegistry
+
+        reg = KeyHealthRegistry(path="/dev/null", dsn="")
+        reg._health("k:0").requests = 2
+        reg._merge({"keys": {"k:0": {"requests": 9, "daily_exhausted": True,
+                                     "observed_daily_limit": 9}}})
+
+        assert reg._health("k:0").requests == 9
+        assert reg._health("k:0").state is CircuitState.OPEN
+        assert not reg.is_available("k:0")
+
+    def test_merge_never_hands_back_a_locally_spent_credential(self):
+        """A stale ledger row must not revive a key this replica knows is spent."""
+        from src.key_health import KeyHealthRegistry
+        from src.provider_errors import FailureKind
+
+        reg = KeyHealthRegistry(path="/dev/null", dsn="")
+        reg.record_failure("k:0", FailureKind.QUOTA_DAILY, "429 per day")
+        reg._merge({"keys": {"k:0": {"requests": 0, "daily_exhausted": False}}})
+
+        assert not reg.is_available("k:0")

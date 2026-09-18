@@ -15,7 +15,6 @@ from src import metrics
 from src.key_health import get_registry
 from src.llm_provider import (
     GeminiProvider,
-    GroqProvider,
     LLMProvider,
     QuotaExceededError,
     RetryableError,
@@ -41,10 +40,8 @@ def _jittered_wait(base: float, spread: float = 0.5) -> float:
     return random.uniform(low, high)
 
 
-GROQ_TPM_LIMIT = int(os.getenv("GROQ_TPM_LIMIT", "12000"))
-GROQ_TPM_WINDOW = float(os.getenv("GROQ_TPM_WINDOW", "60"))
 
-# ── Gemini free-tier throttle (generalized from the Groq-only throttle) ──
+# ── Gemini free-tier throttle ────────────────────────────────────────────
 # Gemini free tier limits PER KEY (confirmed from Google AI Studio docs):
 # flash-tier models are ~10-15 RPM / 250k-1M TPM / 250-1500 RPD per key.
 # The primary provider is Gemini with N rotating keys, so we throttle:
@@ -59,19 +56,25 @@ GROQ_TPM_WINDOW = float(os.getenv("GROQ_TPM_WINDOW", "60"))
 #   - RPD: daily request counter across ALL keys (the binding constraint on
 #     a full 16-call analysis run; Gemini enforces RPD per project/key, and
 #     with 4 keys a full run is well inside the combined budget).
-# Both are env-tunable like the Groq throttle. Token-level TPM is not the
+# Both are env-tunable. Token-level TPM is not the
 # binding constraint for flash-tier free quotas (250k-1M TPM vs 10-15 RPM),
 # so RPM + RPD cover the realistic 429 sources.
 GEMINI_RPM_LIMIT = int(os.getenv("GEMINI_RPM_LIMIT", "10"))
 GEMINI_RPM_WINDOW = float(os.getenv("GEMINI_RPM_WINDOW", "60"))
-GEMINI_RPD_LIMIT = int(os.getenv("GEMINI_RPD_LIMIT", "1000"))
+# An OPTIONAL self-imposed cap, off unless you set it. It used to default to
+# 1000, which was a guess that matched no real Gemini quota: the counter read
+# 49/1000 while three of five credentials were already being refused, so the
+# one number an operator would check was the one number that could not be
+# trusted. The authoritative limit is whatever the provider enforces, and the
+# registry now learns it from the refusals themselves.
+GEMINI_RPD_LIMIT = int(os.getenv("GEMINI_RPD_LIMIT", "0")) or None
 GEMINI_RPD_WARNING_PCT = float(os.getenv("GEMINI_RPD_WARNING_PCT", "0.8"))
 
 # RPD counter persistence — a date-keyed JSON file so a server restart mid-day
 # does NOT silently reset how much of the daily Gemini quota has been used.
 # Without this the in-memory counter believed it enforced a daily cap while a
 # restart wiped the count (the real enforcement remains Gemini's own 429 +
-# key rotation + Groq fallback, but the RPD hard-stop is only honest if the
+# key rotation, but the RPD hard-stop is only honest if the
 # count survives restarts).
 GEMINI_RPD_FILE = os.getenv("GEMINI_RPD_FILE", "./data/gemini_rpd.json")
 
@@ -110,6 +113,18 @@ def _persist_daily_requests(count: int) -> None:
         tmp.replace(path)
     except OSError as exc:
         logger.warning("rpd_persist_failed", error=str(exc))
+
+
+def configured_gemini_keys() -> int:
+    """How many credentials exist, not how many the registry has touched.
+
+    The registry only knows a key once something has happened on it, so
+    counting its records answers "keys we have used today" — which reads as
+    "all credentials are spent" the moment the first one is refused.
+    """
+    count = 1 if os.getenv("GEMINI_API_KEY") else 0
+    count += sum(1 for i in range(2, 10) if os.getenv(f"GEMINI_API_KEY_{i}"))
+    return count
 
 
 def key_ids_for(provider: LLMProvider) -> list[str]:
@@ -165,7 +180,7 @@ class TokenThrottle:
             if wait > 0:
                 pct = window_total / self.limit * 100
                 print(
-                    f"[THROTTLE] Groq TPM: {window_total}/{self.limit} ({pct:.0f}%) "
+                    f"[THROTTLE] TPM: {window_total}/{self.limit} ({pct:.0f}%) "
                     f"in last {self.window:.0f}s. "
                     f"Next call needs ~{estimated_total} tokens, "
                     f"only {available} available. "
@@ -189,7 +204,6 @@ class TokenThrottle:
         self._entries.clear()
 
 
-_groq_throttle = TokenThrottle(limit=GROQ_TPM_LIMIT, window=GROQ_TPM_WINDOW)
 
 
 class RequestThrottle:
@@ -289,19 +303,26 @@ def quota_status() -> dict[str, Any]:
     is headroom left. `date` is the counter's own key: the budget resets
     when the local date rolls over, not on a rolling 24h window.
 
-    Note this is Meridian's own accounting, not a reading of Google's
-    quota — the authoritative limit is still enforced provider-side by a
-    429. It answers "will this process accept an analysis right now", which
-    is the question a readiness probe is asking.
+    Headroom is answered by the credentials themselves, not by a configured
+    number: a key that the provider has refused on a per-day quota is spent
+    whatever our own counter says. `daily_limit` is therefore what was
+    OBSERVED — the largest number of requests any credential served before
+    being refused — and is null until something is refused.
     """
     with _rpd_lock:
         used = _daily_gemini_requests
-    remaining = max(GEMINI_RPD_LIMIT - used, 0)
+    configured = configured_gemini_keys()
+    snap = get_registry().snapshot()
+    exhausted = snap["daily_exhausted"]
+    observed = snap["observed_daily_limits"]
     return {
         "requests_today": used,
-        "daily_limit": GEMINI_RPD_LIMIT,
-        "remaining": remaining,
-        "has_headroom": remaining > 0,
+        "daily_limit": max(observed) if observed else None,
+        "daily_limit_source": "observed" if observed else "not yet observed",
+        "self_imposed_cap": GEMINI_RPD_LIMIT,
+        "credentials": configured,
+        "credentials_daily_exhausted": exhausted,
+        "has_headroom": configured == 0 or exhausted < configured,
         "date": _rpd_date_key(),
     }
 
@@ -309,27 +330,41 @@ def quota_status() -> dict[str, Any]:
 def _check_gemini_daily_budget() -> None:
     """Enforce the Gemini free-tier RPD budget with an early warning.
 
-    Called before every primary Gemini call. Warns at GEMINI_RPD_WARNING_PCT
-    of the daily limit; hard-stops with a clear, actionable error when the
-    limit is exhausted (the same messaging the 429 path uses). The counter
-    is in-memory per process — the real enforcement is still Gemini's own
-    429 + key rotation + Groq fallback.
+    Called before every primary Gemini call. Stops on what the PROVIDER has
+    said, not on a number we chose: if every configured credential has been
+    refused on a per-day quota, the run cannot proceed and says so with the
+    counts it measured. GEMINI_RPD_LIMIT remains available as a self-imposed
+    cap for anyone who wants to spend less than the provider allows, but it
+    is off by default and is no longer the thing that decides.
     """
     global _daily_gemini_requests
-    pct = _daily_gemini_requests / GEMINI_RPD_LIMIT if GEMINI_RPD_LIMIT > 0 else 0
-    if _daily_gemini_requests >= GEMINI_RPD_LIMIT:
+    configured = configured_gemini_keys()
+    snap = get_registry().snapshot()
+    exhausted = snap["daily_exhausted"]
+    if configured and exhausted >= configured:
+        observed = snap["observed_daily_limits"]
+        served = f"{min(observed)}-{max(observed)}" if observed else "0"
         raise RuntimeError(
-            f"Gemini free-tier daily request budget exhausted "
-            f"({_daily_gemini_requests}/{GEMINI_RPD_LIMIT} requests today). "
-            f"The RPD cap protects against the free tier's daily limit — "
-            f"raise GEMINI_RPD_LIMIT in .env if you have a higher plan, or "
-            f"continue tomorrow when the quota resets."
+            f"Every configured Gemini credential ({configured}) has been refused "
+            f"on its per-day quota, after serving {served} requests each today. "
+            f"Nothing recovers this before the provider's quota window resets — "
+            f"add a credential, enable billing, or continue tomorrow."
         )
-    if pct >= GEMINI_RPD_WARNING_PCT:
-        print(
-            f"[WARN] Gemini daily request budget at {pct:.0%}: "
-            f"{_daily_gemini_requests}/{GEMINI_RPD_LIMIT} used today."
-        )
+
+    if GEMINI_RPD_LIMIT:
+        pct = _daily_gemini_requests / GEMINI_RPD_LIMIT
+        if _daily_gemini_requests >= GEMINI_RPD_LIMIT:
+            raise RuntimeError(
+                f"Self-imposed GEMINI_RPD_LIMIT reached "
+                f"({_daily_gemini_requests}/{GEMINI_RPD_LIMIT} requests today). "
+                f"This is Meridian's own cap, not the provider's — raise or "
+                f"unset GEMINI_RPD_LIMIT in .env to keep going."
+            )
+        if pct >= GEMINI_RPD_WARNING_PCT:
+            print(
+                f"[WARN] Self-imposed daily cap at {pct:.0%}: "
+                f"{_daily_gemini_requests}/{GEMINI_RPD_LIMIT} used today."
+            )
 
 
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
@@ -347,25 +382,8 @@ _debug_stats: dict[str, Any] = {
     "failed": 0,
     "quota_errors": 0,
     "retries": 0,
-    "fallbacks": 0,
 }
 
-# Groq fallback provider — initialized lazily on first need
-_groq_fallback_provider: GroqProvider | None = None
-
-
-def _init_groq_fallback() -> GroqProvider | None:
-    """Initialize Groq as fallback. Called when all Gemini keys are exhausted."""
-    global _groq_fallback_provider
-    if _groq_fallback_provider is not None:
-        return _groq_fallback_provider
-    try:
-        _groq_fallback_provider = GroqProvider()
-        print(f"[DEBUG] Groq fallback ready: model={_groq_fallback_provider.model_name}")
-        return _groq_fallback_provider
-    except Exception as exc:
-        print(f"[DEBUG] Groq fallback not available: {exc}")
-        return None
 
 
 def get_provider() -> LLMProvider:
@@ -390,9 +408,6 @@ def get_provider() -> LLMProvider:
         _provider = GeminiProvider()
         keys = len(getattr(_provider, "api_keys", [1]))
         print(f"[DEBUG] Provider: gemini (primary, {keys} key(s), model={_provider.model_name})")
-    elif preferred == "groq":
-        _provider = GroqProvider()
-        print(f"[DEBUG] Provider: groq (primary, model={_provider.model_name})")
     else:
         print(f"[DEBUG] Provider: unknown '{preferred}', defaulting to gemini")
         _provider = GeminiProvider()
@@ -441,24 +456,6 @@ def _extract_retry_delay(error_str: str) -> float | None:
     return None
 
 
-def _try_groq_fallback(
-    prompt: str,
-    schema: type,
-    system_prompt: str | None,
-    operation: str,
-) -> Any:
-    """Try Groq as a last-resort fallback when all Gemini keys are exhausted."""
-    fallback = _init_groq_fallback()
-    if fallback is None:
-        raise RuntimeError(
-            f"All Gemini keys exhausted and Groq fallback is not available "
-            f"(check GROQ_API_KEY in .env). Operation: '{operation}'."
-        )
-    print(f"[DEBUG] Falling back to Groq for '{operation}'")
-    _debug_stats["fallbacks"] += 1
-    return fallback.generate_structured(prompt=prompt, schema=schema, system_prompt=system_prompt)
-
-
 def generate_with_retry(
     provider: LLMProvider,
     prompt: str,
@@ -492,7 +489,7 @@ def generate_with_retry(
         "req_num": req_num,
         "operation": operation,
         "model": provider.model_name,
-        "provider": "gemini" if isinstance(provider, GeminiProvider) else "groq",
+        "provider": "gemini",
         "prompt_chars": prompt_chars,
         "estimated_input_tokens": estimated_input_tokens,
         "num_chunks": n_chunks,
@@ -522,7 +519,8 @@ def generate_with_retry(
     # `attempt < MAX_RETRIES`). Without this the rotation bug bites: with 4
     # keys and MAX_RETRIES=3, attempts 1-3 each rotate to the next key, key #4
     # is never tried, the all-keys-exhausted branch never runs (rotation keeps
-    # returning True), Groq fallback never fires, and the loop falls out with
+    # returning True), the all-keys-exhausted branch never runs, and the loop
+    # falls out with
     # a misleading "generate_with_retry failed unexpectedly" instead of a
     # clear "all keys exhausted" error.
     max_attempts = max(
@@ -566,9 +564,6 @@ def generate_with_retry(
                 )
             gemini_throttle = throttles[key_index]
             gemini_throttle.wait()
-        elif isinstance(provider, GroqProvider):
-            throttle_input = prompt_chars // 4
-            _groq_throttle.wait(estimated_input=throttle_input, output_buffer=500)
 
         try:
             start = time.time()
@@ -585,32 +580,7 @@ def generate_with_retry(
                 )
             latency = time.time() - start
 
-            # Log token usage
-            token_usage = getattr(result, "_token_usage", None)
-            if isinstance(provider, GroqProvider) and token_usage:
-                request_info["prompt_tokens_actual"] = token_usage.get("prompt_tokens", 0)
-                request_info["completion_tokens_actual"] = token_usage.get("completion_tokens", 0)
-                request_info["total_tokens_actual"] = token_usage.get("total_tokens", 0)
-                token_str = (
-                    f"prompt_tok={token_usage['prompt_tokens']} "
-                    f"completion_tok={token_usage['completion_tokens']} "
-                    f"total_tok={token_usage['total_tokens']}"
-                )
-                global _daily_live_tokens
-                _daily_live_tokens += token_usage.get("total_tokens", 0)
-                pct = _daily_live_tokens / DEV_TOKEN_CAP * 100 if DEV_TOKEN_CAP > 0 else 0
-                if _daily_live_tokens >= DEV_TOKEN_CAP:
-                    print(
-                        f"[WARN] DEV CAP EXCEEDED: {_daily_live_tokens}/{DEV_TOKEN_CAP} "
-                        f"live tokens used today ({pct:.0f}%)."
-                    )
-                elif _daily_live_tokens >= DEV_TOKEN_CAP * 0.8:
-                    print(
-                        f"[WARN] DEV CAP AT {pct:.0f}%: {_daily_live_tokens}/{DEV_TOKEN_CAP} "
-                        f"live tokens used today."
-                    )
-            else:
-                token_str = f"est_tok={estimated_input_tokens}"
+            token_str = f"est_tok={estimated_input_tokens}"
 
             request_info["end_time"] = time.time()
             request_info["latency"] = latency
@@ -645,10 +615,6 @@ def generate_with_retry(
             request_info["output_tokens"] = _estimate_tokens(str(result))
             _debug_stats["primary_requests"].append(request_info)
 
-            if isinstance(provider, GroqProvider) and token_usage:
-                actual = token_usage.get("total_tokens", 0)
-                _groq_throttle.record(actual)
-                print(f"[THROTTLE] Groq TPM window: {_groq_throttle.total_used}/{GROQ_TPM_LIMIT}")
 
             return result
 
@@ -666,9 +632,13 @@ def generate_with_retry(
             _debug_stats["failed"] += 1
             if isinstance(provider, GeminiProvider) and key_index is not None:
                 failure = classify(exc)
+                # The kind the classifier decided, not a hardcoded QUOTA: a
+                # per-day refusal has to reach the registry as one, or the
+                # credential stays "healthy" and every later attempt is spent
+                # re-asking a key the provider has already finished with.
                 get_registry().record_failure(
                     _key_id(provider, key_index),
-                    FailureKind.QUOTA,
+                    failure.kind,
                     error_str,
                     retry_after=failure.retry_after_seconds,
                 )
@@ -707,42 +677,25 @@ def generate_with_retry(
                     continue
                 metrics.provider_failover.labels(event="capacity_exhausted").inc()
 
-            # ── Step 2: All Gemini keys exhausted — try Groq fallback ──
-            #    Skip retry_delay on exhausted keys — fall back immediately
-            print(
-                f"[DEBUG] REQ #{req_num} | {operation} | "
-                f"All Gemini keys exhausted, attempting Groq fallback"
-            )
-            _debug_stats["fallbacks"] += 1
-            request_info["fell_back"] = True
+            # ── Step 2: every key exhausted — honour the provider's own wait ──
+            # There is no second provider to fall through to, so the only
+            # thing left that can help is waiting as long as the API asked.
             _debug_stats["primary_requests"].append(request_info)
-
-            try:
-                return _try_groq_fallback(
-                    prompt=prompt,
-                    schema=schema,
-                    system_prompt=system_prompt,
-                    operation=operation,
+            retry_delay = _extract_retry_delay(error_str)
+            if retry_delay is not None and retry_delay <= 120.0 and attempt < MAX_RETRIES:
+                wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
+                print(
+                    f"[DEBUG] REQ #{req_num} | {operation} | all keys exhausted; the "
+                    f"API asked for {retry_delay:.0f}s — waiting {wait:.0f}s "
+                    f"(attempt {attempt + 1}/{max_attempts})"
                 )
-            except RuntimeError:
-                raise
-            except Exception as groq_exc:
-                # Groq also failed — try retry_delay on Gemini as last resort
-                retry_delay = _extract_retry_delay(error_str)
-                if retry_delay is not None and retry_delay <= 120.0 and attempt < MAX_RETRIES:
-                    wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
-                    print(
-                        f"[DEBUG] Groq also failed. Gemini 429 has retry delay {retry_delay:.0f}s — "
-                        f"waiting {wait:.0f}s then retrying Gemini (attempt {attempt + 1}/{max_attempts})"
-                    )
-                    _debug_stats["retries"] += 1
-                    last_error = exc
-                    time.sleep(wait)
-                    continue
-                raise RuntimeError(
-                    f"All Gemini API keys exhausted and Groq fallback failed "
-                    f"for '{operation}': {groq_exc}"
-                ) from groq_exc
+                _debug_stats["retries"] += 1
+                last_error = exc
+                time.sleep(wait)
+                continue
+            raise RuntimeError(
+                f"All Gemini API keys exhausted for '{operation}'."
+            ) from exc
 
         # ── Terminal: retrying cannot help ────────────────────────────
         except TerminalProviderError as exc:
@@ -862,7 +815,6 @@ def print_debug_summary() -> None:
     failed = _debug_stats["failed"]
     quota_errors = _debug_stats["quota_errors"]
     retries = _debug_stats["retries"]
-    fallbacks = _debug_stats["fallbacks"]
 
     total_input_tokens = sum(r.get("estimated_input_tokens", 0) for r in primary_reqs)
     total_output_tokens = sum(
@@ -887,14 +839,22 @@ def print_debug_summary() -> None:
     print(f"  Failed:         {failed}")
     print(f"  429 Errors:     {quota_errors}")
     print(f"  Key Rotations:  {retries}")
-    print(f"  Groq Fallbacks: {fallbacks}")
     print(f"  Estimated Total Input Tokens:  {total_input_tokens}")
     print(f"  Estimated Total Output Tokens: {total_output_tokens}")
-    print(f"  Gemini requests today:         {_daily_gemini_requests}/{GEMINI_RPD_LIMIT} (RPD)")
+    _snap = get_registry().snapshot()
+    _observed = _snap["observed_daily_limits"]
+    print(
+        f"  Gemini requests today:         {_daily_gemini_requests}"
+        + (f" (observed per-key limit: {max(_observed)})" if _observed else "")
+    )
+    print(
+        f"  Credentials spent for the day: "
+        f"{_snap['daily_exhausted']}/{configured_gemini_keys()}"
+    )
     if total_actual_tokens > 0:
-        print(f"  Actual Groq Input Tokens:      {total_actual_input_tokens}")
-        print(f"  Actual Groq Output Tokens:     {total_actual_output_tokens}")
-        print(f"  Actual Groq Total Tokens:      {total_actual_tokens}")
+        print(f"  Actual Input Tokens:           {total_actual_input_tokens}")
+        print(f"  Actual Output Tokens:          {total_actual_output_tokens}")
+        print(f"  Actual Total Tokens:           {total_actual_tokens}")
     print(f"  Average Prompt Size:           {avg_prompt_size} chars")
     print(f"  Average Latency:               {avg_latency:.2f}s")
     print()
@@ -942,7 +902,6 @@ def generate_text_with_retry(
       - RPD daily-budget check before the first attempt
       - RPM rolling-window throttle before every primary attempt
       - key rotation on 429 (QuotaExceededError)
-      - Groq fallback when all Gemini keys are exhausted
       - backoff retries on RetryableError (5xx/timeout)
 
     Returns the generated text; raises RuntimeError with a clear message when
@@ -994,8 +953,6 @@ def generate_text_with_retry(
             key_index = provider.next_key()
             gemini_throttle = throttles[key_index]
             gemini_throttle.wait()
-        elif isinstance(provider, GroqProvider):
-            _groq_throttle.wait(estimated_input=len(prompt) // 4, output_buffer=400)
 
         try:
             start = time.time()
@@ -1021,8 +978,6 @@ def generate_text_with_retry(
                     f"status=200 latency={latency:.2f}s attempt={attempt}/{attempts} "
                     f"RPD={_daily_gemini_requests}"
                 )
-            elif isinstance(provider, GroqProvider):
-                _groq_throttle.record(len(text) // 4)
 
             _debug_stats["successful"] += 1
             return text
@@ -1033,6 +988,17 @@ def generate_text_with_retry(
                 f"[DEBUG] CHAT REQ | {operation} | status=429 attempt={attempt}/{attempts} "
                 f"error={str(exc)[:150]}"
             )
+            # Chat shares the credentials, so a per-day refusal it discovers
+            # has to reach the registry too — otherwise analysis walks back
+            # into a key chat already learned was finished.
+            if isinstance(provider, GeminiProvider):
+                failure = classify(exc)
+                get_registry().record_failure(
+                    _key_id(provider, provider.current_key_index),
+                    failure.kind,
+                    str(exc),
+                    retry_after=failure.retry_after_seconds,
+                )
             if isinstance(provider, GeminiProvider) and provider.rotate_key():
                 print(
                     f"[DEBUG] Chat rotated to Gemini key #{provider.current_key_index + 1}/"
@@ -1043,27 +1009,19 @@ def generate_text_with_retry(
                         f"Chat '{operation}' out of budget while rotating keys."
                     ) from exc
                 continue
-            try:
-                return _try_groq_fallback_text(prompt, system_prompt, operation)
-            except RuntimeError:
-                raise
-            except Exception as groq_exc:
-                retry_delay = _extract_retry_delay(str(exc))
-                if retry_delay is not None and retry_delay <= 120.0 and attempt < attempts:
-                    wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
-                    print(
-                        f"[DEBUG] Chat Gemini retry delay {retry_delay:.0f}s — waiting {wait:.0f}s"
-                    )
-                    if not _sleep_within_budget(wait):
-                        raise ChatDeadlineExceeded(
-                            f"Chat '{operation}' out of budget: provider asked for "
-                            f"a {retry_delay:.0f}s wait."
-                        ) from exc
-                    continue
-                raise RuntimeError(
-                    f"Chat '{operation}' failed: all Gemini keys exhausted and "
-                    f"Groq fallback failed: {groq_exc}"
-                ) from groq_exc
+            retry_delay = _extract_retry_delay(str(exc))
+            if retry_delay is not None and retry_delay <= 120.0 and attempt < attempts:
+                wait = _jittered_wait(max(retry_delay, RETRY_BACKOFF_SECONDS))
+                print(f"[DEBUG] Chat Gemini retry delay {retry_delay:.0f}s — waiting {wait:.0f}s")
+                if not _sleep_within_budget(wait):
+                    raise ChatDeadlineExceeded(
+                        f"Chat '{operation}' out of budget: the API asked for "
+                        f"a {retry_delay:.0f}s wait."
+                    ) from exc
+                continue
+            raise RuntimeError(
+                f"Chat '{operation}' failed: all Gemini keys exhausted."
+            ) from exc
 
         except RetryableError as exc:
             last_error = exc
@@ -1090,28 +1048,10 @@ def generate_text_with_retry(
     raise last_error or RuntimeError(f"Chat '{operation}' failed unexpectedly")
 
 
-def _try_groq_fallback_text(
-    prompt: str,
-    system_prompt: str | None,
-    operation: str,
-) -> str:
-    """Groq fallback for free-text chat calls (no schema)."""
-    fallback = _init_groq_fallback()
-    if fallback is None:
-        raise RuntimeError(
-            f"All Gemini keys exhausted and Groq fallback is not available "
-            f"(check GROQ_API_KEY in .env). Operation: '{operation}'."
-        )
-    print(f"[DEBUG] Chat falling back to Groq for '{operation}'")
-    _debug_stats["fallbacks"] += 1
-    return fallback.generate_text(prompt=prompt, system_prompt=system_prompt)
-
-
 def reset_provider() -> None:
     global _provider, _original_provider, _daily_gemini_requests, _gemini_rpm_throttles
     _provider = None
     _original_provider = None
-    _groq_throttle.reset()
     for t in _gemini_rpm_throttles:
         t.reset()
     _gemini_rpm_throttles = []

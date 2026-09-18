@@ -270,8 +270,8 @@ class TestDeterministicLadder:
         first = _run(analyzer)
         second = _run(analyzer)
 
-        assert {g.dimension: g.governance_maturity for g in first.governance_gaps} == {
-            g.dimension: g.governance_maturity for g in second.governance_gaps
+        assert {g.dimension: g.implementation_depth for g in first.governance_gaps} == {
+            g.dimension: g.implementation_depth for g in second.governance_gaps
         }
 
     def test_two_runs_produce_identical_risk_levels(self, analyzer):
@@ -291,7 +291,7 @@ class TestDeterministicLadder:
                     {
                         "dimension": g.dimension,
                         "coverage": str(g.coverage),
-                        "maturity": str(g.governance_maturity),
+                        "depth": str(g.implementation_depth),
                         "risk": str(g.risk_level),
                     }
                     for g in sorted(result.governance_gaps, key=lambda g: g.dimension)

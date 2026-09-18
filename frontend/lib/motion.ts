@@ -62,11 +62,6 @@ export const heightTransition = {
   opacity: { duration: DUR.fast, ease: "easeOut" },
 } as const;
 
-/** Press feedback: 150ms scale-down, applied to every clickable surface. */
-export const pressScale = {
-  whileTap: { scale: 0.97 },
-  transition: { duration: DUR.instant, ease: "easeOut" },
-} as const;
 
 /**
  * Verified-badge "snap into place". A light spring is deliberate here — it
@@ -82,13 +77,3 @@ export const verifiedSnap = {
   },
 } as const;
 
-/** Small checkmark pop for selection feedback (pills, chips). */
-export const checkPop = {
-  initial: { scale: 0, opacity: 0 },
-  animate: {
-    scale: 1,
-    opacity: 1,
-    transition: { type: "spring", stiffness: 600, damping: 30 },
-  },
-  exit: { scale: 0, opacity: 0 },
-} as const;

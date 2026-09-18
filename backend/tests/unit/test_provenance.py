@@ -34,25 +34,20 @@ class TestDerivedNotTyped:
 
 
 class TestVerificationIsDescribedHonestly:
-    def test_reports_embedding_when_nli_is_off(self, monkeypatch):
-        monkeypatch.setattr("src.nli_verifier.ENABLE_NLI_VERIFICATION", False)
+    def test_reports_embedding_when_semantic_verification_is_on(self, monkeypatch):
         monkeypatch.setattr("src.verify.SEMANTIC_VERIFICATION", True)
 
         verification = build_provenance()["verification"]
 
         # The README claimed NLI for months while this path did the work.
-        # Provenance repeating that claim would launder it.
+        # Provenance repeating that claim would launder it. The NLI path has
+        # since been removed outright — measured on a live run it rejected 74%
+        # of citations that were verbatim quotes of the chunk they cite.
         assert verification["method"] == "embedding_similarity"
         assert "bge" in verification["model"]
         assert verification["threshold"] > 0
 
-    def test_reports_nli_when_nli_is_on(self, monkeypatch):
-        monkeypatch.setattr("src.nli_verifier.ENABLE_NLI_VERIFICATION", True)
-
-        assert build_provenance()["verification"]["method"] == "nli_cross_encoder"
-
     def test_reports_disabled_when_nothing_verifies(self, monkeypatch):
-        monkeypatch.setattr("src.nli_verifier.ENABLE_NLI_VERIFICATION", False)
         monkeypatch.setattr("src.verify.SEMANTIC_VERIFICATION", False)
 
         assert build_provenance()["verification"]["method"] == "disabled"

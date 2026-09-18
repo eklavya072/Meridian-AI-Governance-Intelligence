@@ -99,13 +99,19 @@ frameworks:
     dimensions:
       - Transparency
 
-  - name: "UNESCO Ethical Impact Assessment"
-    pdf_url: "https://unesdoc.unesco.org/ark:/48223/pf0000386276/PDF/386276eng.pdf.multi"
-    website: "https://unesdoc.unesco.org/ark:/48223/pf0000386276"
-    version: "2023"
-    checksum: null
-    local_path: "backend/data/raw_policies/UNESCO_Ethical_Impact_Assessment.pdf"
-    roles: ["module_2_practical"]
+  # WITHDRAWN 18 Sep 2026 — the file saved under this name was byte-identical
+  # to UNESCO_Recommendation_on_the_Ethics_of_AI.pdf, so this entry indexed the
+  # Recommendation a second time and attributed it to a document it is not.
+  # Every "UNESCO Ethical Impact Assessment" citation therefore pointed at text
+  # that document does not contain. The 42 chunks have been removed from the
+  # store. Restore this entry only with the real EIA from the URL below —
+  # unesdoc serves an HTML wrapper to curl, so it needs a browser fetch.
+  # - name: "UNESCO Ethical Impact Assessment"
+  #   pdf_url: "https://unesdoc.unesco.org/ark:/48223/pf0000386276/PDF/386276eng.pdf.multi"
+  #   website: "https://unesdoc.unesco.org/ark:/48223/pf0000386276"
+  #   version: "2023"
+  #   local_path: null
+  #   roles: ["module_2_practical"]
 
   - name: "OECD Catalogue of Tools and Metrics for Trustworthy AI"
     pdf_url: "https://www.oecd.org/content/dam/oecd/en/publications/reports/2021/06/tools-for-trustworthy-ai_0e36bb08/008232ec-en.pdf"

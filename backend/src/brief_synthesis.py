@@ -104,8 +104,8 @@ def build_dimension_digest(gaps: list[dict[str, Any]]) -> str:
         coverage = g.get("coverage") or "Unknown"
         lines.append(f"- {dim}: Coverage {coverage}")
         m1 = g.get("module_1") or {}
-        if m1.get("governance_maturity"):
-            lines.append(f"  Maturity: {m1['governance_maturity']}")
+        if m1.get("implementation_depth"):
+            lines.append(f"  Implementation depth: {m1['implementation_depth']}")
         m2 = g.get("module_2") or {}
         if m2.get("priority"):
             lines.append(f"  Priority: {m2['priority']}")
@@ -251,7 +251,7 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
     The brief summarised eight dimensions into three strength bullets and
     three attention bullets, so a reader never saw what was actually found for
     any particular dimension. Everything here is already computed and already
-    verified: the coverage tier, the maturity stage, the evidence-derived risk
+    verified: the coverage tier, the depth stage, the evidence-derived risk
     basis, and which of the mechanisms the dimension calls for are absent.
 
     Deterministic by construction — no LLM involvement, so extending the brief
@@ -265,7 +265,7 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
                 {
                     "dimension": g.get("dimension", ""),
                     "coverage": "Not assessed",
-                    "maturity": "",
+                    "depth": "",
                     "basis": "This dimension could not be analysed (provider or quota error). "
                     "It is not a finding about the document.",
                     "absent_mechanisms": [],
@@ -277,7 +277,7 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
             {
                 "dimension": g.get("dimension", ""),
                 "coverage": g.get("coverage", ""),
-                "maturity": g.get("governance_maturity", "") or "",
+                "depth": g.get("implementation_depth", "") or "",
                 # risk_basis states what the document contains and what it lacks;
                 # coverage_reasoning is the fuller narrative and is the fallback.
                 # The trailing "Not addressed: ..." clause is stripped because the
@@ -530,7 +530,7 @@ def generate_brief(
     """Run the ONE synthesis call and assemble the brief.
 
     Routes through the shared provider abstraction (Gemini primary with key
-    rotation + Groq fallback, RPD/RPM throttling) exactly like analysis calls —
+    rotation, RPD/RPM throttling) exactly like analysis calls —
     this call is never a separate, unguarded path.
     """
     provider = get_provider()
@@ -612,8 +612,8 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
         lines.append("## DIMENSION ASSESSMENT")
         for r in rows:
             head = f"### {r['dimension']} — {r['coverage']}"
-            if r.get("maturity"):
-                head += f" · {r['maturity']}"
+            if r.get("depth"):
+                head += f" · {r['depth']}"
             lines.append(head)
             if r.get("basis"):
                 lines.append(r["basis"])

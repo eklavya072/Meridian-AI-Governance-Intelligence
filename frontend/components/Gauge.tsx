@@ -9,7 +9,7 @@
  * full track with the value arc sweeping over it when the gauge scrolls into
  * view, and the centre number counting up with it. The value arc fills only
  * `value`% of the track — a score of 65.6 draws 65.6% of the 260° sweep,
- * not the whole gauge. Strictly monochrome to fit the muted maturity block.
+ * not the whole gauge. Strictly monochrome to fit the muted depth block.
  * Reduced-motion users get the final state instantly, no count-up.
  *
  *   <Gauge

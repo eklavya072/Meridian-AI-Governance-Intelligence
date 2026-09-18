@@ -90,7 +90,7 @@ explicit = true
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = [".venv", "data", "scripts_rebuild_chroma.py", "scripts_resync_frameworks.py"]
+extend-exclude = [".venv", "data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4"]
@@ -125,6 +125,12 @@ ignore = [
 # load_dotenv() call would have them all resolve against an unloaded env.
 # B008 is the FastAPI dependency idiom (File(...), BackgroundTasks()).
 "main.py" = ["E402", "B008"]
+# The recovery scripts set HF_HUB_OFFLINE before importing sentence-transformers,
+# for the same load-bearing reason main.py sets the env before importing src/:
+# the import reads it. They previously sat outside ruff entirely, named
+# scripts_*.py at the backend root and excluded by name; they are now linted
+# like everything else apart from that one ordering.
+"scripts/*.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.13"

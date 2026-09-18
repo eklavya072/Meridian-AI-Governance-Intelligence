@@ -3,7 +3,7 @@
 The chat surfaces could answer questions about AI governance and about the
 frameworks in the knowledge base, but not about the instrument asking the
 questions. "Why eight dimensions?", "what frameworks do you use?", "why is
-your maturity scale five stages?" all landed on retrieval, found nothing —
+your depth scale five stages?" all landed on retrieval, found nothing —
 no document in the corpus describes Meridian — and came back either refusing
 or improvising. A tool that cannot explain its own method is not defensible
 in front of a policy specialist, which is the whole bar this project is held
@@ -25,7 +25,7 @@ from typing import Any
 import structlog
 
 from src.evidence_strength import DIMENSION_MECHANISMS, TIER_LABELS
-from src.gap_analyzer import GOVERNANCE_DIMENSIONS, MATURITY_STAGE_SCORE
+from src.gap_analyzer import DEPTH_STAGE_SCORE, GOVERNANCE_DIMENSIONS
 
 logger = structlog.get_logger()
 
@@ -44,8 +44,8 @@ _METHOD_MARKERS = re.compile(
     r"(why|how|what)\s+(do|does|did|are|is|would)?\s*(you|your|this (tool|system|app|instrument|platform))|"
     r"your (method|methodology|approach|scale|scoring|score|rating|analysis|assessment|framework|criteria|rubric)|"
     # The scoring machinery by name.
-    r"(normative[- ]force|force ladder|binding force|coverage index|maturity index|"
-    r"maturity (stage|scale|level)s?|binding share|force bar|"
+    r"(normative[- ]force|force ladder|binding force|coverage index|maturity index|implementation depth|depth index|"
+    r"depth (stage|scale|level)s?|binding share|force bar|"
     r"aspirational|intentional|assigned|obligatory|enforceable)\b.*\b(mean|means|work|works|why|how|scale|defined?)|"
     # Dimension-count questions.
     r"(why|how many|which)\s+.{0,24}\bdimensions?\b|"
@@ -103,7 +103,7 @@ def _ladder_line() -> str:
 
 
 def _stage_line() -> str:
-    ordered = sorted(MATURITY_STAGE_SCORE.items(), key=lambda kv: kv[1])
+    ordered = sorted(DEPTH_STAGE_SCORE.items(), key=lambda kv: kv[1])
     return ", ".join(
         f"{stage.value if hasattr(stage, 'value') else stage} ({int(score)})"
         for stage, score in ordered
@@ -167,7 +167,7 @@ def build_method_context() -> str:
             "weaker counter beneath it. Pairing a duty with actual enforcement is the "
             "one genuinely independent signal available.",
             "",
-            f"MATURITY STAGES, with the score each is worth: {_stage_line()}. The gaps "
+            f"IMPLEMENTATION DEPTH STAGES, with the score each is worth: {_stage_line()}. The gaps "
             "between stages are not uniform, which is why explicit stage scores replaced "
             "an earlier rank average — treating the distance from Emerging to Delegated "
             "as equal to the distance from Operationalized to Institutionalized "
@@ -175,7 +175,7 @@ def build_method_context() -> str:
             "",
             "TWO AXES, REPORTED SEPARATELY. Coverage index is the share of the "
             f"{mech_total} framework-required mechanisms the document addresses at all "
-            f"({mech_per_dim}). Binding force (the maturity index) is how much duty sits "
+            f"({mech_per_dim}). Binding force (the depth index) is how much duty sits "
             "behind what it addresses. Binding share bridges them: of the mechanisms "
             "present, how many are carried by an actual duty. These are kept apart on "
             "purpose. One number cannot say both 'this document addresses nearly "

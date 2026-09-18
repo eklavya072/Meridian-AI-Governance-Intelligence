@@ -146,7 +146,6 @@ TOKEN_ESTIMATE_CHARS_PER_TOKEN = 4
 TARGET_CHUNK_TOKENS = 700
 MAX_CHUNK_CHARS = TARGET_CHUNK_TOKENS * TOKEN_ESTIMATE_CHARS_PER_TOKEN
 SENTENCE_BOUNDARY_PATTERNS = re.compile(r"(?<=[.!?])\s+")
-OVERLAP_SENTENCES = 2
 
 # ── Non-English chunk filter (reference-framework documents only) ────────
 # Some framework PDFs (e.g. the OECD Catalogue) embed a short translated

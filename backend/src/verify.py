@@ -9,8 +9,6 @@ from typing import Any
 import structlog
 from pydantic import BaseModel
 
-from src.models import VerificationStatus
-from src.nli_verifier import NLIVerifier
 from src.utils import compute_keyword_overlap
 from src.vectorstore import VectorStore
 
@@ -83,7 +81,6 @@ def verify_citation(
     source_framework: str,
     vector_store: VectorStore,
     document_total_pages: int | None = None,
-    nli_verifier: NLIVerifier | None = None,
 ) -> CitationVerificationResult:
     failures: list[str] = []
 
@@ -139,25 +136,7 @@ def verify_citation(
     verification_confidence = 0.0
     verification_reason = ""
 
-    if nli_verifier is not None and nli_verifier.is_available:
-        nli_result = nli_verifier.verify(claim_text, chunk_text, chunk_id)
-        text_supports_claim = nli_result.status in (
-            VerificationStatus.SUPPORTS,
-            VerificationStatus.PARTIALLY_SUPPORTS,
-        )
-        verification_method = f"nli_{nli_result.method}"
-        verification_status = nli_result.status.value
-        verification_confidence = nli_result.confidence
-        verification_reason = nli_result.reason
-        semantic_sim = nli_result.semantic_similarity
-
-        if not text_supports_claim:
-            failures.append(
-                f"NLI verification: {nli_result.status.value} "
-                f"(confidence: {nli_result.confidence:.3f})"
-            )
-
-    elif SEMANTIC_VERIFICATION:
+    if SEMANTIC_VERIFICATION:
         try:
             semantic_sim = _compute_semantic_similarity(claim_text, chunk_text, vector_store)
         except Exception as exc:
@@ -397,7 +376,6 @@ def verify_gap_analysis_citations(
     gap: dict[str, Any],
     vector_store: VectorStore,
     document_total_pages: int | None = None,
-    nli_verifier: NLIVerifier | None = None,
 ) -> list[dict[str, Any]]:
     verified_evidence: list[dict[str, Any]] = []
     for ev in gap.get("evidence", []):
@@ -414,7 +392,6 @@ def verify_gap_analysis_citations(
             source_framework=ev.get("source_framework", ""),
             vector_store=vector_store,
             document_total_pages=document_total_pages,
-            nli_verifier=nli_verifier,
         )
 
         ev_entry = dict(ev)

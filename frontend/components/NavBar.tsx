@@ -50,6 +50,18 @@ export default function NavBar() {
     let lastY = window.scrollY;
     let sinceFlip = 0;
 
+    /* `data-nav-pin` anywhere on the page holds the bar for the WHOLE page,
+       not just the region it sits on. It started as a hero-only hold — the
+       scrub is one continuous gesture and a bar that tucks away three lines
+       in and returns four lines later turns that into a flicker — but the
+       same argument runs the rest of the way down: the landing page is one
+       argument read top to bottom, and losing its navigation halfway through
+       leaves the reader on a page with no way off it.
+
+       Queried live rather than cached, because the element only exists on
+       routes that ask for it and the app's own pages still auto-hide. */
+    const pinned = () => !!document.querySelector("[data-nav-pin]");
+
     const show = () => {
       if (hiddenRef.current) {
         hiddenRef.current = false;
@@ -67,9 +79,9 @@ export default function NavBar() {
       const y = window.scrollY;
       const delta = y - lastY;
       lastY = y;
-      if (y < 96) {
+      if (y < 96 || pinned()) {
         sinceFlip = 0;
-        show(); // pinned at the top of the page
+        show(); // top of the page, or a route that holds the bar throughout
         return;
       }
       if (delta > 0) sinceFlip = Math.max(0, sinceFlip) + delta;
@@ -113,19 +125,21 @@ export default function NavBar() {
       }`}
     >
       {/* The pill carries the brand now that the landing hero does not, so
-          the mark sits beside the wordmark and the whole thing runs a step
-          larger. The base breakpoint stays tight so it never clips on
-          narrow phones. */}
-      <div className="nav-pill pointer-events-auto flex items-center gap-1 sm:gap-2 rounded-full px-5 sm:px-7 py-2.5 sm:py-3.5">
+          the mark sits beside the wordmark. It is deliberately trimmed back
+          from the size it briefly ran at: a floating chrome element earns
+          its place by staying out of the way, and every pixel it takes is
+          taken from the page it sits over. The base breakpoint stays tight
+          so it never clips on narrow phones. */}
+      <div className="nav-pill pointer-events-auto flex items-center gap-1 sm:gap-2 rounded-full px-4 sm:px-6 py-[0.55rem] sm:py-3">
         <a
           href="/"
-          className="flex items-center gap-2 sm:gap-2.5 font-brand text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-white pr-2 sm:pr-3.5"
+          className="flex items-center gap-2 font-brand text-[1.15rem] sm:text-xl font-semibold tracking-tight text-white pr-2 sm:pr-3"
         >
-          <MeridianMark size={26} className="shrink-0 w-[1.35rem] h-[1.35rem] sm:w-7 sm:h-7" />
+          <MeridianMark size={22} className="shrink-0 w-[1.1rem] h-[1.1rem] sm:w-[1.35rem] sm:h-[1.35rem]" />
           Meridian
         </a>
-        <span className="hidden sm:block h-5 sm:h-6 w-px bg-white/15" aria-hidden />
-        <div className="flex items-center gap-3 sm:gap-5 lg:gap-7 text-[16px] font-display font-medium tracking-tight pl-2 sm:pl-3.5">
+        <span className="hidden sm:block h-4 sm:h-5 w-px bg-white/15" aria-hidden />
+        <div className="flex items-center gap-3 sm:gap-[1.15rem] lg:gap-6 text-[15px] font-display font-medium tracking-tight pl-2 sm:pl-3">
           {LINKS.map((link) => {
             const active =
               link.href === "/"
@@ -183,7 +197,7 @@ function NavLink({
       onMouseEnter={trackCursor}
       onMouseMove={trackCursor}
       onMouseLeave={resetOrigin}
-      className={`link-swipe relative py-1 transition-colors hover:text-white ${
+      className={`link-swipe relative py-0.5 transition-colors hover:text-white ${
         active ? "link-swipe-active text-white font-semibold" : "text-white font-medium"
       } ${responsiveClass}`}
     >

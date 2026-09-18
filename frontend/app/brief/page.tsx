@@ -286,7 +286,7 @@ export default function BriefPage() {
                         </span>
                         <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                           {r.coverage}
-                          {r.maturity ? ` · ${r.maturity}` : ""}
+                          {r.depth ? ` · ${r.depth}` : ""}
                         </span>
                       </div>
                       {r.basis && (

@@ -3,3 +3,14 @@ node_modules
 out
 *.log
 .env*
+tsconfig.tsbuildinfo
+
+# ── Hero footage ────────────────────────────────────────────────────────
+# .gitignore already keeps the rejected candidates out of a commit, but
+# .gitignore does not apply to a Docker build context: `COPY . .` was
+# pulling every untracked encode in public/hero/ into the image. Only the
+# graded pair the page actually references ships. Measured: 6.2MB of
+# unreferenced footage per image before this rule.
+public/hero/*
+!public/hero/hero-scrub.mp4
+!public/hero/hero-poster.jpg

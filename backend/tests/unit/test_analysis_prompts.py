@@ -2,13 +2,13 @@ import pytest
 
 from src.analysis_prompts import (
     DIMENSION_DEFINITIONS,
-    INTEGRATED_MATURITY_FRAMEWORK,
+    INTEGRATED_DEPTH_FRAMEWORK,
     MODULE1_2_COMBINED_SYSTEM,
     MODULE3_4_COMBINED_SYSTEM,
     _national_context_block,
+    build_depth_assessment_prompt,
     build_dimension_definition_block,
     build_evidence_interpretation_prompt,
-    build_maturity_assessment_prompt,
     build_module1_2_combined_prompt,
     build_module3_4_combined_prompt,
     build_recommendation_and_final_prompt,
@@ -36,13 +36,13 @@ def make_ei_dict(overrides: dict | None = None) -> dict:
     return base
 
 
-def make_maturity_dict(overrides: dict | None = None) -> dict:
+def make_depth_dict(overrides: dict | None = None) -> dict:
     base = {
         "dimension": "Transparency",
-        "maturity_level": 2,
-        "maturity_label": "Governance Objectives Defined",
+        "depth_level": 2,
+        "depth_label": "Governance Objectives Defined",
         "coverage": "Partial",
-        "maturity_reasoning": "Policy defines transparency objectives but lacks mechanisms",
+        "depth_reasoning": "Policy defines transparency objectives but lacks mechanisms",
         "level_justification": "Section 3 establishes transparency principles",
         "uncertainty_flags": ["Scope of transparency undefined"],
         "false_negative_check": "All checks evaluated: alternative terminology checked, no embedded mechanisms found",
@@ -60,7 +60,7 @@ def make_fs_dict(overrides: dict | None = None) -> dict:
         "existing_mechanisms": ["Disclosure requirements exist"],
         "missing_mechanisms": ["Audit requirements"],
         "framework_specific_requirements": {"UNESCO": ["Explainability"]},
-        "implementation_maturity_comparison": {},
+        "implementation_depth_comparison": {},
         "synthesis": "Policy meets baseline disclosure but lacks audit mechanisms",
     }
     if overrides:
@@ -70,7 +70,7 @@ def make_fs_dict(overrides: dict | None = None) -> dict:
 
 def make_pr_dict(overrides: dict | None = None) -> dict:
     base = {
-        "validated_maturity_level": 2,
+        "validated_depth_level": 2,
         "validated_coverage": "Partial",
         "confidence_in_assessment": "Medium",
     }
@@ -179,9 +179,9 @@ class TestBuildEvidenceInterpretationPrompt:
         assert "Output JSON" in sys_p or "Output valid JSON" in prompt
 
 
-class TestBuildMaturityAssessmentPrompt:
+class TestBuildDepthAssessmentPrompt:
     def test_returns_tuple_of_two_strings(self):
-        sys_p, prompt = build_maturity_assessment_prompt(
+        sys_p, prompt = build_depth_assessment_prompt(
             dimension="Accountability",
             evidence_interpretation=make_ei_dict(),
             dimension_definition=build_dimension_definition_block("Accountability"),
@@ -191,7 +191,7 @@ class TestBuildMaturityAssessmentPrompt:
         assert len(sys_p) > 200
 
     def test_contains_integrated_framework(self):
-        sys_p, prompt = build_maturity_assessment_prompt(
+        sys_p, prompt = build_depth_assessment_prompt(
             dimension="Privacy",
             evidence_interpretation=make_ei_dict(),
             dimension_definition=build_dimension_definition_block("Privacy"),
@@ -205,7 +205,7 @@ class TestBuildMaturityAssessmentPrompt:
 
     def test_evidence_interpretation_data_in_prompt(self):
         ei = make_ei_dict({"interpretation_summary": "custom summary for testing"})
-        sys_p, prompt = build_maturity_assessment_prompt(
+        sys_p, prompt = build_depth_assessment_prompt(
             dimension="Transparency",
             evidence_interpretation=ei,
             dimension_definition=build_dimension_definition_block("Transparency"),
@@ -213,7 +213,7 @@ class TestBuildMaturityAssessmentPrompt:
         assert "custom summary for testing" in prompt
 
     def test_missing_keys_handled_gracefully(self):
-        sys_p, prompt = build_maturity_assessment_prompt(
+        sys_p, prompt = build_depth_assessment_prompt(
             dimension="Human Autonomy",
             evidence_interpretation={},
             dimension_definition=build_dimension_definition_block("Human Autonomy"),
@@ -221,7 +221,7 @@ class TestBuildMaturityAssessmentPrompt:
         assert "None identified" in prompt
 
     def test_maturity_mapping_present(self):
-        sys_p, prompt = build_maturity_assessment_prompt(
+        sys_p, prompt = build_depth_assessment_prompt(
             dimension="Inclusivity",
             evidence_interpretation=make_ei_dict(),
             dimension_definition=build_dimension_definition_block("Inclusivity"),
@@ -230,7 +230,7 @@ class TestBuildMaturityAssessmentPrompt:
         assert "Missing" in sys_p
 
     def test_output_json_instruction(self):
-        sys_p, prompt = build_maturity_assessment_prompt(
+        sys_p, prompt = build_depth_assessment_prompt(
             dimension="Safety",
             evidence_interpretation=make_ei_dict(),
             dimension_definition=build_dimension_definition_block("Safety"),
@@ -238,16 +238,16 @@ class TestBuildMaturityAssessmentPrompt:
         assert "Output JSON" in sys_p or "Output valid JSON" in prompt
 
     def test_maturity_trace_instruction(self):
-        sys_p, prompt = build_maturity_assessment_prompt(
+        sys_p, prompt = build_depth_assessment_prompt(
             dimension="Accountability",
             evidence_interpretation=make_ei_dict(),
             dimension_definition=build_dimension_definition_block("Accountability"),
         )
-        assert "maturity_trace" in sys_p
+        assert "depth_trace" in sys_p
 
     def test_all_dimensions(self):
         for dim in ALL_DIMENSIONS:
-            sys_p, prompt = build_maturity_assessment_prompt(
+            sys_p, prompt = build_depth_assessment_prompt(
                 dimension=dim,
                 evidence_interpretation=make_ei_dict({"dimension": dim}),
                 dimension_definition=build_dimension_definition_block(dim),
@@ -260,7 +260,7 @@ class TestBuildRecommendationAndFinalPrompt:
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Accountability",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=make_maturity_dict(),
+            depth_result=make_depth_dict(),
             framework_synthesis=make_fs_dict(),
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Accountability"),
@@ -273,7 +273,7 @@ class TestBuildRecommendationAndFinalPrompt:
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Privacy",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=make_maturity_dict(),
+            depth_result=make_depth_dict(),
             framework_synthesis=make_fs_dict(),
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Privacy"),
@@ -284,7 +284,7 @@ class TestBuildRecommendationAndFinalPrompt:
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Safety",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=make_maturity_dict(),
+            depth_result=make_depth_dict(),
             framework_synthesis=make_fs_dict(),
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Safety"),
@@ -296,7 +296,7 @@ class TestBuildRecommendationAndFinalPrompt:
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Fairness",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=make_maturity_dict(),
+            depth_result=make_depth_dict(),
             framework_synthesis=fs,
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Fairness"),
@@ -304,11 +304,11 @@ class TestBuildRecommendationAndFinalPrompt:
         assert "Policy meets baseline requirements" in prompt
 
     def test_maturity_data_in_prompt(self):
-        maturity = make_maturity_dict({"maturity_reasoning": "specific reasoning"})
+        depth = make_depth_dict({"depth_reasoning": "specific reasoning"})
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Transparency",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=maturity,
+            depth_result=depth,
             framework_synthesis=make_fs_dict(),
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Transparency"),
@@ -319,7 +319,7 @@ class TestBuildRecommendationAndFinalPrompt:
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Inclusivity",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=make_maturity_dict(),
+            depth_result=make_depth_dict(),
             framework_synthesis=make_fs_dict(),
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Inclusivity"),
@@ -331,7 +331,7 @@ class TestBuildRecommendationAndFinalPrompt:
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Transparency",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=make_maturity_dict(),
+            depth_result=make_depth_dict(),
             framework_synthesis=make_fs_dict(),
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Transparency"),
@@ -342,7 +342,7 @@ class TestBuildRecommendationAndFinalPrompt:
         sys_p, prompt = build_recommendation_and_final_prompt(
             dimension="Transparency",
             evidence_interpretation=make_ei_dict(),
-            maturity_result=make_maturity_dict(),
+            depth_result=make_depth_dict(),
             framework_synthesis=make_fs_dict(),
             plausibility_result=make_pr_dict(),
             dimension_definition=build_dimension_definition_block("Transparency"),
@@ -355,7 +355,7 @@ class TestBuildRecommendationAndFinalPrompt:
             sys_p, prompt = build_recommendation_and_final_prompt(
                 dimension=dim,
                 evidence_interpretation=make_ei_dict({"dimension": dim}),
-                maturity_result=make_maturity_dict({"dimension": dim}),
+                depth_result=make_depth_dict({"dimension": dim}),
                 framework_synthesis=make_fs_dict(),
                 plausibility_result=make_pr_dict(),
                 dimension_definition=build_dimension_definition_block(dim),
@@ -363,37 +363,37 @@ class TestBuildRecommendationAndFinalPrompt:
             assert "smallest realistic improvement" in sys_p
 
 
-class TestIntegratedMaturityFramework:
+class TestIntegratedDepthFramework:
     def test_contains_all_levels(self):
-        assert "Level 0" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "Level 1" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "Level 2" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "Level 3" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "Level 4" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "Level 5" in INTEGRATED_MATURITY_FRAMEWORK
+        assert "Level 0" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "Level 1" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "Level 2" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "Level 3" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "Level 4" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "Level 5" in INTEGRATED_DEPTH_FRAMEWORK
 
     def test_contains_functional_equivalence_checks(self):
-        lower = INTEGRATED_MATURITY_FRAMEWORK.lower()
+        lower = INTEGRATED_DEPTH_FRAMEWORK.lower()
         assert "alternative terminology" in lower
         assert "embedded mechanisms" in lower
         assert "distributed implementation" in lower
 
     def test_contains_coverage_mapping(self):
-        assert "Missing" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "Partial" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "Covered" in INTEGRATED_MATURITY_FRAMEWORK
+        assert "Missing" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "Partial" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "Covered" in INTEGRATED_DEPTH_FRAMEWORK
 
     def test_contains_document_type_guidance(self):
-        assert "strategy" in INTEGRATED_MATURITY_FRAMEWORK
-        assert "legislation" in INTEGRATED_MATURITY_FRAMEWORK
+        assert "strategy" in INTEGRATED_DEPTH_FRAMEWORK
+        assert "legislation" in INTEGRATED_DEPTH_FRAMEWORK
 
     def test_contains_prefer_partial_instruction(self):
-        assert "prefer Partial" in INTEGRATED_MATURITY_FRAMEWORK
+        assert "prefer Partial" in INTEGRATED_DEPTH_FRAMEWORK
 
     def test_contains_all_original_logic(self):
-        assert "cross-cutting" in INTEGRATED_MATURITY_FRAMEWORK.lower()
-        assert "functional equivalence" in INTEGRATED_MATURITY_FRAMEWORK.lower()
-        assert "institutional" in INTEGRATED_MATURITY_FRAMEWORK.lower()
+        assert "cross-cutting" in INTEGRATED_DEPTH_FRAMEWORK.lower()
+        assert "functional equivalence" in INTEGRATED_DEPTH_FRAMEWORK.lower()
+        assert "institutional" in INTEGRATED_DEPTH_FRAMEWORK.lower()
 
 
 class TestModule12CombinedCoveredTierPrompt:
@@ -588,12 +588,12 @@ class TestAllPromptOutputFormats:
         dim = "Transparency"
         dd = build_dimension_definition_block(dim)
         ei = make_ei_dict()
-        ma = make_maturity_dict()
+        ma = make_depth_dict()
         fs = make_fs_dict()
         pr = make_pr_dict()
 
         _, p1 = build_evidence_interpretation_prompt(dim, "text", dd)
-        _, p2 = build_maturity_assessment_prompt(dim, ei, dd)
+        _, p2 = build_depth_assessment_prompt(dim, ei, dd)
         _, p3 = build_recommendation_and_final_prompt(dim, ei, ma, fs, pr, dd)
 
         for i, p in enumerate([p1, p2, p3], 1):
@@ -605,13 +605,13 @@ class TestAllPromptOutputFormats:
         dim = "Accountability"
         dd = build_dimension_definition_block(dim)
         ei = make_ei_dict()
-        ma = make_maturity_dict()
+        ma = make_depth_dict()
         fs = make_fs_dict()
         pr = make_pr_dict()
 
         sps = [
             build_evidence_interpretation_prompt(dim, "text", dd)[0],
-            build_maturity_assessment_prompt(dim, ei, dd)[0],
+            build_depth_assessment_prompt(dim, ei, dd)[0],
             build_recommendation_and_final_prompt(dim, ei, ma, fs, pr, dd)[0],
         ]
         for i, sp in enumerate(sps, 1):

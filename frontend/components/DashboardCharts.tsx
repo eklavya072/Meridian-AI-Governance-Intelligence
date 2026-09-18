@@ -97,12 +97,12 @@ export function CoverageDonut({
 // dot-indicator below, and the caption under that. The arc sweeps in and the
 // number counts up when the chart scrolls into view.
 
-export function MaturityGauge({
+export function DepthGauge({
   analytics,
 }: {
   analytics: DecisionAnalytics;
 }) {
-  const index = Math.max(0, Math.min(100, analytics.maturity_index || 0));
+  const index = Math.max(0, Math.min(100, analytics.implementation_depth_index || 0));
 
   return (
     <div className="flex flex-col items-center">
@@ -120,7 +120,7 @@ export function MaturityGauge({
 }
 
 // Fully greyscale ramp for the stage histogram — dark-grey steps, no
-// semantic color: the maturity block stays strictly monochrome.
+// semantic color: the depth block stays strictly monochrome.
 const GAUGE_COLORS = ["#8A8A8A", "#6E6E6E", "#4A4A4A", "#262626", "#0A0A0A"];
 
 // ── Mini stage histogram (kept from the original card) ─────────────────
@@ -136,7 +136,7 @@ export function StageHistogram({
 }) {
   const counts = STAGE_ORDER.map((stage) => ({
     stage,
-    count: analytics.maturity_distribution?.[stage] || 0,
+    count: analytics.depth_distribution?.[stage] || 0,
   }));
   const max = Math.max(...counts.map((c) => c.count), 1);
 

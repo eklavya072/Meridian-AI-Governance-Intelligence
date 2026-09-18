@@ -75,7 +75,7 @@ class TestHappyPath:
         monkeypatch.setattr(pr, "_daily_gemini_requests", 99)
         provider = FakeGemini()
 
-        with pytest.raises(RuntimeError, match="daily request budget"):
+        with pytest.raises(RuntimeError, match="Self-imposed"):
             _chat(provider)
 
         assert provider.calls == []
@@ -123,6 +123,11 @@ class TestQuotaOnChat:
 
     def test_every_credential_exhausted_raises_a_clear_error(self, monkeypatch):
         monkeypatch.setattr(pr.time, "sleep", lambda *_: None)
+        # "Every credential" means EVERY one. Importing main.py
+        # anywhere in the suite calls load_dotenv(), which puts a real
+        # any key in backend/.env into os.environ for the rest of the
+        # process — so without this the test silently became "Gemini exhausted,
+        # a real provider answered", passed alone and failed in the suite.
         provider = FakeGemini(keys=2, script=[QuotaExceededError("429 quota")] * 10)
 
         with pytest.raises((RuntimeError, pr.ChatDeadlineExceeded)) as exc:

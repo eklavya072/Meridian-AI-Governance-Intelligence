@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class GovernanceMaturityLevel(int, Enum):
+class ImplementationDepthLevel(int, Enum):
     ABSENT = 0
     GENERAL_ACKNOWLEDGEMENT = 1
     GOVERNANCE_OBJECTIVES_DEFINED = 2
@@ -44,8 +44,8 @@ class Priority(str, Enum):
     LOW = "Low"
 
 
-class GovernanceMaturity(str, Enum):
-    """Module 1 governance maturity scale — distinct from Coverage.
+class ImplementationDepth(str, Enum):
+    """Module 1 implementation depth scale — distinct from Coverage.
 
     Five-stage Institutionalization Scale, each stage a strictly stronger,
     unambiguous claim than the last:
@@ -67,7 +67,7 @@ class GovernanceMaturity(str, Enum):
                          monitoring, audit, or redress evidence — are both
                          present.
 
-    Computed deterministically in compute_governance_maturity() from (a)
+    Computed deterministically in compute_implementation_depth() from (a)
     Coverage level and (b) the operational-mechanism/enforcement signals
     found in the SAME evidence that grounds the Coverage verdict (never a
     free LLM judgment call, and never scored from a different evidence pool
@@ -117,8 +117,8 @@ class Module1Evaluation(BaseModel):
     # the explainability layer can show WHY a coverage label was validated.
     principle_acknowledged: bool = True
     operational_mechanisms: list[str] = []
-    governance_maturity: GovernanceMaturity = GovernanceMaturity.UNADDRESSED
-    maturity_reasoning: str = ""
+    implementation_depth: ImplementationDepth = ImplementationDepth.UNADDRESSED
+    depth_reasoning: str = ""
     document_evidence: list[ModuleCitation] = []
     framework_evidence: list[ModuleCitation] = []
 
@@ -191,7 +191,7 @@ class Module3Phase(BaseModel):
     phase: str = ""  # "Phase 1" / "Phase 2"
     timeline: str = ""  # e.g. "0-12 months" — deterministic
     # Deterministic estimate rationale (code-computed, never LLM guesswork):
-    # which signals (coverage tier, existing mechanisms, maturity, agency
+    # which signals (coverage tier, existing mechanisms, depth, agency
     # grounding, scope) produced the range, so the timeline is auditable.
     timeline_reasoning: str = ""
     objective: str = ""  # what this phase accomplishes
@@ -279,12 +279,12 @@ class EvidenceInterpretation(BaseModel):
     interpretation_summary: str = ""
 
 
-class MaturityAssessment(BaseModel):
+class DepthAssessment(BaseModel):
     dimension: str
-    maturity_level: GovernanceMaturityLevel = GovernanceMaturityLevel.ABSENT
-    maturity_label: str = "Absent"
+    depth_level: ImplementationDepthLevel = ImplementationDepthLevel.ABSENT
+    depth_label: str = "Absent"
     coverage: CoverageLevel = CoverageLevel.MISSING
-    maturity_reasoning: str = ""
+    depth_reasoning: str = ""
     level_justification: str = ""
     uncertainty_flags: list[str] = []
     false_negative_check: str = ""
@@ -299,13 +299,13 @@ class FrameworkSynthesisResult(BaseModel):
     missing_mechanisms: list[str] = []
     framework_specific_requirements: dict[str, list[str]] = {}
     synthesis: str = ""
-    implementation_maturity_comparison: dict[str, list[str]] = {}
+    implementation_depth_comparison: dict[str, list[str]] = {}
 
 
 class PlausibilityReview(BaseModel):
     dimension: str
-    original_maturity_level: int = 0
-    validated_maturity_level: int = 0
+    original_depth_level: int = 0
+    validated_depth_level: int = 0
     validated_coverage: CoverageLevel = CoverageLevel.MISSING
     plausibility_checks: list[str] = []
     adjustment_rationale: str = ""
@@ -360,8 +360,8 @@ class GovernanceGap(BaseModel):
     mechanisms_present: dict[str, int] = {}
     mechanisms_absent: list[str] = []
     # ── Module 1 + Module 2 (expanded analysis) ──
-    governance_maturity: GovernanceMaturity = GovernanceMaturity.UNADDRESSED
-    maturity_reasoning: str = ""
+    implementation_depth: ImplementationDepth = ImplementationDepth.UNADDRESSED
+    depth_reasoning: str = ""
     module_1: Module1Evaluation | None = None
     module_2: Module2Recommendation | None = None
     # ── Module 3 (Implementation Roadmap) + Module 4 (Case Intelligence) ──
@@ -420,61 +420,11 @@ class EvidenceItem(BaseModel):
     verification: dict[str, Any] | None = None
 
 
-class AspectGroup(BaseModel):
-    aspect: str
-    evidence: list[EvidenceItem] = []
-    coverage_quality: float = 0.0
-    coverage_estimate: str = "unknown"
-    synthesized_claim: str = ""
-
-
-class EvidenceGraph(BaseModel):
-    dimension: str
-    aspect_groups: list[AspectGroup] = []
-    missing_aspects: list[str] = []
-    evidence_quality_score: float = 0.0
-    quality_factors: dict[str, float] = {}
-    source_diversity_score: float = 0.0
-    coverage_completeness: float = 0.0
-    redundancy_ratio: float = 0.0
-    total_chunks_retrieved: int = 0
-    total_chunks_after_synthesis: int = 0
-
-
 class DimensionProfile(BaseModel):
     dimension: str
     definition: str
     aspects: list[str]
     is_core: bool = False
-
-
-class RetrievalResult(BaseModel):
-    document_chunks: list[dict[str, Any]]
-    framework_chunks: list[dict[str, Any]]
-    retrieval_queries: list[str] = []
-    retrieval_latency: float = 0.0
-    total_candidates: int = 0
-
-
-class VerificationStatus(str, Enum):
-    SUPPORTS = "supports"
-    PARTIALLY_SUPPORTS = "partially_supports"
-    CONTRADICTS = "contradicts"
-    IRRELEVANT = "irrelevant"
-    UNVERIFIED = "unverified"
-
-
-class CitationVerification(BaseModel):
-    claim: str
-    chunk_id: str
-    chunk_text: str
-    status: VerificationStatus = VerificationStatus.UNVERIFIED
-    confidence: float = 0.0
-    reason: str = ""
-    method: str = ""
-    semantic_similarity: float | None = None
-    nli_score: float | None = None
-    keyword_overlap: float | None = None
 
 
 class EvidenceAgreement(str, Enum):
@@ -491,16 +441,6 @@ class EvidencePair(BaseModel):
     agreement: EvidenceAgreement
     score: float
     reason: str = ""
-
-
-class RetrievalStability(BaseModel):
-    dimension: str
-    num_retrievals: int = 3
-    jaccard_similarity: float = 0.0
-    kendall_tau: float = 0.0
-    semantic_stability: float = 0.0
-    score_variance: float = 0.0
-    is_stable: bool = False
 
 
 class CalibratedConfidence(BaseModel):
@@ -531,49 +471,6 @@ class CalibratedConfidence(BaseModel):
         for f in factors:
             product *= f
         return round(product ** (1.0 / len(factors)), 4)
-
-
-class RetrievalMetrics(BaseModel):
-    precision_at_1: float = 0.0
-    precision_at_3: float = 0.0
-    precision_at_5: float = 0.0
-    precision_at_10: float = 0.0
-    recall_at_3: float = 0.0
-    recall_at_5: float = 0.0
-    recall_at_10: float = 0.0
-    mrr: float = 0.0
-    ndcg_at_5: float = 0.0
-    ndcg_at_10: float = 0.0
-    coverage_recall: float = 0.0
-    evidence_diversity: float = 0.0
-    duplicate_rate: float = 0.0
-    avg_retrieval_similarity: float = 0.0
-    framework_retrieval_accuracy: float = 0.0
-    policy_retrieval_accuracy: float = 0.0
-    false_positive_rate: float = 0.0
-    false_negative_rate: float = 0.0
-
-
-class BenchmarkConfig(BaseModel):
-    name: str
-    enabled_features: dict[str, bool] = {}
-    max_candidates: int = 30
-    top_k_after_rerank: int = 10
-    reranker_model: str = "BAAI/bge-reranker-v2-m3"
-    nli_model: str = "cross-encoder/nli-deberta-v3-base"
-
-
-class BenchmarkRun(BaseModel):
-    run_id: str
-    config: BenchmarkConfig
-    per_dimension: dict[str, RetrievalMetrics] = {}
-    aggregate: RetrievalMetrics = RetrievalMetrics()
-    total_latency: float = 0.0
-    memory_mb: float = 0.0
-    rerank_latency: float = 0.0
-    citation_quality: float = 0.0
-    confidence_calibration: float = 0.0
-    duplicate_reduction: float = 0.0
 
 
 class DimensionNode(BaseModel):

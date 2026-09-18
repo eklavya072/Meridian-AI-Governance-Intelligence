@@ -7,10 +7,10 @@ as ad-hoc substring checks, and they disagreed in ways that mattered:
     QuotaExceededError. That is a TERMINAL error — the model name is wrong,
     or the model was retired — but the router treats QuotaExceededError as
     "this key is spent", so it rotated through every configured key, then
-    fell through to the Groq fallback, and reported the whole thing as
+    fell through to a fallback, and reported the whole thing as
     exhausted quota. The operator sees "all keys exhausted" when the actual
     fix is one line in .env. That happened here already: llama-3.3-70b was
-    retired from Groq's catalog and every quota exhaustion fell through to a
+    retired from the catalog and every quota exhaustion fell through to a
     dead fallback.
   - "rate" matched anything containing the substring, including the word
     "accurate" in a model's own error prose.
@@ -33,7 +33,8 @@ from enum import Enum
 class FailureKind(str, Enum):
     """What the caller should do about it."""
 
-    QUOTA = "quota"  # this credential is spent; try another
+    QUOTA = "quota"  # rate-limited right now; try another, this one recovers
+    QUOTA_DAILY = "quota_daily"  # this credential's daily allowance is gone
     RETRYABLE = "retryable"  # transient; back off and retry the same credential
     TERMINAL = "terminal"  # retrying cannot help; surface it
 
@@ -74,6 +75,18 @@ _QUOTA_MARKERS = (
     "rate_limit",
     "ratelimit",
     "too many requests",
+)
+
+# A 429 that names a per-DAY quota is not a rate limit. The credential is done
+# until the provider's quota window rolls over, and rotating to it again only
+# spends attempts. Gemini names the metric it refused on
+# ("GenerateRequestsPerDayPerProjectPerModel-FreeTier").
+_DAILY_QUOTA_MARKERS = (
+    "perday",
+    "per day",
+    "per_day",
+    "daily limit",
+    "daily quota",
 )
 
 _RETRYABLE_MARKERS = (
@@ -151,7 +164,18 @@ def classify(exc: BaseException) -> ProviderFailure:
     # 429 is quota regardless of prose. Checked before the status sets below
     # so a "rate limit" message without a parseable code still lands here.
     if status == 429 or any(m in lowered for m in _QUOTA_MARKERS):
-        return ProviderFailure(FailureKind.QUOTA, "quota or rate limit", status, retry_after)
+        # Which KIND of 429 decides whether the credential recovers in seconds
+        # or is finished for the day, and the two need opposite handling. A
+        # rate limit tells you when to come back; a spent daily allowance does
+        # not, because nothing short of the quota window resetting will help.
+        # Treating them alike is what let five keys report "healthy" while
+        # Google refused every call.
+        daily = any(m in lowered for m in _DAILY_QUOTA_MARKERS) or retry_after is None
+        if daily:
+            return ProviderFailure(
+                FailureKind.QUOTA_DAILY, "daily quota exhausted", status, retry_after
+            )
+        return ProviderFailure(FailureKind.QUOTA, "rate limited", status, retry_after)
 
     if status in _TERMINAL_STATUS:
         return ProviderFailure(

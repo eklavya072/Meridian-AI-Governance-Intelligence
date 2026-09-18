@@ -4,7 +4,7 @@ Integration test: full pipeline end-to-end with a real small test document.
 This test requires:
 - ChromaDB (persistent, local)
 - sentence-transformers (BAAI/bge-small-en-v1.5)
-- A configured LLM provider (Gemini or Groq), or a mock
+- A configured LLM provider (Gemini), or a mock
 """
 
 import os

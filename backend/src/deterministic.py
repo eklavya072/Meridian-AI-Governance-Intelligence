@@ -8,7 +8,7 @@ from typing import Any
 
 from src.models import (
     CoverageLevel,
-    GovernanceMaturity,
+    ImplementationDepth,
 )
 from src.utils import ocr_flexible_fragment
 
@@ -35,22 +35,22 @@ def detect_document_type(chunks_text: list[str]) -> str:
     return "other"
 
 
-# ── Governance Maturity (Module 1) — deterministic rule ────────────────
+# ── Implementation Depth (Module 1) — deterministic rule ────────────────
 #
-# Maturity is a 4-stage Institutionalization Scale (Unaddressed → Emerging →
+# Implementation depth is a 4-stage Institutionalization Scale (Unaddressed → Emerging →
 # Operationalized → Institutionalized) that is deliberately DISTINCT from Coverage —
 # each stage is a strictly stronger, unambiguous claim than the last (see
-# GovernanceMaturity's docstring in models.py). It is computed
+# ImplementationDepth's docstring in models.py). It is computed
 # deterministically from (a) the Coverage level and (b) whether the SAME
 # evidence that grounds the Coverage verdict shows an actual operational
 # mechanism (a named body, a reporting requirement) and/or enforcement
 # evidence (audit, redress, monitoring) versus merely signalling intent.
-# The LLM never freely assigns maturity — the same structural discipline
+# The LLM never freely assigns depth — the same structural discipline
 # already applied to Risk severity.
 #
 # Rule table (documented, reproducible):
 #
-#   Coverage   | Mechanism found | Enforcement found | Maturity
+#   Coverage   | Mechanism found | Enforcement found | Implementation depth
 #   -----------|------------------|--------------------|-------------
 #   Missing    | —                | —                  | Unaddressed
 #   Partial    | No               | —                  | Emerging
@@ -273,30 +273,30 @@ def classify_mechanisms(mechanisms: list[str] | None) -> dict[str, bool]:
     }
 
 
-def compute_governance_maturity(
+def compute_implementation_depth(
     coverage: str,
     principle_acknowledged: bool = True,
     operational_mechanisms: list[str] | None = None,
     evidence_texts: list[str] | None = None,
-) -> tuple[GovernanceMaturity, str]:
-    """Compute the Module 1 governance maturity stage from Coverage + mechanisms.
+) -> tuple[ImplementationDepth, str]:
+    """Compute the Module 1 implementation depth stage from Coverage + mechanisms.
 
     Four levels, each a strictly stronger claim than the last — Unaddressed
-    → Emerging → Operationalized → Institutionalized (see GovernanceMaturity docstring
+    → Emerging → Operationalized → Institutionalized (see ImplementationDepth docstring
     for what each level means).
 
     `operational_mechanisms` is the LLM's own self-reported mechanism list;
     `evidence_texts` (new) is the SAME dimension-grounded, document-sourced
     chunk/sentence text that the coverage ladder (R1/R2) actually used to
     reach its verdict. The two signals are OR-combined before classifying
-    named-body/reporting/enforcement presence, so maturity can never
+    named-body/reporting/enforcement presence, so depth can never
     disagree with the evidence that justified Coverage — the previous
-    version scored maturity from the LLM's self-report alone, which could
+    version scored depth from the LLM's self-report alone, which could
     diverge from what actually fired R1/R2 (e.g. a ladder-raised Covered
     verdict with an empty self-reported mechanism list scored as
     principle-only, when the raising evidence itself named a mechanism).
 
-    Returns (maturity_stage, reasoning) where reasoning documents which rule
+    Returns (depth_stage, reasoning) where reasoning documents which rule
     applied and what evidence it drew on, keeping the decision auditable.
     """
     mechanisms = [m for m in (operational_mechanisms or []) if m and m.strip()]
@@ -317,62 +317,59 @@ def compute_governance_maturity(
 
     if cov == "missing":
         return (
-            GovernanceMaturity.UNADDRESSED,
+            ImplementationDepth.UNADDRESSED,
             "Coverage is Missing — no dimension-relevant mechanism or "
             "explicit commitment survived the deterministic ladder, so the "
-            "dimension is not meaningfully addressed. Maturity is "
+            "dimension is not meaningfully addressed. Implementation depth is "
             "Unaddressed (rule: Missing → Unaddressed only).",
         )
 
     if cov == "partial":
         if mech["has_operational_mechanism"]:
             return (
-                GovernanceMaturity.DEVELOPING,
+                ImplementationDepth.DEVELOPING,
                 "Coverage is Partial and a concrete mechanism is present "
                 f"(named body={mech['has_named_body']}, reporting="
                 f"{mech['has_reporting']}) but without enforcement/redress "
-                "evidence — maturity is Operationalized (rule: Partial + "
+                "evidence — depth is Operationalized (rule: Partial + "
                 "mechanism, no enforcement → Operationalized).",
             )
         return (
-            GovernanceMaturity.EMERGING,
+            ImplementationDepth.EMERGING,
             "Coverage is Partial: dimension-relevant terms and an explicit "
             "commitment/intent are present, but no concrete mechanism "
-            "(named body or documented process) exists yet — maturity is "
+            "(named body or documented process) exists yet — depth is "
             "Emerging (rule: Partial + no mechanism → Emerging).",
         )
 
     # Covered
     if mech["has_operational_mechanism"] and mech["has_enforcement"]:
         return (
-            GovernanceMaturity.ESTABLISHED,
+            ImplementationDepth.ESTABLISHED,
             "Coverage is Covered with a concrete mechanism AND "
-            "enforcement/monitoring/audit/redress evidence — maturity is "
+            "enforcement/monitoring/audit/redress evidence — depth is "
             "Institutionalized (rule: Covered + mechanism + enforcement → "
             "Institutionalized).",
         )
     if mech["has_operational_mechanism"]:
         return (
-            GovernanceMaturity.DEVELOPING,
+            ImplementationDepth.DEVELOPING,
             "Coverage is Covered with a concrete mechanism "
             f"(named body={mech['has_named_body']}, reporting="
             f"{mech['has_reporting']}) but no enforcement/monitoring/redress "
-            "evidence yet — maturity is Operationalized (rule: Covered + "
+            "evidence yet — depth is Operationalized (rule: Covered + "
             "mechanism, no enforcement → Operationalized).",
         )
     return (
-        GovernanceMaturity.EMERGING,
+        ImplementationDepth.EMERGING,
         "Coverage is Covered at principle/intent level only — no named "
         "body, documented process, or enforcement mechanism found in "
         "either the model's self-report or the grounding evidence. "
-        "Maturity is capped at Emerging (rule: Covered without any "
+        "Implementation depth is capped at Emerging (rule: Covered without any "
         "mechanism evidence cannot exceed Emerging — a bare Covered label "
         "is not, by itself, proof of an operational mechanism).",
     )
 
-
-MATURITY_LEVEL_MIN = 0
-MATURITY_LEVEL_MAX = 5
 
 LEVEL_TO_COVERAGE = {
     0: "Missing",
@@ -911,6 +908,18 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         # not addressed". A mechanism the table expects must have vocabulary
         # the gate admits.
         "accountab",
+        # KNOWN OVERLAP, KEPT DELIBERATELY. "liable", "sanction", "penalt"
+        # and "fine" are also the words CONSEQUENCE_RE reads to decide a
+        # provision is Enforceable, so a penalty sentence enters this
+        # dimension and earns its tier on one signal. Six of seven
+        # jurisdictions therefore return Institutionalized here, the least
+        # discriminating cell in the set. Removing them was tried and
+        # measured: it costs Kenya its Accountability verdict, because
+        # Kenya's accountability regime IS its penalty regime (AI Bill 2026,
+        # KES 5m and two years), and the binding-force correlation fell from
+        # +0.70 to +0.40. The overlap is a real methodological caveat and
+        # belongs in the write-up; removing the vocabulary removes the
+        # finding with it.
         "liabilit",
         "liable",
         "redress",
@@ -993,6 +1002,16 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         # below, so nothing is lost by anchoring the compound instead.
         "inclusiv",
         "inclusion",
+        # The disability sense is carried by compounds, never by bare
+        # "accessib". The EU AI Act's own accessibility duty — "providers
+        # ensure full compliance with accessibility requirements, including
+        # Directive (EU) 2016/2102 and Directive (EU) 2019/882" — names the
+        # two accessibility directives and was the only binding inclusivity
+        # provision in the Act, so excluding the compound along with the bare
+        # stem cost the cell its entire evidence base.
+        "accessibility requirement",
+        "accessibility standard",
+        "accessibility need",
         "accessibility for persons with disabilities",
         "digital accessibility",
         "accessible design",
@@ -1039,7 +1058,14 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         "environmentally sustainable",
         "environmental sustainability",
         "sustainable development",
-        "ecological",
+        # Bare "ecological" is deliberately NOT listed. In Chinese internet
+        # regulation 生态 is rendered "ecological" and means the CONTENT
+        # ecosystem: "strengthen the ecological management of algorithm
+        # recommendation service pages" is a content-moderation duty, and it
+        # was the single binding environmental provision Meridian found in the
+        # whole Chinese corpus. The genuine senses are anchored below.
+        "ecological footprint",
+        "ecological impact",
         "natural ecosystem",
         "ecosystems and biodiversity",
         "biodiversity",
@@ -1198,7 +1224,7 @@ def detect_explicit_commitment(
     on ANY of:
       (a) a non-empty operational-mechanism report (named body / reporting /
           enforcement-redress, classified with the same keyword sets used by
-          governance maturity), or
+          implementation depth), or
       (b) a STRONG commitment phrase in a dimension-relevant document chunk
           (programme, initiative, task force, "will establish", ...), or
       (c) an explicit commitment verb in a dimension-relevant chunk
@@ -1306,7 +1332,7 @@ def detect_implementation_commitment(
     Three independent signals, any of which suffices:
       (a) the model's own operational-mechanism report shows a NAMED BODY
           co-occurring with a reporting/enforcement mechanism (classified
-          with the same keyword sets used by governance maturity) — the
+          with the same keyword sets used by implementation depth) — the
           same co-occurrence standard as path (b). A single keyword alone
           (a lone reporting keyword like "disclosure", or a bare
           "penalties") is NOT enough, and neither is a bare named body
@@ -1579,7 +1605,7 @@ class FrameworkMatchResult:
         existing_mechanisms: list[str],
         missing_mechanisms: list[str],
         framework_specific_requirements: dict[str, list[str]],
-        implementation_maturity_comparison: dict[str, list[str]],
+        implementation_depth_comparison: dict[str, list[str]],
         synthesis: str,
     ):
         self.universal_requirements = universal_requirements
@@ -1588,7 +1614,7 @@ class FrameworkMatchResult:
         self.existing_mechanisms = existing_mechanisms
         self.missing_mechanisms = missing_mechanisms
         self.framework_specific_requirements = framework_specific_requirements
-        self.implementation_maturity_comparison = implementation_maturity_comparison
+        self.implementation_depth_comparison = implementation_depth_comparison
         self.synthesis = synthesis
 
     def to_dict(self) -> dict[str, Any]:
@@ -1599,7 +1625,7 @@ class FrameworkMatchResult:
             "existing_mechanisms": self.existing_mechanisms,
             "missing_mechanisms": self.missing_mechanisms,
             "framework_specific_requirements": self.framework_specific_requirements,
-            "implementation_maturity_comparison": self.implementation_maturity_comparison,
+            "implementation_depth_comparison": self.implementation_depth_comparison,
             "synthesis": self.synthesis,
         }
 
@@ -1730,7 +1756,7 @@ class DeterministicFrameworkMatcher:
             existing_mechanisms=all_implemented + all_beyond,
             missing_mechanisms=all_missing,
             framework_specific_requirements=fw_specific,
-            implementation_maturity_comparison={
+            implementation_depth_comparison={
                 "Already implemented": all_implemented,
                 "Partially implemented": all_partial,
                 "Missing implementation": all_missing,
@@ -1858,7 +1884,7 @@ class DeterministicFrameworkMatcher:
             existing_mechanisms=[],
             missing_mechanisms=[],
             framework_specific_requirements={},
-            implementation_maturity_comparison={
+            implementation_depth_comparison={
                 "Already implemented": [],
                 "Partially implemented": [],
                 "Missing implementation": [],
@@ -1872,45 +1898,45 @@ class DeterministicFrameworkMatcher:
 class PlausibilityResult:
     def __init__(
         self,
-        validated_maturity_level: int,
+        validated_depth_level: int,
         validated_coverage: str,
         plausibility_checks: list[str],
         adjustment_rationale: str,
         confidence_in_assessment: str,
         uncertainty_acknowledged: list[str],
-        maturity_trace: str,
+        depth_trace: str,
     ):
-        self.validated_maturity_level = validated_maturity_level
+        self.validated_depth_level = validated_depth_level
         self.validated_coverage = validated_coverage
         self.plausibility_checks = plausibility_checks
         self.adjustment_rationale = adjustment_rationale
         self.confidence_in_assessment = confidence_in_assessment
         self.uncertainty_acknowledged = uncertainty_acknowledged
-        self.maturity_trace = maturity_trace
+        self.depth_trace = depth_trace
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "validated_maturity_level": self.validated_maturity_level,
+            "validated_depth_level": self.validated_depth_level,
             "validated_coverage": self.validated_coverage,
             "plausibility_checks": self.plausibility_checks,
             "adjustment_rationale": self.adjustment_rationale,
             "confidence_in_assessment": self.confidence_in_assessment,
             "uncertainty_acknowledged": self.uncertainty_acknowledged,
-            "maturity_trace": self.maturity_trace,
+            "depth_trace": self.depth_trace,
         }
 
 
 class DeterministicPlausibilityValidator:
     """Replace Stage 4 (Plausibility Validation) with deterministic rules.
 
-    Applies 7 rule-based checks that can modify or validate the maturity
+    Applies 7 rule-based checks that can modify or validate the depth
     result. Rules are explainable and reproducible.
     """
 
     def validate(
         self,
         dimension: str,
-        maturity_level: int,
+        depth_level: int,
         coverage: str,
         evidence_strength: str,
         document_type: str,
@@ -1924,7 +1950,7 @@ class DeterministicPlausibilityValidator:
         missing_aspects: list[str],
         framework_synthesis: dict[str, Any] | None = None,
     ) -> PlausibilityResult:
-        level = maturity_level
+        level = depth_level
         cov = coverage
         checks: list[str] = []
         adjustments: list[str] = []
@@ -2054,7 +2080,7 @@ class DeterministicPlausibilityValidator:
         trace = self._build_trace(
             dimension=dimension,
             document_type=document_type,
-            original_level=maturity_level,
+            original_level=depth_level,
             original_coverage=coverage,
             validated_level=level,
             validated_coverage=cov,
@@ -2065,13 +2091,13 @@ class DeterministicPlausibilityValidator:
         rationale = "; ".join(adjustments) if adjustments else "No adjustment needed"
 
         return PlausibilityResult(
-            validated_maturity_level=level,
+            validated_depth_level=level,
             validated_coverage=cov,
             plausibility_checks=checks,
             adjustment_rationale=rationale,
             confidence_in_assessment=confidence,
             uncertainty_acknowledged=uncertainty,
-            maturity_trace=trace,
+            depth_trace=trace,
         )
 
     def _calibrate_confidence(
@@ -2151,26 +2177,3 @@ class DeterministicPlausibilityValidator:
 
         return "\n".join(trace_lines)
 
-
-def assemble_framework_context(
-    framework_chunks: list[dict[str, Any]],
-) -> str:
-    """Build a summary of framework requirements from retrieved chunks."""
-    fw_map: dict[str, list[str]] = {}
-    for chunk in framework_chunks:
-        fw = chunk.get("source_framework", "framework")
-        text = chunk.get("text", "")[:600]
-        if fw not in fw_map:
-            fw_map[fw] = []
-        fw_map[fw].append(text)
-
-    parts: list[str] = []
-    for fw, texts in fw_map.items():
-        combined = "\n".join(texts[:3])[:2000]
-        parts.append(f"[Framework: {fw}]\n{combined}")
-
-    return (
-        "\n\n---\n\n".join(parts)
-        if parts
-        else "No framework requirements retrieved for this dimension."
-    )

@@ -1,6 +1,6 @@
 """Context builders and the routing that decides which context a question gets.
 
-CLAUDE.md records that routing was the part that was wrong, not the model:
+docs/ENGINEERING-NOTES.md records that routing was the part that was wrong, not the model:
 "why eight dimensions?" had nothing to retrieve because no document in the
 corpus describes Meridian, and the Rapporteur was answering cross-dimension
 questions without ever receiving the decision analytics.
@@ -31,7 +31,7 @@ class TestMethodQuestions:
         "message",
         [
             "why eight dimensions and not more?",
-            "how does the maturity score work?",
+            "how does the depth score work?",
             "how do you score a document?",
         ],
     )
@@ -110,13 +110,13 @@ class TestAnalysisOverviewContext:
                 "Transparency": {
                     "dimension": "Transparency",
                     "coverage": "Covered",
-                    "governance_maturity": "Operationalized",
+                    "implementation_depth": "Operationalized",
                     "risk_level": "Low",
                 },
                 "Fairness": {
                     "dimension": "Fairness",
                     "coverage": "Partial",
-                    "governance_maturity": "Emerging",
+                    "implementation_depth": "Emerging",
                     "risk_level": "Medium",
                 },
             },

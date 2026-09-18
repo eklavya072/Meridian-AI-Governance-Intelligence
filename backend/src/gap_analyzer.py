@@ -26,7 +26,7 @@ from src.deterministic import (
     _has_keyword,
     _sentence_has_core_term,
     _split_sentences,
-    compute_governance_maturity,
+    compute_implementation_depth,
     is_low_information_fragment,
     plain_language_ladder_note,
     text_contains_mechanism,
@@ -38,19 +38,24 @@ from src.deterministic import (
 from src.evidence_agreement import analyze_evidence_agreement, compute_evidence_agreement_score
 from src.evidence_strength import (
     TIER_OBLIGATORY,
-    build_profile,
     coverage_from_profile,
+    depth_from_profile,
     describe_risk_basis,
-    detect_enforcement_regime,
     detect_mechanisms,
     detect_nonbinding_document,
-    maturity_from_profile,
 )
 from src.framework_router import (
     resolve_dimension_frameworks,
     resolve_frameworks,
     resolve_regional_frameworks,
 )
+from src.grading import (
+    SOURCE_UNENFORCED,
+    SOURCE_VOLUNTARY,
+    apply_mechanism_gate,
+    sentence_function,
+)
+from src.grading import build_provision_profile as build_provision_profile
 from src.llm_provider import LLMProvider
 from src.models import (
     BestPractices,
@@ -58,7 +63,7 @@ from src.models import (
     CoverageLevel,
     EvidenceItem,
     GovernanceGap,
-    GovernanceMaturity,
+    ImplementationDepth,
     IncidentMatch,
     InternationalExample,
     Module1Evaluation,
@@ -71,7 +76,6 @@ from src.models import (
     RetrievedEvidence,
     RiskLevel,
 )
-from src.nli_verifier import NLIVerifier
 from src.provider_router import generate_with_retry, get_provider, print_debug_summary
 from src.retrieval import Module34RetrievalResult, ModuleRetrievalResult, RetrievalPipeline
 from src.utils import strip_chunk_id_citations
@@ -532,8 +536,6 @@ GOVERNANCE_DIMENSIONS = [
     "Environmental Sustainability",
 ]
 
-FALLBACK_TOP_K = int(os.getenv("FALLBACK_RETRIEVAL_TOP_K", "3"))
-PRIMARY_TOP_K = int(os.getenv("PRIMARY_RETRIEVAL_TOP_K", "5"))
 
 CORE_DIMENSIONS = {"Transparency", "Accountability", "Privacy", "Safety"}
 
@@ -600,29 +602,28 @@ class GapAnalysisResult(BaseModel):
     # reporting the token reduction of the Fully Covered tier.
     tier_stats: dict[str, dict[str, Any]] | None = None
     # Executive decision analytics for the whole analysis — powers the summary
-    # card, future dashboard visualisations (pie charts, maturity gauges,
+    # card, future dashboard visualisations (pie charts, depth gauges,
     # country comparisons) and the research paper's evaluation section.
     decision_analytics: dict[str, Any] | None = None
 
 
-# Ordinal ordering of GovernanceMaturity stages (low → high). Used ONLY for
-# ordering, comparisons, and the weakest-dimension staged-maturity rule —
+# Ordinal ordering of ImplementationDepth stages (low → high). Used ONLY for
+# ordering, comparisons, and the weakest-dimension staged-depth rule —
 # never averaged (stages are ordinal categories; a mean of ranks rounded to a
 # label is statistically invalid).
-MATURITY_RANK = {
-    GovernanceMaturity.UNADDRESSED: 0,
-    GovernanceMaturity.EMERGING: 1,
-    GovernanceMaturity.DELEGATED: 2,
-    GovernanceMaturity.DEVELOPING: 3,
-    GovernanceMaturity.ESTABLISHED: 4,
+DEPTH_RANK = {
+    ImplementationDepth.UNADDRESSED: 0,
+    ImplementationDepth.EMERGING: 1,
+    ImplementationDepth.DELEGATED: 2,
+    ImplementationDepth.DEVELOPING: 3,
+    ImplementationDepth.ESTABLISHED: 4,
 }
 
-MAX_MATURITY_RANK = max(MATURITY_RANK.values())
 
 # Score contributed by each stage to the 0-100 composite index.
 #
 # The index used to be `100 * sum(ranks) / (3 * n)` — a linear average of the
-# ordinal ranks above, which the comment on MATURITY_RANK explicitly forbids
+# ordinal ranks above, which the comment on DEPTH_RANK explicitly forbids
 # ("never averaged ... a mean of ranks is statistically invalid"). The code
 # did exactly what its own comment ruled out, and the consequence is not
 # pedantic: a linear mapping asserts that the step from Unaddressed to
@@ -660,16 +661,46 @@ MAX_MATURITY_RANK = max(MATURITY_RANK.values())
 # ceiling is untouched — the T3/T4 force bar is not moved, so a document that
 # binds nobody still cannot reach Operationalized, and India's Fairness stays
 # at 50 because it genuinely has no duty and no owner.
-MATURITY_STAGE_SCORE = {
-    GovernanceMaturity.UNADDRESSED: 0.0,
-    GovernanceMaturity.EMERGING: 50.0,
-    GovernanceMaturity.DELEGATED: 65.0,
-    GovernanceMaturity.DEVELOPING: 78.0,
-    GovernanceMaturity.ESTABLISHED: 100.0,
+DEPTH_STAGE_SCORE = {
+    ImplementationDepth.UNADDRESSED: 0.0,
+    ImplementationDepth.EMERGING: 50.0,
+    ImplementationDepth.DELEGATED: 65.0,
+    ImplementationDepth.DEVELOPING: 78.0,
+    ImplementationDepth.ESTABLISHED: 100.0,
 }
 
+
+# ── Implementation depth: stage, modulated by how much of the dimension it
+#    actually reaches ───────────────────────────────────────────────────────
+#
+# The stage above answers "how far has the STRONGEST thread of this dimension
+# been built out". That is not the same question as "how deeply is this
+# dimension implemented", and the index was reporting the first under the name
+# of the second.
+#
+# The gap is visible in the stored corpus rather than hypothetical. Japan's
+# Privacy scored Operationalized — 78 of 100 — while providing ONE of the seven
+# privacy mechanisms the reference frameworks expect. Kenya's Fairness likewise:
+# Operationalized on 1 of 5. Six of seven mechanisms entirely absent is not 78%
+# of an implemented dimension by any reading, and no averaging over dimensions
+# fixes it, because the error is inside the per-dimension number.
+#
+# So depth = stage_score * (FLOOR + (1 - FLOOR) * breadth), where breadth is the
+# share of the dimension's mechanisms the document addresses at all.
+#
+# Why a FLOOR rather than plain multiplication. Straight stage*breadth pays
+# Japan's Privacy 78 * 1/7 = 11.1, which asserts that a binding,
+# enforcement-backed privacy duty is worth almost nothing because it stands
+# alone. It is narrow, not absent, and the evidence for the stage is real.
+#
+# Why 0.5 specifically, and why this is not a fitted constant. Two things are
+# being combined: that the stage was genuinely reached (evidenced by binding
+# duties, an owner, machinery) and how much of the dimension that reaches.
+# Absent any evidence for preferring one over the other, equal weight is the
+# neutral split. 0.5 is that split, chosen before looking at what it does to
+# any country's score, and deliberately NOT tuned afterwards — tuning it
 # Reverse map: rank → stage label, for weakest-dimension staging.
-RANK_TO_LABEL = {rank: stage.value for stage, rank in MATURITY_RANK.items()}
+RANK_TO_LABEL = {rank: stage.value for stage, rank in DEPTH_RANK.items()}
 
 # Priority rank (high → low) for sorting "most urgent first".
 PRIORITY_RANK = {
@@ -702,28 +733,28 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     )
     failed = sum(1 for g in gaps if g.analysis_error)
 
-    # ── Governance maturity index ─────────────────────────────────────────
+    # ── Governance depth index ─────────────────────────────────────────
     # A continuous 0-100 composite so the gradient between stages is visible
     # for dashboards. Mean of explicit stage SCORES, not of ordinal ranks —
-    # see MATURITY_STAGE_SCORE for why the linear rank average was wrong.
+    # see DEPTH_STAGE_SCORE for why the linear rank average was wrong.
     #
     # A single weakest-dimension LABEL used to be reported alongside this
     # (an overall stage only claimable when every dimension reached it). It
     # was never surfaced anywhere in the frontend and duplicated what the
     # stage histogram already shows per-dimension, so it was dropped rather
     # than carried as dead weight.
-    assessed_ranks = [MATURITY_RANK.get(g.governance_maturity, 0) for g in assessed]
+    assessed_ranks = [DEPTH_RANK.get(g.implementation_depth, 0) for g in assessed]
     if assessed_ranks:
-        stage_scores = [MATURITY_STAGE_SCORE.get(g.governance_maturity, 0.0) for g in assessed]
-        maturity_index = round(sum(stage_scores) / len(stage_scores), 1)
+        stage_scores = [DEPTH_STAGE_SCORE.get(g.implementation_depth, 0.0) for g in assessed]
+        implementation_depth_index = round(sum(stage_scores) / len(stage_scores), 1)
         # Full stage histogram (pie/histogram-ready).
-        maturity_distribution = {
+        depth_distribution = {
             label: sum(1 for r in assessed_ranks if r == rank)
             for rank, label in RANK_TO_LABEL.items()
         }
     else:
-        maturity_index = 0.0
-        maturity_distribution = dict.fromkeys(RANK_TO_LABEL.values(), 0)
+        implementation_depth_index = 0.0
+        depth_distribution = dict.fromkeys(RANK_TO_LABEL.values(), 0)
 
     # ── Coverage breadth: the SECOND axis ────────────────────────────────
     # How much of what each dimension needs the document addresses AT ALL,
@@ -759,12 +790,12 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
     high_priority.sort(key=lambda g: PRIORITY_RANK.get(g.module_2.priority, 9))
     highest_priority_dimensions = [g.dimension for g in high_priority]
 
-    # ── Strongest dimension (highest maturity, confidence tie-break) ──
+    # ── Strongest dimension (highest depth, confidence tie-break) ──
     strongest_dimension = ""
     if assessed:
         strongest = max(
             assessed,
-            key=lambda g: (MATURITY_RANK.get(g.governance_maturity, 0), g.confidence_score),
+            key=lambda g: (DEPTH_RANK.get(g.implementation_depth, 0), g.confidence_score),
         )
         strongest_dimension = strongest.dimension
 
@@ -798,8 +829,8 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
         "mechanisms_total": mech_total,
         "mechanisms_binding": mech_binding,
         "binding_share": binding_share,
-        "maturity_index": maturity_index,
-        "maturity_distribution": maturity_distribution,
+        "implementation_depth_index": implementation_depth_index,
+        "depth_distribution": depth_distribution,
         "assessed_dimensions": len(assessed),
         "average_confidence": avg_confidence,
         "highest_priority_dimensions": highest_priority_dimensions,
@@ -1072,21 +1103,21 @@ def resolve_priority(
 #   - coverage tier: Missing builds from scratch (longer); Partial extends an
 #     existing mechanism (shorter).
 #   - existing operational mechanisms in the document shorten the runway.
-#   - governance maturity: Unaddressed / Emerging lengthen ramp-up;
+#   - implementation depth: Unaddressed / Emerging lengthen ramp-up;
 #     Operationalized / Institutionalized shorten it.
 #   - responsible-agency grounding: no named body means designation time;
 #     a document-named owner shortens it.
 #   - phase scope (step count) widens/narrows the range.
 # Phase 2 chains after Phase 1 (sequential, not overlapping).
 
-MATURITY_SLOW = {GovernanceMaturity.UNADDRESSED, GovernanceMaturity.EMERGING}
-MATURITY_FAST = {GovernanceMaturity.DEVELOPING, GovernanceMaturity.ESTABLISHED}
+DEPTH_SLOW = {ImplementationDepth.UNADDRESSED, ImplementationDepth.EMERGING}
+DEPTH_FAST = {ImplementationDepth.DEVELOPING, ImplementationDepth.ESTABLISHED}
 
 
 def estimate_phase_timelines(
     coverage: CoverageLevel,
     operational_mechanisms: list[str],
-    maturity: GovernanceMaturity | None,
+    depth: ImplementationDepth | None,
     agency_grounding: str,
     step_counts: list[int],
 ) -> list[dict[str, str]]:
@@ -1105,12 +1136,12 @@ def estimate_phase_timelines(
     def _adjust(steps: int, apply_agency: bool) -> tuple[int, list[str]]:
         adj = 0
         reasons: list[str] = []
-        if maturity in MATURITY_SLOW:
+        if depth in DEPTH_SLOW:
             adj += 3
-            reasons.append(f"low maturity ({maturity.value}) lengthens ramp-up")
-        elif maturity in MATURITY_FAST:
+            reasons.append(f"low depth ({depth.value}) lengthens ramp-up")
+        elif depth in DEPTH_FAST:
             adj -= 2
-            reasons.append(f"high maturity ({maturity.value}) shortens the runway")
+            reasons.append(f"high depth ({depth.value}) shortens the runway")
         if operational_mechanisms:
             adj -= 2
             reasons.append(
@@ -1213,11 +1244,8 @@ class GapAnalyzer:
         self.vector_store = vector_store
         self.provider = provider or get_provider()
 
-        embed_fn = vector_store.embedding_service.embed_query
-
         self.retrieval_pipeline = RetrievalPipeline(vector_store)
         self.consistency_validator = ConsistencyValidator()
-        self.nli_verifier = NLIVerifier(embed_function=embed_fn)
 
     # ── Combined Module 1 + Module 2 LLM schema ─────────────────────────
 
@@ -1463,7 +1491,6 @@ class GapAnalyzer:
                 source_framework=source,
                 vector_store=self.vector_store,
                 document_total_pages=document_total_pages,
-                nli_verifier=self.nli_verifier if self.nli_verifier.is_available else None,
             )
             verified_list.append(
                 ModuleCitation(
@@ -2106,36 +2133,197 @@ class GapAnalyzer:
 
         return match
 
-    def _document_enforcement_regime(self, workspace_id: str) -> bool:
-        """Does this document establish supervisory or penalty machinery?
 
-        A document-level property, so it is computed once per workspace and
-        cached for the run — all eight dimensions ask the same question about
-        the same document, and the sweep classifies whole-document text.
+    def _dimension_enforcement_backing(
+        self,
+        scoring_pool: list[dict[str, Any]],
+        dimension: str,
+        workspace_id: str,
+        country: str,
+    ) -> bool:
+        """v2: can THIS dimension claim the instrument's enforcement machinery?
+
+        Only when a document that has its own enforcement regime also supplies
+        at least one binding sentence to this dimension. v1 asked whether ANY
+        document in the workspace had a regime, which let Japan's 2003 privacy
+        statute back Transparency and Fairness.
         """
-        if not workspace_id:
+        from src.grading import dimension_enforcement_backing
+
+        regimes = self._document_regimes(workspace_id)
+        if not regimes:
             return False
-        cache = getattr(self, "_enforcement_regime_cache", None)
-        if cache is None:
-            cache = {}
-            self._enforcement_regime_cache = cache
-        if workspace_id in cache:
-            return cache[workspace_id]
-        result = False
+        by_doc: dict[str, list[str]] = {}
+        for chunk in scoring_pool:
+            if not isinstance(chunk, dict):
+                continue
+            md = chunk.get("metadata") or {}
+            doc = md.get("document_name") or chunk.get("document_name") or "?"
+            for sent in _split_sentences(chunk.get("text") or ""):
+                sent = " ".join(sent.split())
+                if 40 <= len(sent) <= 600 and _sentence_has_core_term(sent, dimension):
+                    by_doc.setdefault(doc, []).append(sent)
+        return dimension_enforcement_backing(by_doc, regimes, dimension, country)
+
+    def _workspace_documents(self, workspace_id: str) -> dict[str, list[str]]:
+        """Every chunk in the workspace, grouped by the document it came from."""
+        by_doc: dict[str, list[str]] = {}
         try:
             pipeline = getattr(self, "retrieval_pipeline", None)
-            if pipeline is not None:
-                texts = [t for _cid, t in pipeline._workspace_chunk_texts(workspace_id)]
-                result = detect_enforcement_regime(texts)
+            store = getattr(pipeline, "vectorstore", None) if pipeline else None
+            if store is None:
+                return by_doc
+            raw = store.collection.get(
+                where={"workspace_id": workspace_id},
+                include=["documents", "metadatas"],
+            )
+            for text, md in zip(raw.get("documents") or [], raw.get("metadatas") or []):
+                name = (md or {}).get("document_name") or "?"
+                by_doc.setdefault(name, []).append(text or "")
         except Exception as exc:
             logger.warning(
-                "enforcement_regime_detection_failed",
-                workspace_id=workspace_id,
-                error=str(exc),
+                "workspace_documents_failed", workspace_id=workspace_id, error=str(exc)
             )
-        cache[workspace_id] = result
-        logger.info("document_enforcement_regime", workspace_id=workspace_id, present=result)
-        return result
+        return by_doc
+
+    def _document_regimes(self, workspace_id: str) -> set[str]:
+        """Names of workspace documents that establish enforcement machinery."""
+        from src.grading import detect_enforcement_regime
+
+        cache = getattr(self, "_doc_regime_cache", None)
+        if cache is None:
+            cache = {}
+            self._doc_regime_cache = cache
+        if workspace_id in cache:
+            return cache[workspace_id]
+        found = {
+            name
+            for name, texts in self._workspace_documents(workspace_id).items()
+            if detect_enforcement_regime(texts)
+        }
+        cache[workspace_id] = found
+        logger.info("document_regimes", workspace_id=workspace_id, documents=sorted(found))
+        return found
+
+    def _voluntary_documents(self, workspace_id: str) -> set[str]:
+        """Names of workspace documents that declare themselves non-binding.
+
+        Asked of each document whole rather than of a dimension's retrieval
+        pool. The pool mixes documents, so a workspace holding both a statute
+        and a set of guidelines got one answer for both — and got it per
+        dimension, so the same document could be voluntary for Safety and
+        binding for Privacy.
+        """
+        cache = getattr(self, "_doc_voluntary_cache", None)
+        if cache is None:
+            cache = {}
+            self._doc_voluntary_cache = cache
+        if workspace_id in cache:
+            return cache[workspace_id]
+        found = {
+            name
+            for name, texts in self._workspace_documents(workspace_id).items()
+            if detect_nonbinding_document(texts)
+        }
+        cache[workspace_id] = found
+        logger.info(
+            "voluntary_documents", workspace_id=workspace_id, documents=sorted(found)
+        )
+        return found
+
+    def _scoring_pools(self, workspace_id: str) -> dict[str, list[dict[str, Any]]]:
+        """The ranked scoring pool for each dimension, retrieved once.
+
+        The verdict path needs a pool twice — once for the rank the structural
+        admission depends on, once for the enforcement backing — and the two
+        must be the same pool, so it is fetched here and read from the cache.
+        """
+        cache = getattr(self, "_scoring_pool_cache", None)
+        if cache is None:
+            cache = {}
+            self._scoring_pool_cache = cache
+        if workspace_id in cache:
+            return cache[workspace_id]
+        pools: dict[str, list[dict[str, Any]]] = {}
+        for dimension in GOVERNANCE_DIMENSIONS:
+            try:
+                pools[dimension] = self.retrieval_pipeline.retrieve_scoring_pool(
+                    dimension=dimension, workspace_id=workspace_id
+                )
+            except Exception as exc:
+                logger.warning(
+                    "dimension_scoring_pool_failed", dimension=dimension, error=str(exc)
+                )
+                pools[dimension] = []
+        cache[workspace_id] = pools
+        return pools
+
+    def _structural_candidates(
+        self, workspace_id: str
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Provisions admitted on structure rather than vocabulary, per dimension.
+
+        Returned with the document each came from, so they are capped by their
+        own source like every other provision.
+
+        Computed for all eight dimensions at once because the specificity
+        guard is cross-dimensional: it drops a provision that qualifies for
+        too many dimensions, which cannot be decided while looking at one.
+        """
+        from src.grading import (
+            apply_specificity_guard,
+            recital_boundary,
+            sentence_function,
+            structurally_relevant,
+        )
+
+        cache = getattr(self, "_structural_cache", None)
+        if cache is None:
+            cache = {}
+            self._structural_cache = cache
+        if workspace_id in cache:
+            return cache[workspace_id]
+
+        boundaries: dict[str, int | None] = {}
+        candidates: dict[str, list[tuple[str, str]]] = {}
+        for dimension, pool in self._scoring_pools(workspace_id).items():
+            found: list[tuple[str, str]] = []
+            for rank, chunk in enumerate(pool):
+                if not isinstance(chunk, dict):
+                    continue
+                md = chunk.get("metadata") or {}
+                document = md.get("document_name") or "?"
+                if document not in boundaries:
+                    boundaries[document] = recital_boundary(
+                        [c for c in pool if (c.get("metadata") or {}).get("document_name") == document]
+                    )
+                cut = boundaries.get(document)
+                page = md.get("page_number") or 0
+                in_recital = bool(cut and page and page < cut)
+                for sent in _split_sentences(chunk.get("text") or ""):
+                    sent = " ".join(sent.split())
+                    if not 40 <= len(sent) <= 600:
+                        continue
+                    if sentence_function(sent, is_recital=in_recital) != "operative":
+                        continue
+                    if _sentence_has_core_term(sent, dimension):
+                        continue
+                    if structurally_relevant(sent, rank):
+                        found.append((sent, document))
+            candidates[dimension] = found
+        texts_only = {d: [t for t, _ in v] for d, v in candidates.items()}
+        kept = {d: set(v) for d, v in apply_specificity_guard(texts_only).items()}
+        guarded = {
+            d: [pair for pair in v if pair[0] in kept.get(d, ())]
+            for d, v in candidates.items()
+        }
+        cache[workspace_id] = guarded
+        logger.info(
+            "structural_candidates",
+            workspace_id=workspace_id,
+            counts={d: len(v) for d, v in guarded.items()},
+        )
+        return guarded
 
     def _compute_deterministic_verdict(
         self,
@@ -2143,7 +2331,7 @@ class GapAnalyzer:
         workspace_id: str,
         country: str,
     ) -> dict[str, Any] | None:
-        """Coverage, maturity and mechanism breakdown — BEFORE any LLM call.
+        """Coverage, depth and mechanism breakdown — BEFORE any LLM call.
 
         This runs first so the verdict can be handed to the model as an INPUT
         rather than being computed afterwards and overriding whatever the model
@@ -2159,32 +2347,55 @@ class GapAnalyzer:
         """
         if not workspace_id or getattr(self, "retrieval_pipeline", None) is None:
             return None
-        try:
-            scoring_pool = self.retrieval_pipeline.retrieve_scoring_pool(
-                dimension=dimension, workspace_id=workspace_id
-            )
-        except Exception as exc:
-            logger.warning("dimension_scoring_pool_failed", dimension=dimension, error=str(exc))
-            return None
+        scoring_pool = self._scoring_pools(workspace_id).get(dimension) or []
         if not scoring_pool:
             return None
 
-        sentences: list[str] = []
-        for chunk in scoring_pool:
-            if not isinstance(chunk, dict):
-                continue
-            for sent in _split_sentences(chunk.get("text") or ""):
-                sent = " ".join(sent.split())
-                if 40 <= len(sent) <= 600 and _sentence_has_core_term(sent, dimension):
-                    sentences.append(sent)
+        voluntary = self._voluntary_documents(workspace_id)
+        with_regime = self._document_regimes(workspace_id)
 
-        profile = build_profile(
+        def _cap(document: str) -> str:
+            if document in voluntary:
+                return SOURCE_VOLUNTARY
+            return "" if document in with_regime else SOURCE_UNENFORCED
+
+        # Core-term evidence is swept from the WHOLE workspace, not from the
+        # ranked pool. The pool is capped at a fixed number of chunks, so the
+        # share of a document the scorer sees falls as the document grows:
+        # measured against every admissible binding provision in the corpus,
+        # the pool carried 100% of China's and 17% of the United Kingdom's.
+        # That is the document-length artifact retrieve_scoring_pool was
+        # written to remove, surviving at a larger cap. Pattern scoring costs
+        # nothing per chunk, so for this path there is no reason to rank.
+        sentences: list[str] = []
+        source_force: dict[str, str] = {}
+        for document, texts in self._workspace_documents(workspace_id).items():
+            cap = _cap(document)
+            for text in texts:
+                for sent in _split_sentences(text or ""):
+                    sent = " ".join(sent.split())
+                    if not 40 <= len(sent) <= 600:
+                        continue
+                    if sentence_function(sent) != "operative":
+                        continue
+                    if _sentence_has_core_term(sent, dimension):
+                        sentences.append(sent)
+                        source_force[sent] = cap
+
+        # Provisions that carry a duty for this dimension in the country's own
+        # vocabulary, which the core-term table cannot anticipate.
+        for sent, document in self._structural_candidates(workspace_id).get(
+            dimension, []
+        ):
+            if sent not in source_force:
+                sentences.append(sent)
+                source_force[sent] = _cap(document)
+
+        profile = build_provision_profile(
             sentences,
             dimension=dimension,
             own_jurisdiction=country or "",
-            document_is_nonbinding=detect_nonbinding_document(
-                [(c.get("text") or "") for c in scoring_pool[:40] if isinstance(c, dict)]
-            ),
+            source_force=source_force,
         )
         if profile.n_scored == 0:
             return None
@@ -2196,18 +2407,33 @@ class GapAnalyzer:
         # Mechanism breadth gates the Covered tier downward only — see
         # coverage_from_profile.
         cov_label, cov_note = coverage_from_profile(profile, mechanisms=mechanisms)
-        mat_label, mat_note = maturity_from_profile(
-            profile,
-            document_enforcement_regime=self._document_enforcement_regime(workspace_id),
+        # Enforcement backing is scoped to the document that actually carries
+        # this dimension's duties. Pooling the workspace let a privacy statute
+        # lend its penalties to every other dimension.
+        backing = self._dimension_enforcement_backing(
+            scoring_pool, dimension, workspace_id, country or ""
         )
+        mat_label, mat_note = depth_from_profile(
+            profile, document_enforcement_regime=backing
+        )
+        # A dimension cannot be operating while none of the mechanisms it
+        # needs is carried by a duty. Holds the stage down, never up.
+        bound = sum(
+            1
+            for tier in (mechanisms.present if mechanisms else {}).values()
+            if tier >= TIER_OBLIGATORY
+        )
+        mat_label, gate_note = apply_mechanism_gate(mat_label, bound)
+        if gate_note:
+            mat_note = gate_note
 
         return {
             "profile": profile,
             "scoring_pool": scoring_pool,
             "coverage_label": cov_label,
             "coverage_note": cov_note,
-            "maturity_label": mat_label,
-            "maturity_note": mat_note,
+            "depth_label": mat_label,
+            "depth_note": mat_note,
             "mechanisms": mechanisms,
         }
 
@@ -2233,7 +2459,7 @@ class GapAnalyzer:
             prof = determined["profile"]
             verdict_block = {
                 "coverage_label": determined["coverage_label"],
-                "maturity_label": determined["maturity_label"],
+                "depth_label": determined["depth_label"],
                 "basis": determined["coverage_note"],
                 "missing_mechanisms": list(mech.absent)[:6] if mech else [],
                 "present_mechanisms": list(mech.present)[:6] if mech else [],
@@ -2368,11 +2594,11 @@ class GapAnalyzer:
         # NOTE: the scoring pool is NOT retrieved here. It is fetched once in
         # _compute_deterministic_verdict before the LLM call and reused below,
         # so the sweep runs a single time per dimension.
-        # Shared evidence basis for BOTH the coverage ladder and maturity —
-        # scoring maturity from a different pool than the one that justified
+        # Shared evidence basis for BOTH the coverage ladder and depth —
+        # scoring depth from a different pool than the one that justified
         # Coverage let a ladder-raised Covered verdict (evidence from
         # evidence_pool) score as "principle-only" (LLM self-report empty),
-        # which is internally inconsistent. See compute_governance_maturity.
+        # which is internally inconsistent. See compute_implementation_depth.
         # Computed BEFORE the predicate builders below so their sentence
         # cache can be pre-warmed in one batched embed call instead of many
         # individual ones (see _batch_prewarm_sentence_cache).
@@ -2446,7 +2672,7 @@ class GapAnalyzer:
         profile_coverage_note = ""
         # SINGLE SOURCE OF TRUTH for the verdict.
         #
-        # Coverage, maturity and mechanism breadth are all computed once, in
+        # Coverage, depth and mechanism breadth are all computed once, in
         # _compute_deterministic_verdict, BEFORE the LLM call — and the result
         # is what the model is shown. This block reads that result back; it
         # does not recompute it.
@@ -2585,7 +2811,7 @@ class GapAnalyzer:
         # comprehensive pool (beyond the prompt budget), name the found
         # mechanism passage in the reasoning. A mechanism that exists but
         # lacks full operational detail is reflected in the gap
-        # reasoning/maturity — it is not erased into a bare "Missing".
+        # reasoning/depth — it is not erased into a bare "Missing".
         if coverage_rules and evidence_pool:
             for pc in evidence_pool:
                 text = (pc.get("text") or "").strip()
@@ -2609,7 +2835,7 @@ class GapAnalyzer:
                         "document contains a dimension-relevant governance "
                         f'mechanism (passage: "{passage}..."); the '
                         "mechanism's operational detail is reflected in the "
-                        "maturity assessment."
+                        "depth assessment."
                     )
                     logger.info(
                         "comprehensive_evidence_note_appended",
@@ -2681,35 +2907,35 @@ class GapAnalyzer:
                 num_mechanisms=len(mechanisms),
             )
 
-        # ── Deterministic governance maturity (never free LLM judgment) ─
+        # ── Deterministic implementation depth (never free LLM judgment) ─
         # evidence_texts = the same document-sourced, dimension-targeted
-        # chunks that fed the coverage ladder above, so maturity can never
+        # chunks that fed the coverage ladder above, so depth can never
         # score a mechanism as "absent" that actually justified Coverage.
-        # Maturity is computed from the SAME evidence profile as coverage but
+        # Implementation depth is computed from the SAME evidence profile as coverage but
         # measures a DIFFERENT property — how far the governance has been
         # built out (intent → institution → duty → enforcement) rather than
-        # whether the dimension is governed at all. Deriving maturity FROM
+        # whether the dimension is governed at all. Deriving depth FROM
         # coverage (the previous behaviour) made the two labels redundant and
-        # meant every ladder-raised Covered verdict dragged maturity up with
+        # meant every ladder-raised Covered verdict dragged depth up with
         # it. Read independently, a document can be broadly Covered but only
         # Emerging, or narrowly Partial yet Operationalized.
         if use_profile_verdict:
             # Read back, not recomputed — same single-source rule as coverage
-            # above. Maturity and coverage read the same counters through a
+            # above. Implementation depth and coverage read the same counters through a
             # shared force bar, so recomputing either one separately is how
             # they drifted into reporting "Partial ... stands alone rather than
             # forming a developed regime" alongside "Operationalized".
-            _mat_label = determined["maturity_label"]
-            maturity_reasoning = determined["maturity_note"]
-            maturity = {
-                "Institutionalized": GovernanceMaturity.ESTABLISHED,
-                "Operationalized": GovernanceMaturity.DEVELOPING,
-                "Delegated": GovernanceMaturity.DELEGATED,
-                "Emerging": GovernanceMaturity.EMERGING,
-                "Unaddressed": GovernanceMaturity.UNADDRESSED,
+            _mat_label = determined["depth_label"]
+            depth_reasoning = determined["depth_note"]
+            depth = {
+                "Institutionalized": ImplementationDepth.ESTABLISHED,
+                "Operationalized": ImplementationDepth.DEVELOPING,
+                "Delegated": ImplementationDepth.DELEGATED,
+                "Emerging": ImplementationDepth.EMERGING,
+                "Unaddressed": ImplementationDepth.UNADDRESSED,
             }[_mat_label]
         else:
-            maturity, maturity_reasoning = compute_governance_maturity(
+            depth, depth_reasoning = compute_implementation_depth(
                 coverage=coverage.value,
                 principle_acknowledged=principle_ack,
                 operational_mechanisms=mechanisms,
@@ -3018,8 +3244,8 @@ class GapAnalyzer:
             coverage_example=coverage_example,
             principle_acknowledged=principle_ack,
             operational_mechanisms=mechanisms,
-            governance_maturity=maturity,
-            maturity_reasoning=maturity_reasoning,
+            implementation_depth=depth,
+            depth_reasoning=depth_reasoning,
             document_evidence=doc_citations,
             framework_evidence=fw_citations,
         )
@@ -3098,7 +3324,7 @@ class GapAnalyzer:
                 for p in [
                     f"Coverage: {coverage.value}",
                     f"Reason flagged: {reason_flagged}" if reason_flagged else "",
-                    f"Governance Maturity: {maturity.value}",
+                    f"Implementation Depth: {depth.value}",
                     coverage_reasoning,
                     (f"Coverage examples: {coverage_example}" if coverage_example else ""),
                     (f"Best practices:\n{best_practices.opening}" if best_practices else ""),
@@ -3120,8 +3346,8 @@ class GapAnalyzer:
                 ]
                 if p
             ),
-            governance_maturity=maturity,
-            maturity_reasoning=maturity_reasoning,
+            implementation_depth=depth,
+            depth_reasoning=depth_reasoning,
             module_1=module1,
             module_2=module2,
             synthesis_drift_downgraded=synthesis_drift_downgraded,
@@ -3135,7 +3361,7 @@ class GapAnalyzer:
             "module_1_2_analysis_complete",
             dimension=dimension,
             coverage=coverage.value,
-            governance_maturity=maturity.value,
+            implementation_depth=depth.value,
             priority=priority.value if priority else None,
             tier="best_practices" if coverage == CoverageLevel.COVERED else "recommendations",
             module2_output_chars=len(module2_json),
@@ -3213,8 +3439,8 @@ class GapAnalyzer:
             lines.append(
                 f"Existing operational mechanisms in document: {'; '.join(m1.operational_mechanisms[:6])}"
             )
-        if gap.governance_maturity:
-            lines.append(f"Governance maturity: {gap.governance_maturity.value}")
+        if gap.implementation_depth:
+            lines.append(f"Governance depth: {gap.implementation_depth.value}")
         if m2 and m2.recommendations:
             lines.append("Module 2 recommendations (the gap this roadmap must address):")
             lines.extend(f"  - {r}" for r in m2.recommendations[:5])
@@ -3484,13 +3710,13 @@ class GapAnalyzer:
         # ("0-12 months") with no basis in the document. The range is now
         # computed in code from signals the pipeline already derived
         # deterministically (coverage tier, existing operational mechanisms,
-        # governance maturity, responsible-agency grounding, phase scope),
+        # implementation depth, responsible-agency grounding, phase scope),
         # with an explicit reasoning string so the estimate is auditable.
         step_counts = [len(p.steps) for p in phases]
         timelines = estimate_phase_timelines(
             coverage=gap.coverage,
             operational_mechanisms=(gap.module_1.operational_mechanisms if gap.module_1 else []),
-            maturity=gap.governance_maturity,
+            depth=gap.implementation_depth,
             agency_grounding=grounding,
             step_counts=step_counts,
         )

@@ -302,17 +302,6 @@ class WorkspaceResponse(BaseModel):
     updated_at: str
 
 
-class AnalysisResponse(BaseModel):
-    analysis_id: str
-    workspace_id: str
-    document_name: str
-    frameworks_used: list[str]
-    governance_gaps: list[dict[str, Any]]
-    summary: str
-    total_retrieved: int
-    total_processing_time: float
-
-
 class BriefRequest(BaseModel):
     workspace_id: str
 
@@ -333,7 +322,7 @@ class BriefRequest(BaseModel):
 # single /health route called into Chroma, so a slow or torn index would
 # have had a scheduler killing a process that was running perfectly well.
 # That failure mode is not hypothetical here — a torn HNSW segment once
-# took the API down repeatedly (see CLAUDE.md).
+# took the API down repeatedly (see docs/ENGINEERING-NOTES.md).
 
 
 # The 25MB cap was enforced by validate_pdf_file AFTER `await file.read()` had

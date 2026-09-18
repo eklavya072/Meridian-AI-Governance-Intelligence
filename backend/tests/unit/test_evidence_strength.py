@@ -12,19 +12,18 @@ from src.evidence_strength import (
     TIER_INTENTIONAL,
     TIER_OBLIGATORY,
     EvidenceProfile,
-    build_profile,
-    classify_sentence,
     coverage_from_profile,
+    depth_from_profile,
     detect_nonbinding_document,
     is_structural_noise,
     is_third_party_attribution,
-    maturity_from_profile,
 )
+from src.grading import build_provision_profile, classify_provision
 
 
 class TestNormativeTiers:
     def test_binding_duty_on_regulated_party_is_obligatory(self):
-        s = classify_sentence(
+        s = classify_provision(
             "Providers of high-risk AI systems shall ensure that their systems "
             "are compliant with the requirements set out in Section 2."
         )
@@ -32,7 +31,7 @@ class TestNormativeTiers:
         assert s.duty_bearer == "regulated"
 
     def test_duty_with_consequence_is_enforceable(self):
-        s = classify_sentence(
+        s = classify_provision(
             "Providers shall report serious incidents to the authority and "
             "non-compliance is subject to penalties."
         )
@@ -46,7 +45,7 @@ class TestNormativeTiers:
         universally pair a ministry with an activity — from outranking
         statutes that impose real duties.
         """
-        s = classify_sentence(
+        s = classify_provision(
             "The Ministry of ICT shall develop guidelines for artificial "
             "intelligence adoption across government."
         )
@@ -54,11 +53,11 @@ class TestNormativeTiers:
         assert s.duty_bearer == "government"
 
     def test_institution_with_authority_power_outranks_one_that_coordinates(self):
-        authority = classify_sentence(
+        authority = classify_provision(
             "The Data Protection Board may investigate and impose penalties on "
             "any entity that processes personal data unlawfully."
         )
-        promotion = classify_sentence(
+        promotion = classify_provision(
             "The Ministry will coordinate and promote awareness of artificial "
             "intelligence across sectors."
         )
@@ -67,32 +66,32 @@ class TestNormativeTiers:
 
     def test_modal_without_a_duty_bearer_is_aspirational(self):
         """ "AI must serve as an enabler" is a slogan wearing a modal verb."""
-        s = classify_sentence(
+        s = classify_provision(
             "Artificial intelligence must serve as an enabler of inclusive "
             "development and shared prosperity for all."
         )
         assert s.tier == TIER_ASPIRATIONAL
 
     def test_soft_duty_on_regulated_party_beats_bare_principle(self):
-        soft_duty = classify_sentence(
+        soft_duty = classify_provision(
             "AI business actors should improve the explainability of their "
             "systems for relevant stakeholders."
         )
-        principle = classify_sentence(
+        principle = classify_provision(
             "Transparency is an important principle for artificial intelligence."
         )
         assert soft_duty.tier == TIER_INTENTIONAL
         assert principle.tier == TIER_ASPIRATIONAL
 
     def test_hedge_demotes_an_obligation(self):
-        hard = classify_sentence("Providers shall publish an annual transparency report.")
-        hedged = classify_sentence(
+        hard = classify_provision("Providers shall publish an annual transparency report.")
+        hedged = classify_provision(
             "Providers shall, where feasible, publish an annual transparency report."
         )
         assert hedged.tier == hard.tier - 1
 
     def test_nonbinding_document_caps_provisions(self):
-        s = classify_sentence(
+        s = classify_provision(
             "Providers shall ensure that systems are auditable.",
             document_is_nonbinding=True,
         )
@@ -158,7 +157,7 @@ class TestProfileAggregation:
             "with the national authority before deployment."
         )
         sentences = [base, base[6:], base[12:], "fostering " + base, base[:-5]]
-        profile = build_profile(sentences)
+        profile = build_provision_profile(sentences)
         assert profile.n_scored == 1
 
     def test_pure_aspiration_never_reaches_covered(self):
@@ -166,7 +165,7 @@ class TestProfileAggregation:
             "Artificial intelligence should be developed transparently for all citizens." + str(i)
             for i in range(12)
         ]
-        profile = build_profile(sentences)
+        profile = build_provision_profile(sentences)
         coverage, _ = coverage_from_profile(profile)
         assert coverage != "Covered"
 
@@ -177,14 +176,14 @@ class TestProfileAggregation:
             "The supervisory authority may inspect providers and impose sanctions.",
             "The Commission shall establish and maintain a public registry of such systems.",
         ]
-        profile = build_profile(sentences)
+        profile = build_provision_profile(sentences)
         assert coverage_from_profile(profile)[0] == "Covered"
-        assert maturity_from_profile(profile)[0] == "Institutionalized"
+        assert depth_from_profile(profile)[0] == "Institutionalized"
 
     def test_empty_evidence_is_missing_and_unaddressed(self):
-        profile = build_profile([])
+        profile = build_provision_profile([])
         assert coverage_from_profile(profile)[0] == "Missing"
-        assert maturity_from_profile(profile)[0] == "Unaddressed"
+        assert depth_from_profile(profile)[0] == "Unaddressed"
 
     def test_pure_aspiration_never_reaches_covered_no_matter_how_often_repeated(self):
         """Repeating a non-binding 'should consider' sentence many times must
@@ -205,16 +204,16 @@ class TestProfileAggregation:
             f"AI business actors should consider fairness in system design, case {i}."
             for i in range(10)
         ]
-        profile = build_profile(sentences)
+        profile = build_provision_profile(sentences)
         coverage, _ = coverage_from_profile(profile)
         assert coverage != "Covered"
 
     def test_coverage_and_maturity_are_independent(self):
         """A dimension can be genuinely governed yet not fully institutionalized.
 
-        The previous implementation derived maturity FROM coverage, so the two
+        The previous implementation derived depth FROM coverage, so the two
         labels were redundant and every raised Covered verdict dragged
-        maturity up with it. Two binding duties without any enforcement
+        depth up with it. Two binding duties without any enforcement
         language should read as Covered (the duty exists) but only
         Operationalized (nothing backs it up yet) — Covered must not imply
         Institutionalized.
@@ -223,18 +222,18 @@ class TestProfileAggregation:
             "Providers shall ensure that high-risk AI systems undergo a conformity assessment before deployment.",
             "Deployers shall maintain records of every automated decision for a period of five years.",
         ]
-        profile = build_profile(sentences, own_jurisdiction="Testland")
+        profile = build_provision_profile(sentences, own_jurisdiction="Testland")
         coverage, _ = coverage_from_profile(profile)
-        maturity, _ = maturity_from_profile(profile)
+        depth, _ = depth_from_profile(profile)
         assert coverage == "Covered"
-        assert maturity == "Operationalized"
+        assert depth == "Operationalized"
 
 
 class TestOcrTolerance:
     def test_space_shattered_vocabulary_still_matches(self):
         """PDF extraction produced "deplo yers"/"conf or mity" — 0 intact
         occurrences of either word in a 10MB corpus."""
-        s = classify_sentence(
+        s = classify_provision(
             "Provid ers and deplo yers of high-r isk AI syste ms shall ensure "
             "conf or mity assessment is completed before placing on the market."
         )
@@ -486,12 +485,12 @@ class TestMechanismBreadthGate:
         assert coverage == "Covered"
 
 
-class TestCoverageMaturityInvariant:
-    """Coverage and maturity are independent labels, but not unconstrained.
+class TestCoverageDepthInvariant:
+    """Coverage and depth are independent labels, but not unconstrained.
 
     They read the same counters, so they can contradict each other, and they
     did: a lone unenforced duty produced coverage "Partial — stands alone
-    rather than forming a developed regime" alongside maturity
+    rather than forming a developed regime" alongside depth
     "Operationalized" on the live EU AI Act run. The two ladders had drifted
     because the degenerate `n_binding >= 1` threshold was fixed on one side
     only. These tests pin the relationship for EVERY reachable counter
@@ -531,26 +530,26 @@ class TestCoverageMaturityInvariant:
 
     def test_lone_unenforced_duty_is_not_operationalized(self):
         """The exact EU Environmental Sustainability shape: binding=1,
-        enforceable=0. Coverage calls it thin; maturity must agree."""
-        from src.evidence_strength import coverage_from_profile, maturity_from_profile
+        enforceable=0. Coverage calls it thin; depth must agree."""
+        from src.evidence_strength import coverage_from_profile, depth_from_profile
 
         profile = self._profile(1, 1, 1, 1, 0)
         assert coverage_from_profile(profile)[0] == "Partial"
-        assert maturity_from_profile(profile)[0] == "Delegated"
+        assert depth_from_profile(profile)[0] == "Delegated"
 
     def test_partial_coverage_never_reports_built_out_maturity(self):
         """Across every reachable profile: if the document does not govern the
-        dimension (coverage below Covered), maturity cannot claim the
+        dimension (coverage below Covered), depth cannot claim the
         governance is operating or institutionalized."""
-        from src.evidence_strength import coverage_from_profile, maturity_from_profile
+        from src.evidence_strength import coverage_from_profile, depth_from_profile
 
         built_out = {"Operationalized", "Institutionalized"}
         for profile in self._reachable():
             coverage, _ = coverage_from_profile(profile)
-            maturity, _ = maturity_from_profile(profile)
+            depth, _ = depth_from_profile(profile)
             if coverage != "Covered":
-                assert maturity not in built_out, (
-                    f"coverage={coverage} but maturity={maturity} for "
+                assert depth not in built_out, (
+                    f"coverage={coverage} but depth={depth} for "
                     f"scored={profile.n_scored} commitment={profile.n_commitment} "
                     f"institutional={profile.n_institutional} "
                     f"binding={profile.n_binding} enforceable={profile.n_enforceable}"
@@ -559,24 +558,24 @@ class TestCoverageMaturityInvariant:
     def test_covered_always_reports_at_least_operationalized(self):
         """The converse leak: a dimension the document genuinely governs must
         not be reported as barely emerging."""
-        from src.evidence_strength import coverage_from_profile, maturity_from_profile
+        from src.evidence_strength import coverage_from_profile, depth_from_profile
 
         for profile in self._reachable():
             coverage, _ = coverage_from_profile(profile)
             if coverage != "Covered":
                 continue
-            maturity, _ = maturity_from_profile(profile)
-            assert maturity in {"Operationalized", "Institutionalized"}, (
-                f"coverage=Covered but maturity={maturity} for "
+            depth, _ = depth_from_profile(profile)
+            assert depth in {"Operationalized", "Institutionalized"}, (
+                f"coverage=Covered but depth={depth} for "
                 f"binding={profile.n_binding} enforceable={profile.n_enforceable}"
             )
 
     def test_unscored_dimension_is_unaddressed_on_both_ladders(self):
-        from src.evidence_strength import coverage_from_profile, maturity_from_profile
+        from src.evidence_strength import coverage_from_profile, depth_from_profile
 
         profile = self._profile(0, 0, 0, 0, 0)
         assert coverage_from_profile(profile)[0] == "Missing"
-        assert maturity_from_profile(profile)[0] == "Unaddressed"
+        assert depth_from_profile(profile)[0] == "Unaddressed"
 
     def test_both_ladders_read_the_same_force_bar(self):
         """Guards against the two functions drifting apart again by keeping a
@@ -672,18 +671,18 @@ class TestDelegatedStage:
     def test_named_institution_outranks_bare_commitment(self):
         institution = self._profile(4, 4, 2, 0, 0)
         commitment = self._profile(4, 4, 0, 0, 0)
-        assert maturity_from_profile(institution)[0] == "Delegated"
-        assert maturity_from_profile(commitment)[0] == "Emerging"
+        assert depth_from_profile(institution)[0] == "Delegated"
+        assert depth_from_profile(commitment)[0] == "Emerging"
 
     def test_lone_duty_outranks_bare_commitment(self):
         duty = self._profile(4, 4, 3, 1, 0)
         commitment = self._profile(4, 4, 0, 0, 0)
-        assert maturity_from_profile(duty)[0] == "Delegated"
-        assert maturity_from_profile(commitment)[0] == "Emerging"
+        assert depth_from_profile(duty)[0] == "Delegated"
+        assert depth_from_profile(commitment)[0] == "Emerging"
 
     def test_principle_only_stays_emerging(self):
         """India's Fairness: discussed, nobody owns it, nothing binding."""
-        assert maturity_from_profile(self._profile(5, 0, 0, 0, 0))[0] == "Emerging"
+        assert depth_from_profile(self._profile(5, 0, 0, 0, 0))[0] == "Emerging"
 
     def test_force_bar_is_untouched(self):
         """The whole point: Delegated must not become a back door to a
@@ -691,26 +690,26 @@ class TestDelegatedStage:
         Operationalized."""
         for institutional in range(0, 6):
             p = self._profile(6, 6, institutional, 0, 0)
-            assert maturity_from_profile(p)[0] in {"Emerging", "Delegated"}
+            assert depth_from_profile(p)[0] in {"Emerging", "Delegated"}
 
     def test_delegated_ranks_between_emerging_and_operationalized(self):
-        from src.gap_analyzer import MATURITY_RANK, MATURITY_STAGE_SCORE
-        from src.models import GovernanceMaturity as G
+        from src.gap_analyzer import DEPTH_RANK, DEPTH_STAGE_SCORE
+        from src.models import ImplementationDepth as G
 
-        assert MATURITY_RANK[G.EMERGING] < MATURITY_RANK[G.DELEGATED] < MATURITY_RANK[G.DEVELOPING]
+        assert DEPTH_RANK[G.EMERGING] < DEPTH_RANK[G.DELEGATED] < DEPTH_RANK[G.DEVELOPING]
         assert (
-            MATURITY_STAGE_SCORE[G.EMERGING]
-            < MATURITY_STAGE_SCORE[G.DELEGATED]
-            < MATURITY_STAGE_SCORE[G.DEVELOPING]
+            DEPTH_STAGE_SCORE[G.EMERGING]
+            < DEPTH_STAGE_SCORE[G.DELEGATED]
+            < DEPTH_STAGE_SCORE[G.DEVELOPING]
         )
 
     def test_every_stage_has_a_score(self):
-        from src.gap_analyzer import MATURITY_RANK, MATURITY_STAGE_SCORE
-        from src.models import GovernanceMaturity as G
+        from src.gap_analyzer import DEPTH_RANK, DEPTH_STAGE_SCORE
+        from src.models import ImplementationDepth as G
 
         for stage in G:
-            assert stage in MATURITY_STAGE_SCORE
-            assert stage in MATURITY_RANK
+            assert stage in DEPTH_STAGE_SCORE
+            assert stage in DEPTH_RANK
 
 
 class TestTwoAxisAnalytics:
@@ -719,7 +718,7 @@ class TestTwoAxisAnalytics:
     instrument addressing nearly everything and binding almost none of it, and
     a narrow statute binding hard."""
 
-    def _gap(self, dim, maturity, present, absent):
+    def _gap(self, dim, depth, present, absent):
         from src.models import CoverageLevel, GovernanceGap
 
         return GovernanceGap(
@@ -728,7 +727,7 @@ class TestTwoAxisAnalytics:
             gap_found=False,
             reason_flagged="",
             recommendation="",
-            governance_maturity=maturity,
+            implementation_depth=depth,
             mechanisms_present=present,
             mechanisms_absent=absent,
         )
@@ -736,30 +735,39 @@ class TestTwoAxisAnalytics:
     def test_breadth_without_force(self):
         """Soft law: every mechanism mentioned, none of them a duty."""
         from src.gap_analyzer import compute_decision_analytics
-        from src.models import GovernanceMaturity as G
+        from src.models import ImplementationDepth as G
 
         gaps = [self._gap("Fairness", G.EMERGING, {"a": 1, "b": 1, "c": 1}, [])]
         a = compute_decision_analytics(gaps)
         assert a["coverage_index"] == 100.0
         assert a["binding_share"] == 0.0
-        assert a["maturity_index"] == 50.0
+        assert a["implementation_depth_index"] == 50.0
 
     def test_force_without_breadth(self):
-        """Narrow statute: one mechanism, but it is genuinely enforceable."""
+        """Narrow statute: one mechanism of four, but genuinely enforceable.
+
+        The dimension reaches the top STAGE because the duty is real and
+        enforced, and the depth index says exactly that. Narrowness is carried
+        by the OTHER axis — coverage_index 25.0 — not folded into the depth
+        score. An earlier build damped depth by breadth here, which quietly
+        restated breadth inside the force number and collapsed the separation
+        the two axes exist to draw.
+        """
         from src.gap_analyzer import compute_decision_analytics
-        from src.models import GovernanceMaturity as G
+        from src.models import ImplementationDepth as G
 
         gaps = [self._gap("Privacy", G.ESTABLISHED, {"a": 4}, ["b", "c", "d"])]
         a = compute_decision_analytics(gaps)
         assert a["coverage_index"] == 25.0
         assert a["binding_share"] == 100.0
-        assert a["maturity_index"] == 100.0
+        assert a["implementation_depth_index"] == 100.0
+        assert "implementation_depth" not in a
 
     def test_coverage_index_is_not_tier_weighted(self):
         """Weighting breadth by force would fold the force axis back into it
         and collapse the distinction the second axis exists to draw."""
         from src.gap_analyzer import compute_decision_analytics
-        from src.models import GovernanceMaturity as G
+        from src.models import ImplementationDepth as G
 
         weak = [self._gap("D", G.EMERGING, {"a": 0, "b": 0}, ["c"])]
         strong = [self._gap("D", G.ESTABLISHED, {"a": 4, "b": 4}, ["c"])]
@@ -770,8 +778,38 @@ class TestTwoAxisAnalytics:
 
     def test_no_mechanism_table_does_not_divide_by_zero(self):
         from src.gap_analyzer import compute_decision_analytics
-        from src.models import GovernanceMaturity as G
+        from src.models import ImplementationDepth as G
 
         a = compute_decision_analytics([self._gap("D", G.EMERGING, {}, [])])
         assert a["coverage_index"] == 0.0
         assert a["binding_share"] == 0.0
+
+
+class TestNonbindingDetectionCannotMisreadAStatute:
+    """A false positive here zeroes n_binding for the whole document, silently.
+
+    The EU AI Act was read as voluntary because Recital 178 says providers are
+    encouraged to comply "on a voluntary basis" during the transitional period.
+    Every provision then capped at T1 and five dimensions collapsed to Emerging.
+    """
+
+    def test_voluntary_early_compliance_is_not_a_disclaimer(self):
+        assert not detect_nonbinding_document([
+            "Providers of high-risk AI systems are encouraged to start to comply, "
+            "on a voluntary basis, with the relevant obligations of this Regulation "
+            "already during the transitional period."
+        ])
+
+    def test_a_real_disclaimer_still_registers(self):
+        assert detect_nonbinding_document(
+            ["These guidelines are non-binding and do not impose legal obligations."]
+        )
+
+    def test_enforcement_machinery_overrules_a_disclaimer(self):
+        """A document that fines people is not voluntary, whatever it says."""
+        assert not detect_nonbinding_document([
+            "These guidelines are voluntary in nature.",
+            "The Authority may investigate any provider and impose administrative fines.",
+            "Providers shall be liable to penalties for non-compliance with this Act.",
+            "The supervisory authority may inspect operators and impose sanctions.",
+        ])

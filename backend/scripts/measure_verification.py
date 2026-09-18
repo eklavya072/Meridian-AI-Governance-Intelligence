@@ -1,13 +1,15 @@
 """Measure what citation verification actually does, on real stored citations.
 
-Pulls every evidence item from the 11 stored analyses, fetches the chunk it
-cites, and characterises the claim/chunk pair three ways:
+Pulls every evidence item from every stored analysis, fetches the chunk it
+cites, and characterises the claim/chunk pair two ways:
 
   containment  — is the quoted excerpt literally inside the chunk text
-  embedding    — bge-small cosine, the check that runs today
-  nli          — deberta entailment, available behind a flag
+  embedding    — bge-small cosine, the check that runs in the pipeline
 
-No Gemini calls. Everything below reads Postgres, Chroma and local models.
+Run it after changing a threshold or the chunker, to see what moved before
+trusting it. `make bench`.
+
+No Gemini calls: this reads Postgres, Chroma and local models only.
 """
 
 from __future__ import annotations
@@ -115,89 +117,13 @@ def main() -> None:
         f"({embed_secs:.1f}s total, 2 embeds per pair)"
     )
 
-    # ── NLI path (opt-in; see docs/MEASUREMENTS.md) ────────────────────
-    if os.getenv("RUN_NLI", "1") != "1":
-        return
-
-    from sentence_transformers import CrossEncoder
-
-    model_name = os.getenv("NLI_MODEL", "cross-encoder/nli-deberta-v3-base")
-    t0 = time.time()
-    model = CrossEncoder(model_name)
-    load_secs = time.time() - t0
-    print(f"\nNLI ({model_name}) loaded in {load_secs:.1f}s")
-
-    from src.nli_verifier import _resolve_label_index, _softmax
-
-    idx = _resolve_label_index(model)
-    print(f"  label index       {idx}")
-
-    # Premise first (the chunk is the evidence), hypothesis second.
-    t0 = time.time()
-    raw = model.predict([(p["chunk_text"][:512], p["claim"][:256]) for p in resolved])
-    nli_secs = time.time() - t0
-    scores = [_softmax([float(v) for v in row]) for row in raw]
-
-    ENT = float(os.getenv("NLI_THRESHOLD_ENTAILMENT", "0.6"))
-    CON = float(os.getenv("NLI_THRESHOLD_CONTRADICTION", "0.4"))
-
-    def label(row):
-        ent = row[idx["entailment"]]
-        neu = row[idx["neutral"]]
-        con = row[idx["contradiction"]]
-        if ent >= ENT:
-            return "supports", ent
-        if con >= CON:
-            return "contradicts", con
-        if ent >= 0.3:
-            return "partially_supports", ent
-        return "irrelevant", max(ent, neu)
-
-    labels = [label(r) for r in scores]
-    from collections import Counter
-
-    dist = Counter(name for name, _ in labels)
-    # verify.py counts SUPPORTS and PARTIALLY_SUPPORTS as passing.
-    nli_pass = dist["supports"] + dist["partially_supports"]
-    print(f"  passes            {nli_pass}/{len(labels)} ({nli_pass / len(labels):.1%})")
-    print(f"  distribution      {dict(dist)}")
-    print(f"  latency/pair      {nli_secs / len(resolved) * 1000:.1f} ms  ({nli_secs:.1f}s total)")
-
-    agree = sum(
-        1
-        for p, (lab, _) in zip(resolved, labels)
-        if (p["embed_sim"] >= THRESHOLD) == (lab in ("supports", "partially_supports"))
-    )
-    print(
-        f"\nagreement between the two paths: {agree}/{len(resolved)} ({agree / len(resolved):.1%})"
-    )
-
-    only_embed = [
-        p
-        for p, (lab, _) in zip(resolved, labels)
-        if p["embed_sim"] >= THRESHOLD and lab not in ("supports", "partially_supports")
-    ]
-    only_nli = [
-        p
-        for p, (lab, _) in zip(resolved, labels)
-        if p["embed_sim"] < THRESHOLD and lab in ("supports", "partially_supports")
-    ]
-    print(f"  embedding passes, NLI does not: {len(only_embed)}")
-    print(f"  NLI passes, embedding does not: {len(only_nli)}")
-
-    # The decisive slice: pairs where the quoted excerpt is LITERALLY inside
-    # the chunk it cites. Nothing here can be a fabrication, so a verifier
-    # rejecting these is producing false negatives, not catching anything.
-    inside = [
-        (p, lab)
-        for p, (lab, _) in zip(resolved, labels)
-        if normalise(p["claim"]) in normalise(p["chunk_text"])
-    ]
-    e_ok = sum(1 for p, _ in inside if p["embed_sim"] >= THRESHOLD)
-    n_ok = sum(1 for _, lab in inside if lab in ("supports", "partially_supports"))
-    print(f"\non the {len(inside)} verbatim-contained excerpts:")
-    print(f"  embedding accepts {e_ok}/{len(inside)} ({e_ok / len(inside):.1%})")
-    print(f"  NLI accepts       {n_ok}/{len(inside)} ({n_ok / len(inside):.1%})")
+    # The NLI verification path that used to be measured here is gone. It
+    # was wired in, measured against a real Kenya run, and rejected: the
+    # cross-encoder reads 512 tokens against chunks averaging 2,374
+    # characters, so it marked 36 of 48 correct citations irrelevant. It
+    # never changed a verdict — verification is a reporting layer — so the
+    # only thing it moved was the reported citation rate, downwards. See
+    # docs/MEASUREMENTS.md.
 
 
 if __name__ == "__main__":

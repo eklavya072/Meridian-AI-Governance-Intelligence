@@ -37,6 +37,7 @@ npm-debug.log*
 backend/data/uploads/
 backend/data/reports/
 backend/data/gemini_rpd.json
+backend/data/provider_health.json
 
 # ── IDE / OS ────────────────────────────────────────────────────────────
 .idea/
@@ -68,3 +69,15 @@ htmlcov/
 # COPY --from=builder /app/public ./public, which fails on a clean clone if
 # nothing in public/ is committed.
 frontend/public/*.pdf
+
+# ── Hero footage ────────────────────────────────────────────────────────
+# Everything staged for review stays out; only the chosen, graded pair is
+# tracked. The rejected candidates never reach a commit, a build context,
+# or an image layer.
+frontend/public/hero/*
+!frontend/public/hero/hero-scrub.mp4
+!frontend/public/hero/hero-poster.jpg
+
+# Local editor/assistant config and the pointer to docs/ENGINEERING-NOTES.md
+CLAUDE.md
+**/.claude/

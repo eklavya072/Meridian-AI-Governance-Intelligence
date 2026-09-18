@@ -10,7 +10,6 @@ the incident pool.
 import pytest
 
 from src.retrieval import (
-    CrossEncoderReranker,
     ModuleRetrievalResult,
     RetrievalPipeline,
     _dedup_key,
@@ -304,24 +303,6 @@ class TestSubstantivePrioritisation:
 
         # Reordering is fine; silently losing evidence is not.
         assert len(pipeline._prioritize_substantive(bucket)) == 5
-
-
-class TestReranker:
-    def test_a_reranker_that_cannot_load_is_not_available(self, monkeypatch):
-        reranker = CrossEncoderReranker(model_name="definitely/not-a-model")
-        monkeypatch.setattr(reranker, "_load", lambda: None)
-
-        assert reranker.is_available is False
-
-    def test_reranking_without_a_model_returns_the_input_order(self):
-        reranker = CrossEncoderReranker(model_name="definitely/not-a-model")
-        chunks = [_chunk("a", chunk_id="a"), _chunk("b", chunk_id="b")]
-
-        result = reranker.rerank("query", chunks, top_k=2)
-
-        # Degrading to the original ranking is correct; dropping the chunks
-        # would starve the scorer because an optional model is missing.
-        assert len(result) == 2
 
 
 class TestModuleRetrievalResult:

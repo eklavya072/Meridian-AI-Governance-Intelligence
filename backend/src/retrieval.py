@@ -3,14 +3,13 @@ from __future__ import annotations
 import os
 import re as _re
 import threading
-import time
 from typing import Any
 
 import structlog
 from pydantic import BaseModel, Field
 
 from src.deterministic import _chunk_matches_dimension, is_low_information_fragment
-from src.models import DimensionProfile, RetrievalResult
+from src.models import DimensionProfile
 from src.utils import batch_fetch_chunk_metadata, l2_normalize, reciprocal_rank_fusion
 
 
@@ -47,13 +46,9 @@ def _is_near_duplicate(key: str, accepted_keys: list[str]) -> bool:
 
 logger = structlog.get_logger()
 
-USE_RERANKER = os.getenv("USE_RERANKER", "false").lower() == "true"
-RERANKER_MODEL = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 
 ASPECT_TOP_K = int(os.getenv("ASPECT_TOP_K", "5"))
 DEFINITION_TOP_K = int(os.getenv("DEFINITION_TOP_K", "10"))
-RERANKER_CANDIDATE_MULTIPLIER = int(os.getenv("RERANKER_CANDIDATE_MULTIPLIER", "3"))
-TOP_K_AFTER_RERANK = int(os.getenv("TOP_K_AFTER_RERANK", "10"))
 CONFIDENCE_FILTER_THRESHOLD = float(os.getenv("CONFIDENCE_FILTER_THRESHOLD", "0.1"))
 
 # Module budget: tuned to stay well under Gemini free-tier per-minute/per-day limits
@@ -119,6 +114,12 @@ MODULE34_DOC_TOP_K = int(os.getenv("MODULE34_DOC_TOP_K", "2"))
 # bucket) so two near-duplicate overlapping chunks cannot both consume slots in
 # the small per-bucket budget. Headroom multiplier: pull extra candidates so
 # dedup can drop redundant text and still fill the budget with DISTINCT content.
+# Sparse BM25 fused with the dense sweep by reciprocal rank fusion, applied to
+# the workspace-document bucket. Measured on Kenya: promotes 3-9 chunks per
+# dimension the dense sweep had not ranked. It changed no verdict on Kenya,
+# Japan or the EU — it is recall insurance, not a scoring change.
+USE_HYBRID_SEARCH = os.getenv("USE_HYBRID_SEARCH", "true").lower() == "true"
+
 MODULE_DEDUP_HEADROOM = int(os.getenv("MODULE_DEDUP_HEADROOM", "3"))
 
 # Comprehensive-evidence pool: a broad semantic sweep of the workspace
@@ -192,66 +193,10 @@ class Module34RetrievalResult(BaseModel):
         return labeled
 
 
-class CrossEncoderReranker:
-    def __init__(self, model_name: str = RERANKER_MODEL):
-        self._model_name = model_name
-        self._model = None
-        self._load_attempted = False
-
-    def _load(self):
-        if self._load_attempted:
-            return
-        self._load_attempted = True
-        try:
-            from sentence_transformers import CrossEncoder
-
-            self._model = CrossEncoder(self._model_name)
-            logger.info("reranker_loaded", model=self._model_name)
-        except Exception as exc:
-            logger.error("reranker_load_failed", model=self._model_name, error=str(exc))
-            self._model = None
-
-    @property
-    def is_available(self) -> bool:
-        if not self._load_attempted:
-            self._load()
-        return self._model is not None
-
-    def rerank(
-        self,
-        query: str,
-        candidates: list[dict[str, Any]],
-        top_k: int | None = None,
-    ) -> list[dict[str, Any]]:
-        if not candidates:
-            return []
-        if not self.is_available:
-            return candidates[:top_k] if top_k else candidates
-
-        pairs = [(query, c.get("text", "")[:512]) for c in candidates]
-        try:
-            scores = self._model.predict(pairs)
-        except Exception as exc:
-            logger.error("reranker_predict_failed", error=str(exc))
-            return candidates[:top_k] if top_k else candidates
-
-        scored = [(c, float(s)) for c, s in zip(candidates, scores)]
-        scored.sort(key=lambda x: x[1], reverse=True)
-
-        if top_k is not None:
-            scored = scored[:top_k]
-
-        result = []
-        for c, s in scored:
-            c["reranker_score"] = s
-            result.append(c)
-        return result
-
-
 class RetrievalPipeline:
     def __init__(self, vectorstore):
         self.vectorstore = vectorstore
-        self._reranker = None
+        self._doc_corpus_cache: dict[str, list[dict[str, Any]]] = {}
         # Per-instance cache (NOT class-level — a class-level dict would
         # leak every workspace's full chunk text across every analysis run
         # for the process lifetime). See _workspace_chunk_texts.
@@ -270,10 +215,6 @@ class RetrievalPipeline:
         self._lexical_cache_locks: dict[str, threading.Lock] = {}
         self._lexical_cache_locks_guard = threading.Lock()
 
-    def _get_reranker(self) -> CrossEncoderReranker:
-        if self._reranker is None:
-            self._reranker = CrossEncoderReranker()
-        return self._reranker
 
     @staticmethod
     def _select_incident_pool(
@@ -462,171 +403,6 @@ class RetrievalPipeline:
         }
         return aspects_map.get(dimension, [definition])
 
-    def build_dimension_embeddings(
-        self, profiles: dict[str, DimensionProfile]
-    ) -> dict[str, dict[str, list[float]]]:
-        result: dict[str, dict[str, list[float]]] = {}
-        for dim, profile in profiles.items():
-            definition_emb = self.vectorstore.embed_query(profile.definition)
-            aspect_embs = [self.vectorstore.embed_query(aspect) for aspect in profile.aspects]
-            result[dim] = {
-                "definition": definition_emb,
-                "aspects": aspect_embs,
-            }
-        return result
-
-    def retrieve_for_dimension(
-        self,
-        dimension: str,
-        user_query: str = "",
-        top_k_definition: int | None = None,
-        top_k_aspect: int | None = None,
-    ) -> RetrievalResult:
-        dim_query = dimension
-        if user_query:
-            dim_query = f"{dimension}: {user_query}"
-
-        top_k_def = top_k_definition or DEFINITION_TOP_K
-        top_k_asp = top_k_aspect or ASPECT_TOP_K
-        candidate_k_def = top_k_def * RERANKER_CANDIDATE_MULTIPLIER if USE_RERANKER else top_k_def
-        candidate_k_asp = top_k_asp * RERANKER_CANDIDATE_MULTIPLIER if USE_RERANKER else top_k_asp
-
-        t0 = time.time()
-
-        profiles = self.get_or_build_profiles()
-        profile = profiles.get(dimension)
-        if profile is None:
-            all_chunks = self._search_vectorstore(dim_query, candidate_k_def)
-            if USE_RERANKER:
-                all_chunks = self._apply_reranker(dim_query, all_chunks, top_k_def)
-            t1 = time.time()
-            return RetrievalResult(
-                document_chunks=[c for c in all_chunks if c.get("is_document", True)],
-                framework_chunks=[c for c in all_chunks if not c.get("is_document", True)],
-                retrieval_queries=[dim_query],
-                retrieval_latency=t1 - t0,
-                total_candidates=len(all_chunks),
-            )
-
-        dim_embs = self.build_dimension_embeddings(profiles)
-        dim_data = dim_embs.get(dimension)
-        if dim_data is None:
-            all_chunks = self._search_vectorstore(dim_query, candidate_k_def)
-            if USE_RERANKER:
-                all_chunks = self._apply_reranker(dim_query, all_chunks, top_k_def)
-            t1 = time.time()
-            return RetrievalResult(
-                document_chunks=[c for c in all_chunks if c.get("is_document", True)],
-                framework_chunks=[c for c in all_chunks if not c.get("is_document", True)],
-                retrieval_queries=[dim_query],
-                retrieval_latency=t1 - t0,
-                total_candidates=len(all_chunks),
-            )
-
-        definition_emb = dim_data["definition"]
-        aspect_embs = dim_data["aspects"]
-
-        queries = [dim_query]
-        rank_lists: list[list[tuple[str, float]]] = []
-
-        def_scores = self._query_by_embedding(definition_emb, candidate_k_def)
-        if def_scores:
-            rank_lists.append(def_scores)
-            queries.append(f"definition_embedding:{dimension}")
-
-        for i, asp_emb in enumerate(aspect_embs):
-            asp_scores = self._query_by_embedding(asp_emb, candidate_k_asp)
-            if asp_scores:
-                rank_lists.append(asp_scores)
-                queries.append(f"aspect_{i}_embedding:{dimension}")
-
-        if user_query:
-            user_emb = self.vectorstore.embed_query(user_query)
-            user_scores = self._query_by_embedding(user_emb, candidate_k_def)
-            if user_scores:
-                rank_lists.append(user_scores)
-                queries.append(f"user_query:{user_query}")
-
-        fused = reciprocal_rank_fusion(rank_lists)
-        all_fused_ids = [cid for cid, _ in fused]
-
-        chunk_metadata = batch_fetch_chunk_metadata(self.vectorstore, all_fused_ids)
-
-        doc_chunks: list[dict[str, Any]] = []
-        fw_chunks: list[dict[str, Any]] = []
-        seen_ids: set[str] = set()
-        all_candidates: list[dict[str, Any]] = []
-
-        for chunk_id, rr_score in fused:
-            if chunk_id in seen_ids:
-                continue
-            seen_ids.add(chunk_id)
-            chunk_data = chunk_metadata.get(chunk_id, {})
-            entry = {
-                "chunk_id": chunk_id,
-                "text": chunk_data.get("text", ""),
-                "page_number": chunk_data.get("page_number"),
-                "section_title": chunk_data.get("section_title"),
-                "source_framework": chunk_data.get("source_framework", ""),
-                "rrf_score": rr_score,
-                "is_document": chunk_data.get(
-                    "is_document", not bool(chunk_data.get("source_framework", ""))
-                ),
-            }
-            all_candidates.append(entry)
-            if chunk_data.get("is_document", True):
-                doc_chunks.append(entry)
-            else:
-                fw_chunks.append(entry)
-
-        rerank_latency = 0.0
-        if USE_RERANKER and all_candidates:
-            t_rerank = time.time()
-            rerank_input = len(all_candidates)
-            reranked = self._apply_reranker(dim_query, all_candidates, TOP_K_AFTER_RERANK)
-            rerank_latency = time.time() - t_rerank
-            reranked = [
-                c for c in reranked if c.get("reranker_score", 0.0) >= CONFIDENCE_FILTER_THRESHOLD
-            ]
-            doc_chunks = [c for c in reranked if c.get("is_document", True)]
-            fw_chunks = [c for c in reranked if not c.get("is_document", True)]
-            logger.info(
-                "stage_6_retrieval_rerank",
-                dimension=dimension,
-                reranker_input=rerank_input,
-                reranker_output=len(reranked),
-                reranker_used=USE_RERANKER,
-                rerank_latency_s=round(rerank_latency, 3),
-            )
-
-        t1 = time.time()
-
-        doc_scores = [c.get("rrf_score", c.get("similarity_score", 0.0)) for c in doc_chunks]
-        fw_scores = [c.get("rrf_score", c.get("similarity_score", 0.0)) for c in fw_chunks]
-        all_scores = doc_scores + fw_scores
-        avg_score = round(sum(all_scores) / max(len(all_scores), 1), 4) if all_scores else 0.0
-
-        logger.info(
-            "stage_6_retrieval_complete",
-            dimension=dimension,
-            num_queries=len(queries),
-            doc_chunks_retrieved=len(doc_chunks),
-            framework_chunks_retrieved=len(fw_chunks),
-            total_candidates=len(all_candidates),
-            avg_similarity_score=avg_score,
-            min_score=round(min(all_scores), 4) if all_scores else 0.0,
-            max_score=round(max(all_scores), 4) if all_scores else 0.0,
-            reranker_used=USE_RERANKER,
-            latency_s=round((t1 - t0) + rerank_latency, 3),
-        )
-
-        return RetrievalResult(
-            document_chunks=doc_chunks,
-            framework_chunks=fw_chunks,
-            retrieval_queries=queries,
-            retrieval_latency=(t1 - t0) + rerank_latency,
-            total_candidates=len(all_candidates),
-        )
 
     def _search_vectorstore(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
         "document" in query.lower() or "report" in query.lower()
@@ -671,17 +447,6 @@ class RetrievalPipeline:
             pass
         return scored
 
-    def _apply_reranker(
-        self,
-        query: str,
-        candidates: list[dict[str, Any]],
-        top_k: int | None = None,
-    ) -> list[dict[str, Any]]:
-        reranker = self._get_reranker()
-        if not reranker.is_available:
-            logger.warning("reranker_unavailable", query=query, candidates=len(candidates))
-            return candidates[:top_k] if top_k else candidates
-        return reranker.rerank(query, candidates, top_k=top_k)
 
     # ── Module 1 + Module 2 combined budget retrieval ─────────────────
 
@@ -1216,6 +981,86 @@ class RetrievalPipeline:
                 inserted=inserted,
             )
 
+    def _workspace_doc_corpus(self, workspace_id: str) -> list[dict[str, Any]]:
+        """Every chunk of the workspace's own uploaded documents.
+
+        BM25 searches this rather than the dense candidate pool — the
+        difference between re-ordering and RECOVERY. Fused over the dense pool
+        alone, sparse retrieval can only reshuffle what dense already found.
+
+        Cached per workspace for the life of the pipeline instance: the set is
+        small (~150 chunks for a two-document workspace) and would otherwise be
+        re-read once per dimension per module role.
+        """
+        cached = self._doc_corpus_cache.get(workspace_id)
+        if cached is not None:
+            return cached
+        corpus: list[dict[str, Any]] = []
+        try:
+            raw = self.vectorstore.collection.get(
+                where={"workspace_id": workspace_id},
+                include=["metadatas", "documents"],
+            )
+            for cid, text, md in zip(
+                raw.get("ids") or [], raw.get("documents") or [], raw.get("metadatas") or []
+            ):
+                corpus.append({"chunk_id": cid, "text": text or "", "metadata": md or {}})
+        except Exception as exc:
+            logger.error("workspace_doc_corpus_failed", workspace_id=workspace_id, error=str(exc))
+        self._doc_corpus_cache[workspace_id] = corpus
+        return corpus
+
+    def _apply_hybrid(
+        self,
+        query: str,
+        candidates: list[dict[str, Any]],
+        corpus: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Re-rank the candidate pool by fusing BM25 ranks with the dense order.
+
+        Any failure returns the input untouched: worse ordering is recoverable,
+        a dropped provision is not.
+        """
+        try:
+            from src.hybrid_search import hybrid_search, sparse_only_recall
+
+            # Raw vector-store hits key their id as "id"; entries already
+            # through _to_entry use "chunk_id". Normalise onto a private key so
+            # fusion works at either stage without mutating the caller's shape.
+            normalised = []
+            for c in candidates:
+                cid = c.get("chunk_id") or c.get("id")
+                if not cid:
+                    return candidates
+                normalised.append({**c, "_fuse_id": cid})
+
+            search_corpus = normalised
+            if corpus:
+                seen = {c["_fuse_id"] for c in normalised}
+                search_corpus = normalised + [
+                    {**c, "_fuse_id": c["chunk_id"]}
+                    for c in corpus
+                    if c.get("chunk_id") and c["chunk_id"] not in seen
+                ]
+
+            fused = hybrid_search(
+                query,
+                dense_results=normalised,
+                corpus=search_corpus,
+                top_k=len(normalised),
+                id_key="_fuse_id",
+            )
+            if len(fused) < len(candidates):
+                logger.warning(
+                    "hybrid_dropped_candidates", before=len(candidates), after=len(fused)
+                )
+                return candidates
+            logger.info("hybrid_applied", promoted_by_bm25=sparse_only_recall(fused))
+            return [{k: v for k, v in c.items() if k != "_fuse_id"} for c in fused]
+        except Exception as exc:
+            logger.error("hybrid_search_failed", error=str(exc))
+            return candidates
+
     def retrieve_module_chunks(
         self,
         dimension: str,
@@ -1316,6 +1161,19 @@ class RetrievalPipeline:
         # otherwise text-identical overlapping chunks consume the whole budget
         # and distinct document content never reaches the prompt.
         doc_filtered = [c for c in doc_raw if not self._is_preamble_chunk(c)]
+
+        # Fuse over the WORKSPACE DOCUMENT bucket specifically. This bucket
+        # decides verdicts — it holds the country's own provisions — and its
+        # budget is small, so which candidates survive the cut matters more
+        # here than anywhere else in the pipeline. A statutory clause a dense
+        # sweep ranks low because its phrasing is unusual ("shall ensure
+        # automatic recording of events") is exactly what BM25 recovers, and a
+        # provision that never reaches the prompt produces a Missing verdict
+        # indistinguishable from genuine absence.
+        if USE_HYBRID_SEARCH and doc_filtered and workspace_id:
+            doc_filtered = self._apply_hybrid(
+                dim_query, doc_filtered, self._workspace_doc_corpus(workspace_id)
+            )
 
         def _to_entry(r: dict[str, Any], role: str) -> dict[str, Any]:
             md = r.get("metadata", {}) or {}

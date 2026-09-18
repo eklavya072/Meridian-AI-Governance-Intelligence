@@ -20,7 +20,6 @@ from typing import Any
 import structlog
 
 from src.analysis_prompts import DIMENSION_DEFINITIONS
-from src.deterministic import LEVEL_LABELS
 from src.gap_analyzer import GOVERNANCE_DIMENSIONS
 
 logger = structlog.get_logger()
@@ -166,7 +165,7 @@ _DIMENSION_PATTERN = re.compile(
     r"(transparency|accountability|privacy|safety|human autonomy|"
     r"inclusivity|fairness|environmental sustainability|"
     r"explainability|bias|discrimination|data protection|"
-    r"human.?in.?the.?loop|algorithmic|governance|maturity)",
+    r"human.?in.?the.?loop|algorithmic|governance|depth)",
     re.IGNORECASE,
 )
 
@@ -179,7 +178,7 @@ _CONCEPT_PATTERNS = re.compile(
 _ANALYSIS_PATTERNS = re.compile(
     r"(why\s+is|why\s+was|why\s+did|how\s+is|how\s+was|"
     r"what does.*mean|what (is|was) the (reason|rationale|evidence)|"
-    r"explain the (coverage|risk|maturity|finding|result)|"
+    r"explain the (coverage|risk|maturity|implementation depth|depth|finding|result)|"
     r"why (is|was) it (covered|partial|missing|high|medium|low))",
     re.IGNORECASE,
 )
@@ -297,11 +296,6 @@ def _get_dimension_aspects(dimension: str) -> list[str]:
     return DIMENSION_DEFINITIONS.get(dimension, [])
 
 
-def _get_maturity_level_description(level: int) -> str:
-    """Get a description of a maturity level."""
-    return LEVEL_LABELS.get(level, f"Level {level}")
-
-
 def _build_concept_response(
     dimension: str,
     definition: str,
@@ -358,8 +352,8 @@ def _gap_to_finding_context(gap: dict[str, Any]) -> dict[str, Any]:
         "coverage": gap.get("coverage"),
         "coverage_reasoning": m1.get("coverage_reasoning") or gap.get("coverage_reasoning"),
         "coverage_example": m1.get("coverage_example"),
-        "governance_maturity": m1.get("governance_maturity") or gap.get("governance_maturity"),
-        "maturity_reasoning": m1.get("maturity_reasoning") or gap.get("maturity_reasoning"),
+        "implementation_depth": m1.get("implementation_depth") or gap.get("implementation_depth"),
+        "depth_reasoning": m1.get("depth_reasoning") or gap.get("depth_reasoning"),
         "gap_found": m1.get("gap_detected", gap.get("gap_found")),
         "reason_flagged": m1.get("reason_flagged") or gap.get("reason_flagged"),
         "risk_level": gap.get("risk_level"),
@@ -453,14 +447,14 @@ def _build_analysis_explanation(
         lines.append(coverage_example)
         lines.append("")
 
-    # Governance maturity (Module 1)
-    maturity = ctx.get("governance_maturity")
-    if maturity:
-        lines.append(f"### Governance Maturity: {maturity}")
-        maturity_reasoning = ctx.get("maturity_reasoning")
-        if maturity_reasoning:
+    # Governance depth (Module 1)
+    depth = ctx.get("implementation_depth")
+    if depth:
+        lines.append(f"### Implementation Depth: {depth}")
+        depth_reasoning = ctx.get("depth_reasoning")
+        if depth_reasoning:
             lines.append("")
-            lines.append(maturity_reasoning)
+            lines.append(depth_reasoning)
         lines.append("")
 
     # Risk explanation
@@ -813,10 +807,6 @@ class PluginRegistry:
 
 # Global registry
 _registry = PluginRegistry()
-
-
-def register_plugin(plugin: AdvisorPlugin) -> None:
-    _registry.register(plugin)
 
 
 # ── Main Entry Point ─────────────────────────────────────────────────────

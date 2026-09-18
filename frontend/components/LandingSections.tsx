@@ -1,26 +1,29 @@
 "use client";
 
 /**
- * The six sections below the hero.
+ * The page below the hero.
  *
- * 01 The finding      the research that gives the product its reason
- * 02 The standards    the framework library assembling
- * 03 The reading      the analysis screen taking its eight readings
- * 04 The proof        the auditor answering, with the citation behind it
- * 05 The method       the four stages of a run
- * 06 The close        one call to action
+ *   The standards    the framework library assembling
+ *   The reading      the analysis screen taking its eight readings
+ *   The proof        the auditor answering, with the citation behind it
+ *   The method       the four stages of a run
+ *   The close        one call to action
  *
- * The standards come before the readings on purpose: a visitor has to know
- * what a policy is being measured AGAINST before a verdict on it means
- * anything.
+ * The first three travel sideways inside a pinned track; the last two
+ * return to vertical. The standards come before the readings on purpose: a
+ * visitor has to know what a policy is being measured AGAINST before a
+ * verdict on it means anything.
  *
- * Sections 02 to 05 are the product animating itself rather than
- * screenshots of it: crisp at any resolution, no image payload, and no
- * layout shift while they load. Copy is authored in
- * docs/landing-design-package.md and ships verbatim.
+ * The OECD finding that used to open this file now plays over the hero
+ * video instead, where it belongs — it is the reason the product exists,
+ * and it was reading as just another section down here.
+ *
+ * Every panel is the product animating itself rather than a screenshot of
+ * it: crisp at any resolution, no image payload, and no layout shift while
+ * it loads. Copy is authored in docs/landing-design-package.md.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import MeridianMark from "@/components/MeridianMark";
 import {
@@ -29,6 +32,8 @@ import {
   FrameworksFrame,
 } from "@/components/ProductFrames";
 import PipelineStages from "@/components/PipelineStages";
+import HorizontalTrack from "@/components/HorizontalTrack";
+import { MethodBand } from "@/components/InkSections";
 import { RollWords, TypeLine } from "@/components/TextEffects";
 
 /* ── Seeing an element ────────────────────────────────────────────────────
@@ -99,164 +104,173 @@ function useReveal<T extends HTMLElement>() {
   return ref;
 }
 
-/* ── 01 The finding ──────────────────────────────────────────────────────
-   The OECD result, drawn rather than written. Three rungs of the same
-   ladder the product scores on, each one harder to reach than the last.
-   The proportions are qualitative because the source is: it reports most,
-   about half, and a minority, so the bars carry those words rather than
-   invented percentages. */
-const RUNGS = [
-  {
-    qty: "Most",
-    text: "define specific actions and set goals.",
-    fill: "88%",
-    gap: false,
-  },
-  {
-    qty: "About half",
-    text: "establish funding, or name who is responsible for delivering it.",
-    fill: "50%",
-    gap: false,
-  },
-  {
-    qty: "A minority",
-    text: "set an implementation timeframe for any of it.",
-    fill: "19%",
-    gap: true,
-  },
-];
+/* Activation for a panel inside the horizontal track.
+   The product frames hide their own contents until `active`, so whatever
+   drives that flag must never be able to go false again once true, and must
+   never depend on a measurement that can silently fail. This latches on the
+   first of three independent signals: the panel is horizontally near the
+   middle of the window, OR the viewport cannot be measured, OR two seconds
+   have passed since it became vertically visible. The animation plays when
+   the panel arrives; the content appears regardless. */
+function usePanelActive<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    if (active) return;
+    const el = ref.current;
+    if (!el) return;
+    let fallback: ReturnType<typeof setTimeout> | null = null;
+    const check = () => {
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      if (!vw || !vh) {
+        setActive(true);
+        return;
+      }
+      const verticallyOn = r.top < vh && r.bottom > 0;
+      if (!verticallyOn) return;
+      if (fallback === null) fallback = setTimeout(() => setActive(true), 2000);
+      const cx = r.left + r.width / 2;
+      if (Math.abs(cx - vw / 2) < vw * 0.42) setActive(true);
+    };
+    const poll = setInterval(check, 200);
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return () => {
+      clearInterval(poll);
+      if (fallback) clearTimeout(fallback);
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
+  }, [active]);
+  return { ref, active };
+}
 
-function Finding() {
-  const ref = useReveal<HTMLElement>();
+/* ── The track panels ────────────────────────────────────────────────────
+   One shell for all three, because inside a pinned viewport they read as a
+   single device rather than three sections, and three different layouts in
+   a row is what made the track look unformatted. The composition alternates
+   which side the screen sits on; everything else is identical.
+
+   Text arrives with the panel: `active` latches when the panel reaches the
+   middle of the window, and drives both the heading's word rise and the
+   body's fade. */
+function Panel({
+  eyebrowless = true,
+  heading,
+  body,
+  visual,
+  reverse = false,
+  typed = false,
+  active,
+  innerRef,
+}: {
+  eyebrowless?: boolean;
+  heading: string;
+  body: React.ReactNode;
+  visual: React.ReactNode;
+  reverse?: boolean;
+  typed?: boolean;
+  active: boolean;
+  innerRef?: React.Ref<HTMLDivElement>;
+}) {
+  void eyebrowless;
+  /* A CSS transition needs frames to advance. Where they do not arrive the
+     element keeps reporting its start value however the class list reads,
+     which strands the body and the screen at opacity zero on an active
+     panel. Measured here on the third panel. The settle asserts the
+     finished state with the transition switched off. */
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const t = setTimeout(() => setSettled(true), 1200);
+    return () => clearTimeout(t);
+  }, [active]);
+
   return (
-    <section className="l-sec l-finding" ref={ref}>
-      <div className="l-finding-head">
-        <p className="l-label">01 / The finding</p>
-        <RollWords
-          as="h2"
-          className="l-finding-lede"
-          text="The OECD read the world’s national AI strategies."
-          stagger={70}
-        />
+    <div
+      className={`l-pane${reverse ? " is-reverse" : ""}${active ? " is-on" : ""}${
+        settled ? " is-settled" : ""
+      }`}
+    >
+      <div className="l-pane-copy">
+        {typed ? (
+          <TypeLine as="h2" className="l-display l-h2" text={heading} active={active} />
+        ) : (
+          <RollWords as="h2" className="l-display l-h2" text={heading} />
+        )}
+        <p className="l-body l-pane-body">{body}</p>
       </div>
-
-      <ol className="l-ladder">
-        {RUNGS.map((r) => (
-          <li key={r.qty} className={`l-rung${r.gap ? " is-gap" : ""}`}>
-            <RollWords className="l-rung-qty" text={r.qty} stagger={0} />
-            <div className="l-rung-body">
-              <p className="l-rung-text">{r.text}</p>
-              <div className="l-rung-bar">
-                <span
-                  className="l-rung-fill"
-                  style={{ width: r.fill }}
-                  aria-hidden
-                />
-              </div>
-            </div>
-          </li>
-        ))}
-      </ol>
-
-      <div className="l-finding-note">
-        <p className="l-finding-kicker">
-          A promise nobody has to keep by any particular date is not a plan.{" "}
-          <span className="l-mark">That distance is what Meridian measures.</span>
-        </p>
-        <p className="l-finding-source">
-          <a
-            href="https://www.oecd.org/en/publications/governing-with-artificial-intelligence_26324bc2-en.html"
-            target="_blank"
-            rel="noreferrer noopener"
-            className="l-link"
-          >
-            OECD, Governing with Artificial Intelligence
-          </a>
-        </p>
+      <div className="l-pane-visual" ref={innerRef}>
+        {visual}
       </div>
-    </section>
+    </div>
   );
 }
 
-/* ── 02 The reading ────────────────────────────────────────────────────── */
-function Reading() {
-  const ref = useReveal<HTMLElement>();
-  const frame = useSeen<HTMLDivElement>();
+function Standards() {
+  const frame = usePanelActive<HTMLDivElement>();
   return (
-    <section className="l-sec l-split is-reverse" ref={ref}>
-      <div className="l-split-copy">
-        <p className="l-label">03 / The reading</p>
-        <RollWords as="h2" className="l-display l-h2" text="Eight dimensions, read at once." />
-        <p className="l-body">
+    <Panel
+      heading="Not our opinion of good governance. Theirs."
+      body={
+        <>
+          UNESCO, the OECD, UNDP, the G7 Hiroshima process, the EU AI Act,
+          NIST and the UN digital compacts, at the versions named beside
+          them. <strong>The roster is configuration, not code</strong>, so it
+          moves as the frameworks do.
+        </>
+      }
+      visual={<FrameworksFrame active={frame.active} />}
+      active={frame.active}
+      innerRef={frame.ref}
+    />
+  );
+}
+
+function Reading() {
+  const frame = usePanelActive<HTMLDivElement>();
+  return (
+    <Panel
+      reverse
+      heading="Eight dimensions, read at once."
+      body={
+        <>
           Transparency. Accountability. Privacy. Safety. Human autonomy.
           Inclusivity. Fairness. Environmental sustainability. Each one gets a
-          coverage verdict, a maturity stage, and the binding force behind it,{" "}
+          coverage verdict, a depth stage and the binding force behind it,{" "}
           <span className="l-mark">scored on evidence rather than intent</span>.
-        </p>
-      </div>
-      <div className="l-split-visual" ref={frame.ref}>
-        <AnalysisFrame active={frame.seen} />
-      </div>
-    </section>
+        </>
+      }
+      visual={<AnalysisFrame active={frame.active} />}
+      active={frame.active}
+      innerRef={frame.ref}
+    />
   );
 }
 
-/* ── 03 The proof ──────────────────────────────────────────────────────── */
 function Proof() {
-  const ref = useReveal<HTMLElement>();
-  const frame = useSeen<HTMLDivElement>();
-  const head = useSeen<HTMLDivElement>(60);
+  const frame = usePanelActive<HTMLDivElement>();
   return (
-    <section className="l-sec l-split" ref={ref}>
-      <div className="l-split-copy" ref={head.ref}>
-        <p className="l-label">04 / The proof</p>
-        {/* The one line on the page that types. This section is about
-            putting a question to the instrument, so the heading is written
-            the way the visitor would write it. */}
-        <TypeLine
-          as="h2"
-          className="l-display l-h2"
-          text="Ask it why. It cites the paragraph."
-          active={head.seen}
-        />
-        <p className="l-body">
+    <Panel
+      typed
+      heading="Ask it why. It cites the paragraph."
+      body={
+        <>
           Every finding can be questioned in plain language, and{" "}
-          <strong>every answer comes back with the framework text it rests
-          on</strong>. A governance tool that cannot show its working is an
-          opinion with a score attached.
-        </p>
-      </div>
-      <div className="l-split-visual" ref={frame.ref}>
-        <AuditorFrame active={frame.seen} />
-      </div>
-    </section>
-  );
-}
-
-/* ── 04 The standards ──────────────────────────────────────────────────── */
-function Standards() {
-  const ref = useReveal<HTMLElement>();
-  const frame = useSeen<HTMLDivElement>();
-  return (
-    <section className="l-sec l-standards" ref={ref}>
-      <div className="l-standards-head">
-        <p className="l-label">02 / The standards</p>
-        <RollWords
-          as="h2"
-          className="l-display l-h2"
-          text="Not our opinion of good governance. Theirs."
-        />
-        <p className="l-body">
-          UNESCO, the OECD, UNDP, the G7 Hiroshima process, the EU AI Act, NIST,
-          and the UN digital compacts, at the versions named beside them.{" "}
-          <strong>The roster is configuration, not code</strong>, so it moves as
-          the frameworks do.
-        </p>
-      </div>
-      <div className="l-standards-visual" ref={frame.ref}>
-        <FrameworksFrame active={frame.seen} />
-      </div>
-    </section>
+          <strong>
+            every answer comes back with the framework text it rests on
+          </strong>
+          . A governance tool that cannot show its working is an opinion with
+          a score attached.
+        </>
+      }
+      visual={<AuditorFrame active={frame.active} />}
+      active={frame.active}
+      innerRef={frame.ref}
+    />
   );
 }
 
@@ -264,14 +278,23 @@ function Standards() {
 function Method() {
   const ref = useReveal<HTMLElement>();
   return (
-    <section className="l-sec l-method" ref={ref}>
+    <section className="l-sec l-method" data-surface="paper" ref={ref}>
       <div className="l-method-head">
-        <p className="l-label">05 / The method</p>
         <RollWords
           as="h2"
-          className="l-display l-h2"
-          text="Four steps, and every one leaves a trail."
+          className="l-display l-method-h"
+          text="Nothing is asserted. Everything is traced."
         />
+        {/* The section had a heading and then four rows, with nothing to say
+            why the four exist. This is the argument the stages are evidence
+            for — and it is the one claim on the page a sceptical evaluator
+            will actually test. */}
+        <p className="l-body l-method-lede">
+          A score you cannot audit is an opinion with a number on it. Each of
+          the four stages below writes down what it did, so the brief at the
+          end comes apart line by line — back through the reasoning, back to
+          the paragraph it came from.
+        </p>
       </div>
       <PipelineStages />
     </section>
@@ -282,17 +305,21 @@ function Method() {
 function Close() {
   const ref = useReveal<HTMLElement>();
   return (
-    <section className="l-sec l-close" ref={ref}>
+    <section className="l-sec l-close" data-surface="ink" ref={ref}>
       <MeridianMark size={48} className="l-close-mark" />
-      <RollWords
-        as="h2"
-        className="l-display l-close-h"
-        text="You already have the document. Find out how deep it goes."
-        stagger={48}
-      />
+      {/* Two clauses, so two lines — stated, not left to `text-wrap: balance`
+          to guess at. Balance was splitting one sentence across two ragged
+          parts that broke mid-clause and shared no edge; the sentence has a
+          full stop in the middle of it, and that is where a reader expects
+          the break. The second line takes the accent, the way the hero's
+          turn does. */}
+      <h2 className="l-display l-close-h">
+        <RollWords as="span" className="l-close-line" text="You already have the AI governance framework." stagger={48} />
+        <RollWords as="span" className="l-close-line l-close-turn" text="Find out how deep it goes." stagger={48} />
+      </h2>
       <div className="l-close-cta">
         <Link href="/workspace" className="l-btn l-btn-primary">
-          Benchmark your policy
+          Benchmark your AI governance
         </Link>
         <Link href="/analysis" className="l-btn l-btn-quiet">
           See a finished analysis
@@ -302,17 +329,35 @@ function Close() {
   );
 }
 
+const REPO = "https://github.com/eklavya072/Meridian-AI-Governance-Intelligence";
+
 function Footer() {
   return (
-    <footer className="l-footer">
+    <footer className="l-footer" data-surface="paper-mid">
       <div className="l-footer-inner">
-        <span className="l-label">Meridian</span>
-        <span className="l-label">AI Governance Intelligence Workbench</span>
+        {/* The mark in gold, at the size a colophon takes it. It opens the
+            close above and it closes the page here, and those are the only
+            two places on the route it appears. */}
+        <MeridianMark size={13} className="l-footer-mark" />
+        <span>Meridian</span>
+        <span>AI Governance Intelligence Workbench</span>
         <nav className="l-footer-nav" aria-label="Product">
           <Link href="/workspace" className="l-link">Workspace</Link>
           <Link href="/analysis" className="l-link">Analysis</Link>
           <Link href="/frameworks" className="l-link">Frameworks</Link>
           <Link href="/auditor" className="l-link">Auditor</Link>
+          <a
+            href={REPO}
+            className="l-footer-gh"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            {/* Drawn, not an emoji or a glyph standing in for one. */}
+            <svg viewBox="0 0 16 16" aria-hidden>
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            Source
+          </a>
         </nav>
       </div>
     </footer>
@@ -322,11 +367,39 @@ function Footer() {
 export default function LandingSections() {
   return (
     <>
-      <Finding />
-      <Standards />
-      <Reading />
-      <Proof />
+      {/* The argument's middle travels sideways: the standards a policy is
+          measured against, the reading taken, then the working shown.
+          Scrolling down still means moving forward, which is the only thing
+          that makes the device worth using — it borrows the hero's grammar
+          so the middle of the page reads as one continuous move rather than
+          three stacked sections.
+
+          Below 1024px, on portrait touch screens, and under reduced motion
+          this is not a track at all: the panels stack and the page behaves
+          exactly as it did before. */}
+      <HorizontalTrack
+        panels={[
+          { key: "standards", node: <Standards /> },
+          { key: "reading", node: <Reading /> },
+          { key: "proof", node: <Proof /> },
+        ]}
+      />
+      {/* One dark chapter between the two light ones, and it does two jobs
+          in a deliberate order: the figures first, on white cards, then the
+          rules that produced them. Numbers, then why to believe them.
+
+          The white cards are the point of putting it here. A dark section
+          whose contents are dark is a change of paint; a dark section
+          holding light cards is a change of PLACE, and it is the only hard
+          contrast on a page that otherwise moves in half-steps. */}
+      <MethodBand />
+      {/* Then back to paper for the procedure, which is where a procedure
+          belongs. */}
       <Method />
+      {/* The last dark chapter answers the question the method raises —
+          why trust the verdict — and hands straight to the close, so the
+          page ends on one continuous dark passage rather than flickering
+          between surfaces twice more. */}
       <Close />
       <Footer />
     </>

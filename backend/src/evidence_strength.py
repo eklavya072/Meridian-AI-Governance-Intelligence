@@ -14,7 +14,7 @@ essentially EVERY national AI document satisfies it somewhere:
   - every strategy promises to "develop" or "establish" something.
 
 So the ladder raised nearly every dimension of nearly every document to
-Covered, and maturity — which was derived from the same binary flags — followed
+Covered, and depth — which was derived from the same binary flags — followed
 it up to Institutionalized. A binding statutory duty and an aspirational bullet
 in a vision statement produced identical verdicts.
 
@@ -73,7 +73,11 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+import structlog
+
 from src.utils import ocr_flexible_fragment
+
+logger = structlog.get_logger()
 
 # ── Tier constants ───────────────────────────────────────────────────────
 TIER_ASPIRATIONAL = 0
@@ -133,6 +137,24 @@ REGULATED_PARTY_RE = _words(
     "data fiduciary",
     "data fiduciaries",
     "fiduciary",
+    # PIPL's own name for the party it regulates. Its absence cost China's
+    # Privacy cell 27 duties borne by the primary addressee of the statute —
+    # the equivalent of scoring the GDPR without the word "controller".
+    "personal information handler",
+    "personal information handlers",
+    "personal data handler",
+    "personal data handlers",
+    "algorithmic recommendation service provider",
+    "algorithmic recommendation service providers",
+    "deep synthesis service provider",
+    "deep synthesis service providers",
+    # Conformity-assessment third parties. EU product law puts a chapter of
+    # duties on them and they are neither government nor the duty's subject
+    # elsewhere, so every one of those duties scored as no duty at all.
+    "notified body",
+    "notified bodies",
+    "conformity assessment body",
+    "conformity assessment bodies",
     "company",
     "companies",
     "firm",
@@ -194,6 +216,10 @@ GOV_BODY_RE = _words(
     "ombudsmen",
     "regulator",
     "regulators",
+    "commissioner",
+    "commissioners",
+    "supervisory authority",
+    "data protection supervisor",
     "department",
     "departments",
     "office",
@@ -229,66 +255,54 @@ OBLIGATION_RE = _words(
 # these. Confirmed live: "the guidelines mandate the implementation of
 # human-in-the-loop mechanisms" scored as unowned aspiration (T0) purely
 # because "mandates" didn't match "mandate".
+# Stems audited against what they ACTUALLY match in the corpus, because three
+# of them were matching almost nothing but false positives:
+#
+#   bar*      39 hits: barriers(26) barrier(4) baringo(2, a Kenyan county)
+#                      barometer(1) — 85% noise
+#   compel*    1 hit : compelling(1) — an adjective meaning persuasive
+#   restrict* 289 hits including restrictive(9), an adjective
+#
+# and "require" carries two senses that this lexicon could not separate:
+#
+#   deontic     "providers are required to", "shall require", "requires that"
+#   descriptive "professionals require AI fluency"  (= need)
+#
+# 90% of the corpus's require-based binding sentences had no deontic marker at
+# all. Kenya's entire Inclusivity verdict rested on one of them: "Non-tech
+# professionals... require AI fluency for ethical and inclusive deployment."
 IMPOSITION_RE = _words(
     "prohibit*",
-    "requir*",
     "mandate*",
     "impose*",
     "oblige*",
-    "restrict*",
     "forbid*",
-    "bar*",
     "prescribe*",
-    "compel*",
+    "restrict",
+    "restricts",
+    "restricted",
+    "restricting",
+    "restriction",
+    "restrictions",
+    "barred",
+    "barring",
+    "compels",
+    "compelled",
     "shall ensure",
     "shall provide",
     "shall establish",
 )
-# Consequence / supervisory power — what lifts an obligation to enforceable.
-ENFORCEMENT_RE = _words(
-    "penalty",
-    "penalties",
-    "fine",
-    "fines",
-    "sanction",
-    "sanctions",
-    "liable",
-    "liability",
-    "enforcement",
-    "enforce",
-    "enforced",
-    "audit",
-    "audits",
-    "audited",
-    "auditing",
-    "inspection",
-    "inspections",
-    "inspect",
-    "investigate",
-    "investigation",
-    "supervis*",
-    "conformity assessment",
-    "certification",
-    "certified",
-    "accreditation",
-    "revocation",
-    "suspend",
-    "suspension",
-    "corrective action",
-    "redress",
-    "grievance",
-    "complaint",
-    "complaints",
-    "appeal",
-    "remedy",
-    "remedies",
-    "compensation",
-    "prosecut*",
-    "offence",
-    "offense",
-    "non-compliance",
-    "noncompliance",
-    "breach",
+
+# "require" only in its imposing sense. The bare transitive use — "X requires
+# Y" where Y is a thing someone needs — is descriptive and creates no duty.
+DEONTIC_REQUIRE_RE = re.compile(
+    r"\b(?:is|are|was|were|be|been|being)\s+required\s+to\b"
+    r"|\bshall\s+requir\w*"
+    r"|\brequire[sd]?\s+that\b"
+    r"|\brequirements?\b"
+    r"|\bas\s+required\b"
+    r"|\brequired\s+(?:by|under|pursuant)\b",
+    re.IGNORECASE,
 )
 # AUTHORITY verbs — powers that actually govern (Abbott/Snidal "delegation"
 # with real teeth). An institution earns strength credit only when it wields
@@ -352,34 +366,9 @@ AUTHORITY_VERB_RE = _words(
     # promoted an innovation-partnership sentence to a supervisory power.
     "order to stop",
     "cease and desist",
-)
-# PROMOTION verbs — coordination/advocacy mandates. Explicitly NOT strength.
-PROMOTION_VERB_RE = _words(
-    "coordinate",
-    "coordinates",
-    "coordination",
-    "promote",
-    "promotes",
-    "promotion",
-    "facilitate",
-    "facilitates",
-    "encourage",
-    "encourages",
-    "raise awareness",
-    "advocate",
-    "advocates",
-    "support",
-    "supports",
-    "convene",
-    "convenes",
-    "collaborate",
-    "collaborates",
-    "engage",
-    "champion",
-    "champions",
-    "spearhead",
-    "lead",
-    "leads",
+    "confiscate",
+    "confiscates",
+    "confiscation",
 )
 
 # A NAMED BINDING LEGAL INSTRUMENT (an Act, Law, Regulation, Decree...). A
@@ -442,7 +431,30 @@ NONBINDING_DISCLAIMER_RE = re.compile(
     r"|do(?:es)?\s+not\s+(?:impose|create)\s+(?:any\s+)?(?:legal\s+)?"
     r"(?:obligations?|binding|duties)"
     r"|no\s+legal\s+(?:force|effect|obligation)"
-    r"|voluntary\s+(?:in\s+nature|basis|framework|guidelines?|code)"
+    r"|voluntary\s+(?:in\s+nature|framework|guidelines?|code)"
+    # How instruments ACTUALLY declare their own softness. The clauses above
+    # are boilerplate nobody writes: across seventeen documents not one of
+    # them matched, including Japan's AI Guidelines for Business, which says
+    # in its own preface that it pursues its purposes "through soft laws
+    # without any legally binding force". A detector that never fires is not
+    # a conservative detector.
+    r"|without\s+any\s+legally\s+binding\s+(?:force|effect|nature|power)"
+    r"|not\s+legally\s+binding"
+    r"|(?:is|are)\s+not\s+(?:intended\s+to\s+be\s+)?(?:legally\s+)?binding"
+    r"|(?:through|by|via)\s+soft\s+laws?\b"
+    r"|voluntary\s+compliance\s+(?:rather\s+than|to\s+avoid|instead\s+of)"
+    # NOT included: a bare "soft law", which appears in comparative
+    # discussion inside binding instruments; "best practice", which appears
+    # in every genre; and "voluntary frameworks lack legal enforceability",
+    # which is India's DIAGNOSIS of the status quo, not a statement about
+    # the document making it.
+    # NOTE: "voluntary basis" is deliberately NOT here. EU AI Act
+    # Recital 178 reads "Providers ... are encouraged to start to comply,
+    # on a voluntary basis, with the relevant obligations of this
+    # Regulation already during the transitional period" — a provision
+    # about EARLY compliance with a binding instrument, not a statement
+    # that the instrument is voluntary. Matching it declared the whole
+    # AI Act non-binding, capping every provision at T1.
     r")\b",
     re.IGNORECASE,
 )
@@ -775,165 +787,37 @@ def is_third_party_attribution(sentence: str, own_jurisdiction: str = "") -> boo
     return False
 
 
-def _has_real_duty_bearer(sentence: str) -> str:
-    """Classify the duty-bearer: 'regulated' | 'government' | 'none'."""
-    if REGULATED_PARTY_RE.search(sentence):
-        return "regulated"
-    if GOV_BODY_RE.search(sentence):
-        return "government"
-    return "none"
-
-
-def classify_sentence(
-    sentence: str,
-    dimension: str = "",
-    own_jurisdiction: str = "",
-    document_is_nonbinding: bool = False,
-) -> ScoredSentence:
-    """Classify one sentence's normative force.
-
-    Exclusions run first: a passage about another jurisdiction, or a contents
-    listing, is not evidence of THIS document's governance at any tier.
-
-    The tier rules follow the legalization literature's separation of
-    OBLIGATION from DELEGATION:
-
-      - A binding duty on an EXTERNAL, regulated duty-bearer is the strongest
-        ordinary provision (T3), and T4 when a consequence or supervisory
-        power attaches.
-      - A government body directing ITSELF caps at T2 no matter how hard the
-        modal ("the Ministry shall develop guidelines" is a plan, not a duty —
-        there is no correlative right-holder). This single rule is what stops
-        strategy implementation matrices from outranking statutes.
-      - A government body earns above T2 only when it wields an AUTHORITY
-        power (licence, certify, inspect, investigate, sanction, prohibit) —
-        not a coordination or promotion mandate.
-      - A hedged provision ("shall, where feasible, endeavour to") is demoted
-        one tier, and every provision in a self-declared voluntary document is
-        capped at T1.
-    """
-    s = _norm(sentence)
-
-    if is_structural_noise(s):
-        return ScoredSentence(s, TIER_ASPIRATIONAL, "none", False, excluded="structural")
-    if is_third_party_attribution(s, own_jurisdiction):
-        return ScoredSentence(s, TIER_ASPIRATIONAL, "none", False, excluded="foreign")
-
-    # Both actor kinds are tracked independently: one sentence can name a
-    # supervisory body AND the parties it regulates ("the Board may investigate
-    # and impose penalties on any entity…"). Collapsing to a single bearer
-    # label lost the government-authority reading whenever a regulated noun
-    # also appeared, under-scoring exactly the strongest provisions.
-    has_regulated = bool(REGULATED_PARTY_RE.search(s))
-    has_gov = bool(GOV_BODY_RE.search(s))
-    bearer = "regulated" if has_regulated else ("government" if has_gov else "none")
-
-    has_enf = bool(ENFORCEMENT_RE.search(s))
-    has_obligation = bool(OBLIGATION_RE.search(s)) or bool(IMPOSITION_RE.search(s))
-    has_commitment = bool(COMMITMENT_RE.search(s))
-    has_authority = bool(AUTHORITY_VERB_RE.search(s))
-    hedged = bool(HEDGE_RE.search(s))
-
-    tier = TIER_ASPIRATIONAL
-    enforcement_credit = False
-
-    if has_gov and has_authority and has_enf:
-        # Supervisory machinery: a body vested with a real power over others
-        # ("empowers the Board to investigate", "the Authority may inspect").
-        tier = TIER_ENFORCEABLE
-        enforcement_credit = True
-    elif has_regulated and has_obligation:
-        # A duty imposed on an external actor — the genuine governance act.
-        tier = TIER_ENFORCEABLE if has_enf else TIER_OBLIGATORY
-        enforcement_credit = has_enf
-    elif has_gov and has_authority:
-        tier = TIER_OBLIGATORY
-    elif has_gov and (has_commitment or has_obligation):
-        # Self-directed: institutional ownership exists, but the government is
-        # the addressee of its own instruction. Capped at Assigned regardless
-        # of modal force.
-        tier = TIER_ASSIGNED
-    elif has_regulated and has_enf:
-        tier = TIER_OBLIGATORY
-        enforcement_credit = True
-    elif LEGAL_INSTRUMENT_RE.search(s) and (has_obligation or has_enf):
-        # Governs by reference to an existing statute (see
-        # LEGAL_INSTRUMENT_RE): real binding law is invoked, but this
-        # document is not itself the instrument imposing the duty.
-        tier = TIER_ASSIGNED
-    elif has_commitment:
-        tier = TIER_INTENTIONAL
-    elif has_regulated and ASPIRATION_RE.search(s):
-        # A RECOMMENDED duty on an external actor ("providers should disclose
-        # the limitations of the system"). Weaker than an obligation, but
-        # materially stronger than an unaddressed principle ("AI should be
-        # transparent") because it names who is expected to act — this is the
-        # characteristic provision of a soft-law instrument, and without this
-        # branch such instruments score as though they said nothing at all.
-        tier = TIER_INTENTIONAL
-
-    # Hedges soften an otherwise-BINDING provision by one tier. They are not
-    # applied at or below Intentional: a recommendation ("actors should
-    # consider…") is already soft, and the hedge lexicon overlaps the
-    # recommendation lexicon ("should consider"), so demoting there would
-    # double-count the same softness and erase the provision entirely.
-    if hedged and tier > TIER_INTENTIONAL:
-        tier -= 1
-        if tier < TIER_ENFORCEABLE:
-            enforcement_credit = False
-
-    # A self-declared voluntary/advisory instrument cannot create duties.
-    if document_is_nonbinding and tier > TIER_INTENTIONAL:
-        tier = TIER_INTENTIONAL
-        enforcement_credit = False
-
-    return ScoredSentence(s, tier, bearer, enforcement_credit)
-
-
 def detect_nonbinding_document(sample_texts: Iterable[str]) -> bool:
     """True when the document declares itself voluntary / non-binding.
 
     Checked once per document against a corpus sample rather than per
     sentence, because the disclaimer usually appears once in a preface and
     governs every provision that follows.
+
+    A single false positive here is catastrophic and silent: the flag caps
+    EVERY provision in the document at T1, so `n_binding` goes to zero and
+    each affected dimension collapses to Emerging with no error raised. That
+    is what happened to the EU AI Act — one recital about voluntary EARLY
+    compliance was read as a disclaimer, and because the sample is drawn from
+    a per-dimension retrieval pool, the same document was judged voluntary for
+    some dimensions and binding for others.
+
+    So the disclaimer is overruled when the same sample shows the instrument
+    carrying its own supervisory or penalty machinery. A document that fines
+    people is not voluntary, whatever one of its recitals says about a
+    transitional period.
     """
-    for t in sample_texts:
-        if t and NONBINDING_DISCLAIMER_RE.search(t):
-            return True
-    return False
+    # Imported locally: the regime detector lives in src/grading.py, which
+    # imports this module, so a top-level import would be circular.
+    from src.grading import detect_enforcement_regime
 
-
-def detect_enforcement_regime(sample_texts: Iterable[str], min_signals: int = 3) -> bool:
-    """True when the DOCUMENT establishes supervisory or penalty machinery.
-
-    Checked once per document, like detect_nonbinding_document, because
-    enforcement in a legal instrument is document-level. The EU AI Act's
-    penalties, market surveillance authorities and corrective powers apply to a
-    breach of ANY obligation in the regulation; Article 10 does not restate
-    them, and it does not need to.
-
-    Scoring enforcement only from sentences that also match a dimension's
-    vocabulary therefore measures drafting style rather than governing
-    strength. On the live EU run it left Human Autonomy (5 binding provisions)
-    and Fairness (3 binding provisions) at Operationalized purely because their
-    own sentences mention enforcement once instead of twice — while the
-    regulation they sit in has the strongest enforcement regime in the corpus.
-
-    `min_signals` guards against a single passing mention: a document that
-    names a supervisory authority once in a preamble has not established a
-    regime.
-    """
-    signals = 0
-    for t in sample_texts:
-        if not t:
-            continue
-        for sent in _split_sentences_for_scoring(t):
-            scored = classify_sentence(sent)
-            if scored.tier >= TIER_ENFORCEABLE:
-                signals += 1
-                if signals >= min_signals:
-                    return True
-    return False
+    texts = [t for t in sample_texts if t]
+    if not any(NONBINDING_DISCLAIMER_RE.search(t) for t in texts):
+        return False
+    if detect_enforcement_regime(texts):
+        logger.info("nonbinding_disclaimer_overruled_by_enforcement_regime")
+        return False
+    return True
 
 
 def _split_sentences_for_scoring(text: str) -> list[str]:
@@ -947,84 +831,21 @@ def _split_sentences_for_scoring(text: str) -> list[str]:
     return [p for p in (x.strip() for x in parts) if 40 <= len(p) <= 600]
 
 
-def build_profile(
-    sentences: Iterable[str],
-    dimension: str = "",
-    own_jurisdiction: str = "",
-    document_is_nonbinding: bool = False,
-) -> EvidenceProfile:
-    """Score every dimension-relevant sentence and aggregate the distribution.
-
-    Near-duplicate sentences are collapsed before counting: retrieval chunks
-    overlap, so the same provision is routinely returned several times at
-    different offsets, and counting it repeatedly would inflate density for
-    documents that simply chunk more redundantly.
-    """
-    profile = EvidenceProfile(dimension=dimension)
-    accepted_keys: list[str] = []
-
-    for raw in sentences:
-        s = _norm(raw)
-        if len(s) < 40:
-            continue
-        # Collapse near-duplicates from overlapping chunks by CONTAINMENT, not
-        # by prefix. Overlapping chunks return the same provision cut at
-        # different offsets ("...fostering sustainable growth. The development
-        # of..." vs "...sustainable growth. The development of..."), so a
-        # prefix key treats them as distinct and the same sentence is counted
-        # once per overlapping chunk — which inflated one Kenyan sentence into
-        # "5 binding provisions". Containment catches truncation at either end.
-        key = re.sub(r"[^a-z0-9]", "", s.lower())
-        if not key:
-            continue
-        if any(key in k or k in key for k in accepted_keys):
-            continue
-        accepted_keys.append(key)
-
-        scored = classify_sentence(
-            s,
-            dimension=dimension,
-            own_jurisdiction=own_jurisdiction,
-            document_is_nonbinding=document_is_nonbinding,
-        )
-        profile.sentences.append(scored)
-        if scored.excluded == "foreign":
-            profile.n_excluded_foreign += 1
-            continue
-        if scored.excluded == "structural":
-            profile.n_excluded_structural += 1
-            continue
-
-        profile.n_scored += 1
-        profile.tier_counts[scored.tier] = profile.tier_counts.get(scored.tier, 0) + 1
-        profile.max_tier = max(profile.max_tier, scored.tier)
-        if scored.tier >= TIER_ENFORCEABLE:
-            profile.n_enforceable += 1
-        if scored.tier >= TIER_OBLIGATORY:
-            profile.n_binding += 1
-        if scored.tier >= TIER_ASSIGNED:
-            profile.n_institutional += 1
-        if scored.tier >= TIER_INTENTIONAL:
-            profile.n_commitment += 1
-
-    return profile
-
-
 # ── Profile → verdict mappings ───────────────────────────────────────────
 # Both mappings read the SAME profile but measure different things, so a
 # dimension can be broadly addressed yet shallowly implemented (Covered /
 # Emerging) or narrowly addressed but rigorously so (Partial / Operationalized).
-# Deriving maturity from coverage — the old behaviour — made that impossible.
+# Deriving depth from coverage — the old behaviour — made that impossible.
 
 
 def meets_force_bar(profile: EvidenceProfile) -> bool:
     """Does the document actually impose governing force on this dimension?
 
     ONE definition, used by BOTH coverage_from_profile and
-    maturity_from_profile. It lives here rather than being inlined in each
+    depth_from_profile. It lives here rather than being inlined in each
     because the two ladders drifted apart once already: the degenerate
     `n_binding >= 1` threshold was found and fixed on the coverage side but
-    silently left in place on the maturity side, so a document with a single
+    silently left in place on the depth side, so a document with a single
     unenforced duty read "Partial ... stands alone rather than forming a
     developed regime" and "Operationalized" at the same time. Two functions
     answering the same question must not each keep their own answer.
@@ -1117,7 +938,7 @@ def coverage_from_profile(
     # verdict that depends on which side of an arbitrary commitment-count
     # threshold a dimension falls, rather than on whether a duty exists, is
     # not a defensible Coverage signal. High commitment density with no
-    # binding duty is exactly what maturity_from_profile's "Emerging" tier
+    # binding duty is exactly what depth_from_profile's "Emerging" tier
     # already exists to represent — it does not also need to inflate Coverage.
 
     # Partial: genuine governance activity, but thin.
@@ -1245,13 +1066,13 @@ def describe_risk_basis(
     return basis, consequence
 
 
-def maturity_from_profile(
+def depth_from_profile(
     profile: EvidenceProfile,
     document_enforcement_regime: bool = False,
 ) -> tuple[str, str]:
-    """Map an evidence profile to a Governance Maturity stage.
+    """Map an evidence profile to a Implementation Depth stage.
 
-    Maturity answers a different question from coverage: how far has the
+    Implementation depth answers a different question from coverage: how far has the
     governance been built out — from stated intent to enforced machinery?
     """
     if profile.n_scored == 0:
@@ -1286,7 +1107,7 @@ def maturity_from_profile(
     # `n_binding >= 1`, which called a single unenforced sentence
     # "Operationalized" — the stage name asserts the governance is built out
     # and running, and one duty in isolation plainly is not. That also put
-    # maturity in direct contradiction with coverage, which describes the very
+    # depth in direct contradiction with coverage, which describes the very
     # same profile as "stands alone rather than forming a developed regime".
     if meets_force_bar(profile):
         return "Operationalized", (
@@ -1296,7 +1117,7 @@ def maturity_from_profile(
     # Delegated separates "someone owns this" from "someone said this matters".
     # Both used to return Emerging, so a dimension carrying a real binding duty
     # scored identically to one carrying a bare principle — see the note on
-    # MATURITY_STAGE_SCORE for the live cases that exposed it.
+    # DEPTH_STAGE_SCORE for the live cases that exposed it.
     if profile.n_binding >= 1:
         return "Delegated", (
             "A binding requirement exists but stands alone, with neither a "
@@ -1321,7 +1142,7 @@ def maturity_from_profile(
 
 # ── Framework alignment: an approach that was TRIED AND REJECTED ──────────
 #
-# Coverage and maturity are computed from the uploaded document's OWN
+# Coverage and depth are computed from the uploaded document's OWN
 # provisions. That means the ingested reference corpus (UNESCO, OECD, NIST,
 # UNDP, CDEI, ...) does NOT influence the verdict — it supplies the normative
 # citation, the recommendations and the alignment narrative, but adding or
@@ -1531,6 +1352,16 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
             "disabilit",
             "age group",
             "older persons",
+            # Groups every legal tradition protects, named as that tradition
+            # names them. The EU/GDPR vocabulary above misses the way China's
+            # Algorithmic Recommendations Provisions do the same work —
+            # Article 18 on minors, Article 19 on seniors — and those are
+            # binding articles with a regulator behind them.
+            "minors",
+            "children",
+            "elderly",
+            "seniors",
+            "vulnerable group",
         ),
         "fairness metrics": (
             "demographic parity",
@@ -1539,7 +1370,18 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
             "fairness metric",
             "equal opportunity",
         ),
-        "non-discrimination duty": ("discriminat", "non-discriminat", "equal treatment"),
+        # Consumer-law phrasing carries the same duty: China states it as
+        # "protect the consumers' rights to fair transactions". A duty not to
+        # treat people unfairly is that duty whatever body of law it sits in.
+        "non-discrimination duty": (
+            "discriminat",
+            "non-discriminat",
+            "equal treatment",
+            "fair treatment",
+            "fair transaction",
+            "fair and equitable",
+            "equitable treatment",
+        ),
         "bias mitigation": ("mitigat", "correct", "remediat", "debias"),
     },
     "Environmental Sustainability": {
@@ -1553,7 +1395,11 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
         "compute efficiency": (
             "computational",
             "compute",
+            # Both spacings, deliberately. India's Guidelines write
+            # "resource-efficient" with a hyphen and the spaced form alone
+            # missed it, which produced the study's only Missing verdict.
             "resource efficien",
+            "resource-efficien",
             "model size",
             "optimis",
             "optimiz",
@@ -1611,36 +1457,16 @@ def detect_mechanisms(
     scored_sentences: list[ScoredSentence],
     dimension: str,
 ) -> MechanismCoverage:
-    """Identify which required mechanisms the document provides, and how strongly.
+    """Which required mechanisms the document provides, and how strongly.
 
-    Operates on ALREADY-CLASSIFIED sentences, so a mechanism inherits the
-    normative force of the provision that supplies it: the same mechanism can
-    be Aspirational in one document and Obligatory in another, which is
-    precisely the distinction the sentence-similarity approach lost.
+    Kept as the name every caller already uses; the implementation lives in
+    src/mechanism_matching.py. There were two of these — this one and the
+    hyphen-tolerant one — and production imported THIS one, so "bias-test",
+    "red-teaming" and "post market monitoring" were being missed by the
+    mechanism gate while the module that handled them sat beside it unused.
+    Imported inside the function because mechanism_matching reads
+    DIMENSION_MECHANISMS from here.
     """
-    result = MechanismCoverage(dimension=dimension)
-    table = DIMENSION_MECHANISMS.get(dimension)
-    if not table:
-        return result
-    usable = [s for s in scored_sentences if not s.excluded]
-    for name, cues in table.items():
-        # \b PREFIX anchor, no trailing anchor: stems still match their
-        # inflections ("liabilit" -> liability/liabilities) but can no
-        # longer match mid-word. Without it "liab" matched inside
-        # "re-liab-le" and scored "Consistent and reliable data" as a
-        # liability-allocation mechanism; "age" matched "agency", "log"
-        # matched "logic", "fine" matched "define".
-        pattern = re.compile(
-            "|".join(r"\b" + ocr_flexible_fragment(c) for c in cues),
-            re.IGNORECASE,
-        )
-        best: int | None = None
-        for s in usable:
-            if pattern.search(s.text):
-                if best is None or s.tier > best:
-                    best = s.tier
-        if best is None:
-            result.absent.append(name)
-        else:
-            result.present[name] = best
-    return result
+    from src.mechanism_matching import detect_mechanisms as _detect
+
+    return _detect(scored_sentences, dimension)

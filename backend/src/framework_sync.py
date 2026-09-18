@@ -245,21 +245,3 @@ class FrameworkSyncService:
         logger.info("pdf_downloaded", name=name, path=str(target_path), size=len(response.content))
         return target_path
 
-    def get_framework_status(self) -> list[dict[str, Any]]:
-        frameworks_config = load_frameworks_config()
-        results: list[dict[str, Any]] = []
-        for fw in frameworks_config:
-            name = fw["name"]
-            local_path = RAW_POLICIES_DIR / f"{name.replace(' ', '_').replace('/', '_')}.pdf"
-            indexed_chunks = self.vector_store.count_chunks(framework_filter=[name])
-            results.append(
-                {
-                    "name": name,
-                    "version": fw.get("version", ""),
-                    "website": fw.get("website", ""),
-                    "is_indexed": indexed_chunks > 0,
-                    "chunk_count": indexed_chunks,
-                    "local_file_exists": local_path.exists(),
-                }
-            )
-        return results

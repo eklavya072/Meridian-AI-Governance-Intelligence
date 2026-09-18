@@ -23,11 +23,11 @@ import {
 import CitationCard from "@/components/CitationCard";
 import HighlightedText from "@/components/HighlightedText";
 import ProviderBadge from "@/components/ProviderBadge";
-import MaturityBadge from "@/components/MaturityBadge";
+import DepthBadge from "@/components/DepthBadge";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import ModuleStack, { type ModuleStackItem } from "@/components/ModuleStack";
 import SpecularButton from "@/components/SpecularButton";
-import { CoverageDonut, MaturityGauge, StageHistogram } from "@/components/DashboardCharts";
+import { CoverageDonut, DepthGauge, StageHistogram } from "@/components/DashboardCharts";
 import { RunComparisonHeatmap } from "@/components/Heatmaps";
 import ProvisionChecklist from "@/components/ProvisionChecklist";
 import {
@@ -280,7 +280,7 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
 
 function Module1Panel({ gap }: { gap: GovernanceGap }) {
   const m1 = gap.module_1;
-  const maturity = m1?.governance_maturity || gap.governance_maturity;
+  const depth = m1?.implementation_depth || gap.implementation_depth;
   const isCovered = gap.coverage === "Covered";
 
   // Evidence accordion data. "Sources" = real chunk-backed citations only
@@ -304,7 +304,7 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
         </div>
         <div>
           <p className="module-label font-bold mb-1.5">Implementation Depth</p>
-          <MaturityBadge level={maturity} />
+          <DepthBadge level={depth} />
         </div>
         <div>
           <p className="module-label mb-1.5">Gap Detected</p>
@@ -381,10 +381,10 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
         </div>
       )}
 
-      {m1?.maturity_reasoning && (
+      {m1?.depth_reasoning && (
         <div>
-          <p className="module-heading mb-2">Maturity Reasoning</p>
-          <p className="module-body"><HighlightedText text={m1.maturity_reasoning} /></p>
+          <p className="module-heading mb-2">Implementation depth Reasoning</p>
+          <p className="module-body"><HighlightedText text={m1.depth_reasoning} /></p>
         </div>
       )}
 
@@ -850,7 +850,7 @@ function AnalysisFailedPanel({ gap }: { gap: GovernanceGap }) {
 
 function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
   const [open, setOpen] = useState(false);
-  const maturity = gap.module_1?.governance_maturity || gap.governance_maturity;
+  const depth = gap.module_1?.implementation_depth || gap.implementation_depth;
   const failed = Boolean(gap.analysis_error);
 
   // Skiper16-style scroll deck: one sticky card per module, in order
@@ -972,7 +972,7 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
               <CoverageIndicator coverage={gap.coverage} />
             </motion.span>
           )}
-          {/* An un-assessed dimension has no maturity — showing 'Unaddressed' or
+          {/* An un-assessed dimension has no depth — showing 'Unaddressed' or
               'Insufficient Evidence' tags next to 'Analysis failed' would be
               misleading. Risk labels (Low/Medium/High) were removed from the
               UI; risk_level stays in the data for backend priority logic. */}
@@ -989,7 +989,7 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
               }}
               className="inline-flex"
             >
-              <MaturityBadge level={maturity} />
+              <DepthBadge level={depth} />
             </motion.span>
           )}
         </div>
@@ -1173,7 +1173,7 @@ function DecisionAnalyticsCard({
         </motion.span>
       </div>
 
-      {/* Row 1: the two charts side by side — coverage donut and maturity
+      {/* Row 1: the two charts side by side — coverage donut and depth
           gauge, both animating their fill on load. These are the visual
           centerpiece of the section. Panels are solid white on the card
           surface — clean, not glass. */}
@@ -1190,7 +1190,7 @@ function DecisionAnalyticsCard({
           className="rounded-xl border border-[color:var(--border)] bg-white p-4"
         >
           <p className="eyebrow mb-3">Implementation Depth</p>
-          <MaturityGauge analytics={analytics} />
+          <DepthGauge analytics={analytics} />
           <StageHistogram analytics={analytics} />
         </motion.div>
       </div>
@@ -1240,7 +1240,7 @@ function DecisionAnalyticsCard({
       {/* Row 3: the two highlight cards — weakest + strongest dimension,
           below the radar. Weakest = the lowest coverage tier present, kept
           only when it carries Critical/High priority (no Medium/Low), sorted
-          by priority; the strongest is the highest-maturity dimension. */}
+          by priority; the strongest is the highest-depth dimension. */}
       <div className="grid md:grid-cols-2 gap-4 mt-4">
         <motion.div
           variants={staggerChild}
@@ -1284,7 +1284,7 @@ function DecisionAnalyticsCard({
         >
           <p className="eyebrow mb-1">Regulatory Trajectory</p>
           <p className="text-[11px] text-navy-600 mb-3">
-            Coverage and maturity stage per dimension, across every run in
+            Coverage and depth stage per dimension, across every run in
             this workspace — what each added instrument actually moved.
           </p>
           <RunComparisonHeatmap analyses={analyses} />
@@ -1414,7 +1414,13 @@ export default function AnalysisPage() {
         // Chat-only workspaces are AI Auditor document chats — they can
         // never have a dimension analysis, so they don't belong in the
         // workspace picker here (same rule as the Workspace page).
-        setWorkspaces(data.filter((w) => w.status !== "chat_only"));
+        // Oldest first, so the picker reads in the order the study ran
+        // (EU -> Japan -> India -> Kenya -> Egypt) rather than the API's
+        // newest-first order, which showed the comparison backwards.
+        const usable = data
+          .filter((w) => w.status !== "chat_only")
+          .sort((a, b) => a.created_at.localeCompare(b.created_at));
+        setWorkspaces(usable);
         // ?workspace=<id> (from "View Analysis" on the Workspace page)
         // preselects that workspace and auto-loads its analysis. Read the
         // param via window.location instead of useSearchParams — this is a
@@ -1425,6 +1431,11 @@ export default function AnalysisPage() {
         if (preset && data.some((w) => w.id === preset)) {
           setSelectedWs(preset);
           loadAnalysisFor(preset);
+        } else if (usable.length > 0) {
+          // Select the first workspace for real. The picker always rendered
+          // one, so leaving the state empty made "View Analysis" a no-op
+          // until the user re-picked the country already shown to them.
+          setSelectedWs(usable[0].id);
         }
       })
       .catch(() => {});

@@ -50,7 +50,7 @@ function analysisDocuments(a: Analysis): string[] {
 
 interface ComparisonCell {
   coverage: string;
-  maturity: string;
+  depth: string;
 }
 
 interface ComparisonColumn {
@@ -96,7 +96,7 @@ function buildComparisonMatrix(analyses: Analysis[]): {
       }
       cells.set(`${g.dimension}::${a.analysis_id}`, {
         coverage: g.coverage,
-        maturity: g.governance_maturity || "",
+        depth: g.implementation_depth || "",
       });
     }
   }
@@ -153,7 +153,7 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={entered ? { opacity: 1, scale: 1 } : {}}
                   transition={{ duration: 0.3, delay: ri * 0.04 + ci * 0.03, ease: EASE.out }}
-                  title={cell ? `${dimension}: ${cell.coverage} — ${cell.maturity}` : "Not assessed"}
+                  title={cell ? `${dimension}: ${cell.coverage} — ${cell.depth}` : "Not assessed"}
                 >
                   {cell ? (
                     <>
@@ -161,7 +161,7 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
                         {cell.coverage}
                       </span>
                       <span className="text-[8px] font-medium leading-tight text-center text-white/85">
-                        {cell.maturity}
+                        {cell.depth}
                       </span>
                     </>
                   ) : (
