@@ -902,16 +902,29 @@ def coverage_from_profile(
     # — a document with 6/6 mechanisms but no binding force stays Partial.)
     if force_bar and mechanisms is not None and mechanisms.total:
         if (mechanisms.met / mechanisms.total) < mechanism_floor:
+            # Named, not counted. "3 of 6 mechanisms" tells a reader nothing
+            # they can act on, because they have no way to know what the six
+            # are or which of the missing three matters; the absent ones are
+            # ordered by how many reference instruments expect each, so the
+            # sentence opens with the gap most widely agreed to matter.
+            from src.framework_salience import framework_count, rank_absent
+
+            ranked = rank_absent(profile.dimension, mechanisms.absent)
+            corpus = framework_count()
+            if ranked and corpus:
+                missing = "; ".join(
+                    f"{row['mechanism']} (expected by {row['expected_by']} of {corpus} "
+                    f"reference instruments)"
+                    for row in ranked[:3]
+                )
+            else:
+                missing = ", ".join(mechanisms.absent[:4])
             return "Partial", (
                 f"The document imposes binding requirements for this dimension "
-                f"({profile.n_binding} binding provision(s)), but provides only "
-                f"{mechanisms.met} of {mechanisms.total} governance mechanisms "
-                "the dimension calls for"
-                + (
-                    f" — not addressed: {', '.join(mechanisms.absent[:4])}."
-                    if mechanisms.absent
-                    else "."
-                )
+                f"({profile.n_binding} binding provision(s)), but leaves "
+                f"{len(mechanisms.absent)} of the {mechanisms.total} governance "
+                f"mechanisms this dimension calls for without any supporting "
+                f"provision" + (f" — most notably {missing}." if missing else ".")
             )
     if force_bar:
         return "Covered", (

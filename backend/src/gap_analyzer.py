@@ -2305,8 +2305,24 @@ class GapAnalyzer:
                         continue
                     if _sentence_has_core_term(sent, dimension):
                         continue
-                    if structurally_relevant(sent, rank):
-                        found.append((sent, document))
+                    if not structurally_relevant(sent, rank):
+                        continue
+                    # Structural admission has no topic signal of its own — it
+                    # trusts the retriever's ranking, a regulated party and a
+                    # hard modal. So a provision that names ANOTHER dimension
+                    # explicitly, and this one not at all, belongs there rather
+                    # than here: six DPDP Act privacy duties ("shall erase
+                    # personal data", "shall give the Board intimation of a
+                    # breach") were India's Safety evidence on exactly this
+                    # path. 38% of structurally-admitted provisions carry that
+                    # contradiction, and the evidence to reject them is already
+                    # on the sentence.
+                    if any(
+                        other != dimension and _sentence_has_core_term(sent, other)
+                        for other in GOVERNANCE_DIMENSIONS
+                    ):
+                        continue
+                    found.append((sent, document))
             candidates[dimension] = found
         texts_only = {d: [t for t, _ in v] for d, v in candidates.items()}
         kept = {d: set(v) for d, v in apply_specificity_guard(texts_only).items()}

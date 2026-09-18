@@ -401,3 +401,19 @@ class TestShortCooldownsAreWaitedOut:
 
         with pytest.raises(pr.CapacityExhausted, match="retry tomorrow"):
             _call(provider)
+
+
+class TestZeroWaitIsNotAvailability:
+    """A half-open credential reports 0s to go for a probe nobody may send."""
+
+    def test_a_zero_wait_still_pauses_before_retrying(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr(pr.time, "sleep", lambda s: slept.append(s))
+        provider = FakeGemini(keys=1)
+        monkeypatch.setattr(pr.get_registry(), "seconds_until_any_available", lambda _ids: 0.0)
+        picks = iter([None, 0, 0, 0])
+        monkeypatch.setattr(pr, "_pick_healthy_key", lambda _p: next(picks))
+
+        assert _call(provider).answer == "ok"
+        # Sleeping 0s burned five attempts in milliseconds and failed the run.
+        assert slept and slept[0] >= pr.RETRY_BACKOFF_SECONDS

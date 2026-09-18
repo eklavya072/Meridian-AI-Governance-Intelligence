@@ -441,7 +441,9 @@ class TestMechanismBreadthGate:
         )
         coverage, note = coverage_from_profile(self._strong_profile(), mechanisms=mech)
         assert coverage == "Partial"
-        assert "1 of 7" in note
+        # The note NAMES the missing mechanisms rather than counting them:
+        # "1 of 7" tells a reader nothing they can act on.
+        assert "6 of the 7" in note
 
     def test_broad_mechanism_coverage_allows_covered(self):
         from src.evidence_strength import MechanismCoverage
@@ -634,7 +636,9 @@ class TestMechanismGateReachesTheVerdict:
         assert coverage_from_profile(profile)[0] == "Covered"
         level, note = coverage_from_profile(profile, mechanisms=self._mechanisms(1, 6))
         assert level == "Partial"
-        assert "1 of 7" in note
+        # The note NAMES the missing mechanisms rather than counting them:
+        # "1 of 7" tells a reader nothing they can act on.
+        assert "6 of the 7" in note
 
     def test_gate_never_promotes(self):
         """Full mechanism breadth cannot manufacture governing force."""

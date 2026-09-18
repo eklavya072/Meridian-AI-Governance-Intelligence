@@ -757,7 +757,7 @@ OUTPUT — return ONLY valid JSON with EXACTLY this shape:
   "responsible_agency_grounding": "document_named",
   "documentation_requirements": ["req 1"],
   "monitoring_checklist": ["item 1"],
-  "implementation_citations": [{"chunk_id": "9f3a2b...", "quote": "verbatim passage", "page_number": 4}],
+  "implementation_citations": [{"chunk_id": "9f3a2b...", "quote": "verbatim passage", "page_number": 4, "claim": "which step this passage supports"}],
   "incident_matches": [
     {"incident_name": "...", "source": "...", "dimension_relevance": "...", "potential_consequence": "...", "lessons_learned": "...", "mitigation": "...", "chunk_id": "c81d07...", "quote": "verbatim passage", "page_number": 2}
   ],
@@ -777,6 +777,9 @@ CITATION RULES (MANDATORY):
   incident chunk_id / quote come FROM [MODULE 4] lines.
 - Never invent a chunk id. If no context line supports a claim, use
   "insufficient evidence for citation".
+- Every citation carries a `claim`: the one step or finding this passage is
+  evidence FOR. A quote with no claim cannot be checked, because a reader
+  cannot tell what it was meant to support.
 
 REMEMBER: no fabricated agencies, no invented incidents, no fabricated
 citations. Return JSON only.
@@ -1164,6 +1167,16 @@ def build_recommendation_and_final_prompt(
         "\nBefore writing, identify the smallest realistic improvement. "
         "Then generate recommendations that strengthen existing mechanisms first. "
         "Every recommendation must name the specific mechanism it extends. "
+        # Measured across 138 stored recommendations: 4% named a specific
+        # international instrument. The reference corpus is in this prompt,
+        # so "drawing on international incident response frameworks" is a
+        # vagueness a policy adviser would be pulled up on — the instrument
+        # and its clause are available and should be stated.
+        "Where a reference framework in the context supports the change, NAME "
+        "it and the provision (e.g. 'per NIST AI RMF MANAGE-4.1', 'as UNESCO "
+        "Recommendation \u00a7 35 requires'). Never write 'international best "
+        "practice', 'global standards' or 'recognised frameworks' when the "
+        "specific instrument is in the context above. "
         "Output valid JSON only."
     )
 

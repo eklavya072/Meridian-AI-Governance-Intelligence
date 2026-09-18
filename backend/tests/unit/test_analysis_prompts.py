@@ -616,3 +616,35 @@ class TestAllPromptOutputFormats:
         ]
         for i, sp in enumerate(sps, 1):
             assert len(sp) > 50, f"System prompt {i} too short"
+
+
+class TestAdviceIsSpecific:
+    """Generic advice is what a policy adviser gets pulled up on."""
+
+    def test_recommendations_must_name_the_instrument(self):
+        """Measured: 4% of 138 stored recommendations named a specific
+        instrument, while 43 frameworks sat in the prompt context."""
+        from src.analysis_prompts import build_recommendation_and_final_prompt
+
+        _system, prompt = build_recommendation_and_final_prompt(
+            dimension="Safety",
+            evidence_interpretation={},
+            depth_result={"depth_level": 2},
+            framework_synthesis={},
+            plausibility_result={},
+            dimension_definition="testing and risk management duties",
+            evidence_quotes=["Providers should test systems before release."],
+        )
+        assert "NAME" in prompt
+        assert "international best practice" in prompt  # named as a thing to avoid
+
+    def test_roadmap_citations_must_say_what_they_support(self):
+        """Every stored roadmap citation had an empty claim field, because the
+        schema shown to the model never asked for one."""
+        from src import analysis_prompts
+
+        source = analysis_prompts.__file__
+        with open(source, encoding="utf-8") as fh:
+            text = fh.read()
+        assert '"claim": "which step this passage supports"' in text
+        assert "A quote with no claim cannot be checked" in text

@@ -1098,3 +1098,26 @@ class TestSubjectionIsNotControl:
             "premises under the inspection of the notified body",
         ):
             assert SUBJECTION_RE.search(s), s
+
+
+class TestDimensionAwareStructuralAdmission:
+    """Structural admission trusts rank, so it needs a topic veto."""
+
+    def test_a_provision_naming_another_dimension_is_not_admitted_here(self):
+        """Six DPDP privacy duties were India's Safety evidence on this path."""
+        from src.deterministic import _sentence_has_core_term
+
+        s = (
+            "(6) In the event of a personal data breach, the Data Fiduciary shall "
+            "give the Board intimation of such breach."
+        )
+        assert _sentence_has_core_term(s, "Privacy")
+        assert not _sentence_has_core_term(s, "Safety")
+
+    def test_the_veto_is_wired_into_structural_admission(self):
+        import inspect
+
+        from src.gap_analyzer import GapAnalyzer
+
+        src = inspect.getsource(GapAnalyzer._structural_candidates)
+        assert "_sentence_has_core_term(sent, other)" in src

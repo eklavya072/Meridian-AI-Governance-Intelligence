@@ -63,7 +63,14 @@ def _jittered_wait(base: float, spread: float = 0.5) -> float:
 # Both are env-tunable. Token-level TPM is not the
 # binding constraint for flash-tier free quotas (250k-1M TPM vs 10-15 RPM),
 # so RPM + RPD cover the realistic 429 sources.
-GEMINI_RPM_LIMIT = int(os.getenv("GEMINI_RPM_LIMIT", "10"))
+# PER KEY, and the pool multiplies it: 5 keys at 10 is 50 requests a minute.
+# Measured against the live API, the free tier refuses at 20 — "limit: 20,
+# model: gemini-3.6-flash" — and that ceiling is per PROJECT, not per key, so
+# adding credentials buys daily headroom and no extra rate. A 16-call analysis
+# therefore tripped the limit on every run, and the retries that followed made
+# it worse. Sized so the whole pool stays under the project ceiling:
+# GEMINI_RPM_LIMIT x credentials <= 20.
+GEMINI_RPM_LIMIT = int(os.getenv("GEMINI_RPM_LIMIT", "4"))
 GEMINI_RPM_WINDOW = float(os.getenv("GEMINI_RPM_WINDOW", "60"))
 # An OPTIONAL self-imposed cap, off unless you set it. It used to default to
 # 1000, which was a guess that matched no real Gemini quota: the counter read
@@ -559,13 +566,21 @@ def generate_with_retry(
                     [_key_id(provider, i) for i in range(len(provider.api_keys))]
                 )
                 if wait <= CAPACITY_WAIT_CEILING_SECONDS and attempt < max_attempts:
+                    # A zero wait here does NOT mean "available now": a
+                    # credential whose cooldown has elapsed is flipped to
+                    # HALF_OPEN by the first caller that asks, and every other
+                    # caller then sees it as unavailable with 0s to go until a
+                    # probe it cannot send. Sleeping 0s on that burned all five
+                    # attempts in milliseconds and failed eight dimensions at
+                    # once. Wait at least one backoff so the probe can resolve.
+                    pause = max(wait, RETRY_BACKOFF_SECONDS) + 1.0
                     print(
                         f"[DEBUG] REQ #{req_num} | {operation} | every credential "
-                        f"cooling down; waiting {wait:.0f}s "
+                        f"cooling down; waiting {pause:.0f}s "
                         f"(attempt {attempt + 1}/{max_attempts})"
                     )
                     _debug_stats["retries"] += 1
-                    time.sleep(wait + 1.0)
+                    time.sleep(pause)
                     continue
                 raise CapacityExhausted(
                     f"Provider capacity exhausted for '{operation}'. "
