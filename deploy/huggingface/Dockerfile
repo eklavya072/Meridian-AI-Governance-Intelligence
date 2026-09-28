@@ -75,7 +75,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PROVIDER_HEALTH_FILE=/tmp/meridian/provider_health.json \
     GEMINI_RPD_FILE=/tmp/meridian/gemini_rpd.json \
     LLM_PROVIDER=gemini \
-    GEMINI_MODEL=gemini-3.5-flash \
+    GEMINI_MODEL=gemini-3.5-flash-lite \
+    GEMINI_RPM_LIMIT=3 \
     LOCKED_WORKSPACE_IDS=eecbec2a-5ca7-4246-96a1-5db7b4b85415,f6a1069c-f17a-44a1-b99c-5855b769d6ba,2ab3a4b3-46ed-4dca-a30e-892f5bdb3068,62774187-5910-4b73-9949-6a6106a1dad4,1d44139a-09db-4479-af7f-f7c50e04562d,0193c4ae-4a29-427e-8bfb-7ce8cfc448ae,b5f452c0-8cb0-4855-a3b3-effdc6078069,fd789d63-2f4e-4719-8460-f2b69bc17ae8
 
 USER user

@@ -80,9 +80,10 @@ def _jittered_wait(base: float, spread: float = 0.5) -> float:
 # model: gemini-3.6-flash" — and that ceiling is per PROJECT, not per key, so
 # adding credentials buys daily headroom and no extra rate. A 16-call analysis
 # therefore tripped the limit on every run, and the retries that followed made
-# it worse. Sized so the whole pool stays under the project ceiling:
-# GEMINI_RPM_LIMIT x credentials <= 20.
-GEMINI_RPM_LIMIT = int(os.getenv("GEMINI_RPM_LIMIT", "4"))
+# it worse. Sized so the whole pool stays under the project ceiling, which
+# for gemini-3.5-flash-lite is 15 a minute: GEMINI_RPM_LIMIT x credentials
+# <= 15, so 3 with five keys.
+GEMINI_RPM_LIMIT = int(os.getenv("GEMINI_RPM_LIMIT", "3"))
 GEMINI_RPM_WINDOW = float(os.getenv("GEMINI_RPM_WINDOW", "60"))
 # An OPTIONAL self-imposed cap, off unless you set it. It used to default to
 # 1000, which was a guess that matched no real Gemini quota: the counter read

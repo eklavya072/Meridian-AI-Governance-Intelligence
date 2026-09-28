@@ -295,7 +295,7 @@ Run `make` with no arguments for the same list.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg` | PostgreSQL connection |
-| `GEMINI_MODEL` | `gemini-3.5-flash` | Gemini model (the one the published results were scored with) |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model. Free tier: 500 requests a day, where every full Flash model allows 20. The eight showcase runs were scored on `gemini-3.5-flash`; verdicts are computed in code either way |
 | `GEMINI_API_KEY` | — | Primary Gemini key (add `_2`/`_3`/`_4` for rotation) |
 | `CHROMA_PERSIST_DIR` | `./data/chroma` | Vector store location |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed browser origins |
@@ -303,7 +303,7 @@ Run `make` with no arguments for the same list.
 | `BATCH_LLM_CALLS` | `1` | One roadmap call for all gapped dimensions instead of one each |
 | `BATCH_EVALUATION` | `0` | One evaluation call for all dimensions (3 calls a run, fewer citations) |
 | `ANALYSIS_MAX_CONCURRENCY` | `3` | Parallel dimension workers when batching is off |
-| `GEMINI_RPM_LIMIT` / `GEMINI_RPD_LIMIT` | `4` / off | Requests per minute per credential; optional self-imposed daily cap |
+| `GEMINI_RPM_LIMIT` / `GEMINI_RPD_LIMIT` | `3` / off | Requests per minute per credential; optional self-imposed daily cap |
 | `LOG_LEVEL` | `INFO` | Log verbosity |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api/v1` | Frontend → API base URL (baked at build time) |
 | `ADMIN_TOKEN` | unset | Bearer token for `POST /frameworks/sync`; unset, the endpoint is refused |

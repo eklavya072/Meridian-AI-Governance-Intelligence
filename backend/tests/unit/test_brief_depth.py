@@ -164,6 +164,30 @@ class TestEvidenceBase:
         assert [q["source"] for q in ev["representative_quotes"]] == ["EU AI Act, p. 12"]
         assert "resource and energy efficiency" in ev["representative_quotes"][0]["quote"]
 
+    def test_a_framework_named_after_itself_is_still_not_the_country(self):
+        # Frameworks indexed from text carry document_name == source_framework,
+        # the same shape as a country document. The evaluated list decides.
+        gaps = [
+            {
+                "dimension": "Safety",
+                "coverage": "Partial",
+                "evidence": [
+                    {
+                        "text": "Incident reporting regimes remain fragmented across "
+                        "jurisdictions, and most lack a shared taxonomy of harms.",
+                        "verified": True,
+                        "document_name": "Open Problems in AI Incident Governance",
+                        "source_framework": "Open Problems in AI Incident Governance",
+                        "page_number": "12",
+                    }
+                ],
+            }
+        ]
+
+        ev = build_evidence_base(gaps, documents=["The Artificial Intelligence Bill 2026.pdf"])
+
+        assert ev["representative_quotes"] == []
+
     def test_every_rendering_names_the_source(self):
         from src.brief_synthesis import format_evidence_quote
 

@@ -15,14 +15,12 @@ Sections split:
 from __future__ import annotations
 
 import re
-from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
 import structlog
 from pydantic import BaseModel, Field
 
-from src.llm_provider import MODELS_SERVED, describe_models_served
 from src.provider_router import generate_with_retry, get_provider
 
 logger = structlog.get_logger()
@@ -443,9 +441,14 @@ def build_evidence_base(
 
     def _from_document(e: dict[str, Any]) -> bool:
         name = e.get("document_name") or ""
-        # Stored runs name each evaluated document; for a record without that
-        # list, a document chunk is the one whose source is its own file.
-        return bool(name) and (name in evaluated or name == e.get("source_framework"))
+        # The run's list of evaluated documents is the test whenever it exists.
+        # Only a record without one falls back to "the source is its own file",
+        # which also holds for a framework indexed from text rather than a PDF:
+        # used alongside the list, it put an incident-governance paper under
+        # Kenya's dimension as if the Bill said it.
+        if evaluated:
+            return name in evaluated
+        return bool(name) and name == e.get("source_framework")
 
     total = verified = 0
     quotes: list[dict[str, str]] = []
@@ -628,21 +631,13 @@ def generate_brief(
         decision=decision_analytics,
         num_dimensions=len(gaps),
     )
-    # Counted, because an overloaded model hands the request to a fallback:
-    # the brief names the model that actually wrote it.
-    served: Counter[str] = Counter()
-    token = MODELS_SERVED.set(served)
-    try:
-        synthesis = generate_with_retry(
-            provider=provider,
-            prompt=prompt,
-            schema=BriefSynthesis,
-            system_prompt=BRIEF_SYSTEM_PROMPT,
-            operation="brief_synthesis",
-        )
-    finally:
-        MODELS_SERVED.reset(token)
-    brief_model = describe_models_served(served) if served else provider.model_name
+    synthesis = generate_with_retry(
+        provider=provider,
+        prompt=prompt,
+        schema=BriefSynthesis,
+        system_prompt=BRIEF_SYSTEM_PROMPT,
+        operation="brief_synthesis",
+    )
 
     brief = assemble_brief(
         workspace_id=workspace_id,
@@ -655,7 +650,7 @@ def generate_brief(
         gaps=gaps,
         synthesis=synthesis,
         decision_analytics=decision_analytics,
-        provenance={**(analysis_provenance or {}), "brief_llm_model": brief_model},
+        provenance={**(analysis_provenance or {}), "brief_llm_model": provider.model_name},
     )
 
     logger.info(
@@ -668,7 +663,7 @@ def generate_brief(
         attention=len(brief["sections"]["areas_requiring_attention"]),
         recommendations=len(brief["sections"]["priority_recommendations"]),
         precedent=bool(brief["sections"]["relevant_precedent"]),
-        provider=brief_model,
+        provider=provider.model_name,
     )
     return brief
 

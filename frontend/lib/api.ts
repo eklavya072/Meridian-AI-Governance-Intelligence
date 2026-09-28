@@ -279,8 +279,6 @@ export interface DecisionAnalytics {
 export interface GeneratedBy {
   provider: string;
   tier: string;
-  /** Which models actually answered, e.g. "gemini-3.5-flash ×7, gemini-3.6-flash ×2". */
-  served_by?: string;
 }
 
 export interface Analysis {
