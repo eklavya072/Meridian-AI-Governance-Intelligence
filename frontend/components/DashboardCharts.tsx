@@ -1,5 +1,7 @@
 "use client";
 
+import { motion } from "motion/react";
+
 /**
  * Dashboard charts for the Decision Analytics section.
  *
@@ -115,6 +117,58 @@ export function DepthGauge({
         useGradient
         ariaLabel={`Implementation depth gauge: ${index.toFixed(1)} of 100`}
       />
+    </div>
+  );
+}
+
+// ── The second axis ─────────────────────────────────────────────────────
+// Depth says how hard a regime binds; this says how much of what each
+// dimension needs is there at all. They are kept apart because the
+// interesting cases are exactly where they diverge — a narrow statute that
+// binds hard, a broad strategy that binds nobody — and one number cannot say
+// either. It was computed and stored for every run and shown nowhere.
+
+export function BreadthPanel({
+  analytics,
+}: {
+  analytics: DecisionAnalytics;
+}) {
+  const total = analytics.mechanisms_total || 0;
+  if (!total) return null;
+  const met = analytics.mechanisms_met || 0;
+  const bound = analytics.mechanisms_binding || 0;
+  const breadth = Math.max(0, Math.min(100, analytics.coverage_index || 0));
+
+  return (
+    <div className="w-full space-y-3">
+      <div className="flex items-baseline justify-between">
+        <span className="text-3xl font-semibold text-navy-950 tabular-nums">
+          {breadth.toFixed(1)}
+          <span className="text-sm font-medium text-navy-600"> / 100</span>
+        </span>
+        <span className="text-xs font-medium text-navy-800 tabular-nums">
+          {met} of {total} expected mechanisms present
+        </span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-[#0A0A0A]/[0.08] overflow-hidden">
+        <motion.div
+          className="h-full rounded-full bg-[#0A0A0A]"
+          initial={{ width: 0 }}
+          whileInView={{ width: `${breadth}%` }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        />
+      </div>
+      {met > 0 && (
+        <p className="text-xs font-medium text-navy-900">
+          {bound} of those {met} {bound === 1 ? "is" : "are"} carried by a binding duty (
+          {Math.round(analytics.binding_share || 0)}%); the rest are named without one.
+        </p>
+      )}
+      <p className="text-[11px] text-navy-600">
+        Read beside depth, not instead of it: depth is how hard the provisions bind,
+        breadth is how much of each dimension they reach at all.
+      </p>
     </div>
   );
 }

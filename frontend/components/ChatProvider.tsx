@@ -57,7 +57,7 @@ export function useChat() {
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [workspaceId, setWorkspaceIdState] = useState<string | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [mode, setModeState] = useState<ChatMode>("advisor");
@@ -67,6 +67,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
   const findingContextRef = useRef<Record<string, unknown> | null>(null);
+  // Bumped whenever the thread on screen changes. A reply still in flight
+  // from the old thread used to land in the new one; it is saved server-side
+  // in its own session either way, so it is dropped here.
+  const conversation = useRef(0);
+  const workspaceRef = useRef<string | null>(null);
+
+  // A different country is a different conversation. The thread used to
+  // carry across, so the next question went into the previous country's
+  // session and was answered with that conversation as its history.
+  const setWorkspaceId = useCallback((id: string | null) => {
+    if (workspaceRef.current !== id) {
+      workspaceRef.current = id;
+      conversation.current++;
+      setSessionId(null);
+      setMessages([]);
+      setFindingLabel(null);
+      setFindingContextState(null);
+      findingContextRef.current = null;
+    }
+    setWorkspaceIdState(id);
+  }, []);
 
   const openPanel = useCallback(() => setIsOpen(true), []);
   const closePanel = useCallback(() => setIsOpen(false), []);
@@ -89,6 +110,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [workspaceId, mode]);
 
   const setMode = useCallback((m: ChatMode) => {
+    conversation.current++;
     setModeState(m);
     // Switching bots resets the active thread; sessions are per-mode.
     setSessionId(null);
@@ -99,10 +121,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const switchSession = useCallback(async (sid: string) => {
+    conversation.current++;
+    const mine = conversation.current;
     setSessionId(sid);
     setMessages([]);
     try {
       const data = await api.chat.getSession(sid);
+      if (conversation.current !== mine) return;
       setMessages(
         data.messages.map((m: ChatMessageData) => ({
           id: m.id,
@@ -117,6 +142,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const newSession = useCallback(() => {
+    conversation.current++;
     setSessionId(null);
     setMessages([]);
     setFindingLabel(null);
@@ -144,6 +170,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
+    const mine = conversation.current;
 
     try {
       const response = await api.chat.sendMessage(
@@ -154,6 +181,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         mode,
         analysisId
       );
+      if (conversation.current !== mine) return;
 
       if (!sessionId) {
         setSessionId(response.session_id);
@@ -173,6 +201,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch {
+      if (conversation.current !== mine) return;
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
         role: "assistant",

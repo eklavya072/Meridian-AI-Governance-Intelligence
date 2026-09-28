@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 DIMENSION_DEFINITIONS: dict[str, list[str]] = {
@@ -72,244 +73,6 @@ def build_dimension_definition_block(dimension: str) -> str:
     for item in items:
         lines.append(f"  - {item}")
     return "\n".join(lines)
-
-
-def truncate(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "..."
-
-
-# ── Integrated Implementation Depth Framework ──────────────────────────────
-# Replaces DOCUMENT_TYPE_AWARENESS, DEPTH_LEVELS, FALSE_NEGATIVE_SAFEGUARDS,
-# MULTI_CAPABILITY_ASSESSMENT, CAPABILITY_DISTINCTION_GUIDE, and UNCERTAINTY_LANGUAGE
-# with a single integrated framework. Same logic, ~65% fewer tokens.
-
-INTEGRATED_DEPTH_FRAMEWORK = """
-Document Type:
-- National AI strategy → assess governance direction, institutional commitments, and implementation roadmaps
-- Legislation/regulation → assess enforceable operational mechanisms
-- Technical standard → assess specificity and rigour
-- Code of conduct → assess governance philosophy and principles
-DO NOT penalise a strategy for lacking operational detail that belongs in companion legislation.
-
-Implementation depth Levels (each level assumes all lower levels are met):
-
-Level 0 — No Governance Intent (→ Missing)
-After exhausting ALL checks below: strategic objectives, institutional arrangements,
-implementation commitments, cross-cutting structures, and related programmes,
-using alternative terminology. Must fail 6 checks before Level 0 is valid.
-
-Level 1 — Governance Recognised (→ Partial)
-Dimension acknowledged through principle, commitment, or reference to international norms.
-(Policy Intent capability present, no operational mechanisms yet.)
-
-Level 2 — Institutional Ownership Identified (→ Partial)
-Specific bodies, offices, or roles charged with responsibility.
-(Intent + Governance Mechanisms capability.)
-
-Level 3 — Implementation Commitment Exists (→ Covered)
-Commitment to future action, resource allocation, or roadmap established.
-(Intent + Mechanisms + Operational Requirements capability.)
-
-Level 4 — Operational Mechanisms Established (→ Covered)
-Concrete processes, standards, obligations defined and operational.
-(Intent + Mechanisms + Requirements + Oversight capability.)
-
-Level 5 — Continuous Monitoring and Enforcement (→ Covered)
-Active oversight, enforcement powers, audit cycles, redress mechanisms.
-(All capabilities: Intent + Mechanisms + Requirements + Oversight + Enforcement + Improvement.)
-
-Coverage: Level 0 → Missing. Levels 1-2 → Partial. Levels 3-5 → Covered.
-A strategy that recognises, identifies ownership, or commits to implementation is NEVER Missing.
-
-Before assigning Level 0 check ALL of:
-A. Alternative terminology — capability exists under different phrasing
-B. Embedded mechanisms — capability is part of another mechanism (e.g. privacy in data governance)
-C. Distributed implementation — capability is spread across sections, not one place
-D. Institutional implication — mandates imply this capability without explicit statement
-E. Cross-cutting structure — centralised bodies address this through mandate or reporting
-F. Existing programmes — referenced initiatives serve this governance function
-
-If uncertain, prefer Partial over Missing.
-
-Functional equivalence: evidence of strategic objectives, institutional arrangements,
-implementation commitments, cross-cutting structures, or related programmes counts
-even without the dimension's exact terminology.
-
-Evidence Strength: Not Demonstrated → Weakly Demonstrated → Implicitly Addressed →
-Explicitly Addressed → Strongly Operationalised.
-
-A strategy addresses dimensions through cross-cutting structures (central authorities,
-multi-stakeholder bodies) rather than dimension-specific sections. Recognise this.
-"""
-
-# ── Stage 1: Evidence Interpretation ──────────────────────────────────────
-
-EVIDENCE_INTERPRETATION_SYSTEM = (
-    "You are a senior AI governance policy analyst. "
-    "Interpret what a national AI policy document reveals about a specific governance dimension.\n\n"
-    "{dimension_definition}\n\n"
-    "Analyse what the policy: (1) explicitly states, (2) reasonably implies, "
-    "(3) demonstrates capability for, (4) clearly omits.\n\n"
-    "Identify which evidence is strong (specific, actionable, enforceable) "
-    "and which is weak (aspirational, vague, general).\n\n"
-    "Base analysis solely on the document. Do not compare against international frameworks.\n\n"
-    "Output JSON: dimension, explicit_evidence (list), implicit_evidence (list), "
-    "demonstrated_capability (str), absent_capability (str), "
-    "strong_evidence (list), weak_evidence (list), contradictory_evidence (list), "
-    'evidence_strength ("Strongly Operationalised"|"Explicitly Addressed"|'
-    '"Implicitly Addressed"|"Weakly Demonstrated"|"Not Demonstrated"), '
-    "interpretation_summary (str)"
-)
-
-
-def build_evidence_interpretation_prompt(
-    dimension: str,
-    document_excerpt: str,
-    dimension_definition: str,
-) -> tuple[str, str]:
-    system_prompt = EVIDENCE_INTERPRETATION_SYSTEM.format(
-        dimension_definition=dimension_definition,
-    )
-    prompt = (
-        f"Dimension: {dimension}\n\n"
-        f"--- National Policy Document ---\n{truncate(document_excerpt, 4000)}\n\n"
-        "Interpret the evidence above. Do not classify coverage. "
-        "Do not compare against external frameworks. "
-        "Simply analyse what the policy says, implies, and omits.\n\n"
-        "Output valid JSON only."
-    )
-    return system_prompt, prompt
-
-
-# ── Stage 2: Implementation depth Assessment (simplified, integrated framework) ───────
-
-DEPTH_ASSESSMENT_SYSTEM = (
-    "You are a senior AI governance policy analyst assessing the depth "
-    "of a national AI policy document.\n\n"
-    "{dimension_definition}\n\n"
-    "{integrated_framework}\n\n"
-    "Instructions:\n"
-    "1. Identify the document type. If a strategy, assess governance direction "
-    "and institutional commitments, not procedural completeness.\n"
-    "2. Apply functional equivalence BEFORE assigning a level. Check strategic "
-    "objectives, institutional arrangements, commitments, cross-cutting structures, "
-    "and related programmes regardless of terminology.\n"
-    "3. Assess each governance capability independently. Mechanisms and enforcement "
-    "carry more weight than intent alone.\n"
-    "4. Derive depth level (0-5) from the framework above.\n"
-    "5. Derive coverage from semantic substance: Level 0→Missing, Levels 1-2→Partial, Levels 3-5→Covered.\n"
-    "6. Before Missing, verify all functional equivalence checks were considered. "
-    "If uncertain, prefer Partial.\n\n"
-    "Output JSON: dimension (str), depth_level (0-5), depth_label (str), "
-    'coverage ("Covered"|"Partial"|"Missing"), '
-    "depth_reasoning (str including document type, functional equivalence outcomes, "
-    "and how each capability assessment contributed), "
-    "level_justification (str with specific evidence per level), "
-    "uncertainty_flags (list), "
-    "false_negative_check (str confirming checks performed), "
-    "depth_trace (str with structured reasoning)"
-)
-
-
-def build_depth_assessment_prompt(
-    dimension: str,
-    evidence_interpretation: dict[str, Any],
-    dimension_definition: str,
-) -> tuple[str, str]:
-    interpretation_summary = evidence_interpretation.get("interpretation_summary", "")
-    evidence_strength = evidence_interpretation.get("evidence_strength", "Not Demonstrated")
-    strong = evidence_interpretation.get("strong_evidence", [])
-    weak = evidence_interpretation.get("weak_evidence", [])
-    explicit = evidence_interpretation.get("explicit_evidence", [])
-    implicit = evidence_interpretation.get("implicit_evidence", [])
-    absent = evidence_interpretation.get("absent_capability", [])
-
-    system_prompt = DEPTH_ASSESSMENT_SYSTEM.format(
-        dimension_definition=dimension_definition,
-        integrated_framework=INTEGRATED_DEPTH_FRAMEWORK,
-    )
-
-    prompt_lines = [f"Dimension: {dimension}\n"]
-    prompt_lines.append(f"Evidence Interpretation Summary: {interpretation_summary}")
-    prompt_lines.append(f"Evidence Strength: {evidence_strength}\n")
-
-    prompt_lines.append(
-        "Explicit Evidence:\n"
-        + ("\n".join(f"- {e}" for e in explicit) if explicit else "None identified")
-    )
-    prompt_lines.append(
-        "Implicit Evidence:\n"
-        + ("\n".join(f"- {e}" for e in implicit) if implicit else "None identified")
-    )
-    prompt_lines.append(
-        "Strong Evidence:\n"
-        + ("\n".join(f"- {s}" for s in strong) if strong else "None identified")
-    )
-    prompt_lines.append(
-        "Weak Evidence:\n" + ("\n".join(f"- {w}" for w in weak) if weak else "None identified")
-    )
-    prompt_lines.append(
-        "Absent Capability:\n"
-        + ("\n".join(f"- {a}" for a in absent) if absent else "None identified")
-    )
-
-    prompt_lines.append(
-        "\nApply the depth assessment framework. "
-        "Include depth_trace with: 1) Document Type, 2) Functional Equivalence "
-        "findings, 3) Level selected, 4) Why that level, 5) Why final coverage label. "
-        "Output valid JSON only."
-    )
-
-    return system_prompt, "\n".join(prompt_lines)
-
-
-# ── Stage 3 (merged): Recommendation + Final Output ───────────────────────
-
-RECOMMENDATION_AND_FINAL_SYSTEM = (
-    "You are a senior AI governance policy advisor producing a professional "
-    "advisory report.\n\n"
-    "{dimension_definition}\n\n"
-    "{uncertainty_note}\n\n"
-    "Write as an experienced policy advisor. Begin with existing strengths. "
-    "Every claim must trace to specific policy provisions.\n\n"
-    "Core question: What is the smallest realistic improvement that would "
-    "significantly strengthen governance for this dimension?\n\n"
-    "Principles:\n"
-    "1. Strengthen existing policy structures FIRST. Only recommend creating "
-    "new dedicated sections if no existing mechanism can be extended.\n"
-    "2. Each recommendation must identify WHICH existing mechanism it extends.\n"
-    "3. Be specific about the mechanism, the change, and the expected impact.\n"
-    "4. Reference relevant international framework expectations.\n"
-    "5. Vary sentence openings. Do not start every section with 'The policy...'.\n"
-    "6. Vary transitions. Avoid repeating 'However', 'Furthermore'.\n"
-    "7. Vary recommendation phrasing: 'The government should consider...', "
-    "'A priority is...', 'Building on existing capacity...'.\n\n"
-    "Output JSON with these keys:\n"
-    "- dimension: str\n"
-    '- coverage: "Covered" | "Partial" | "Missing"\n'
-    "- depth_level: int (0-5)\n"
-    "- depth_label: str\n"
-    "- existing_strengths: str\n"
-    "- governance_capability: str\n"
-    "- remaining_limitations: str\n"
-    "- evidence_analysis: str (trace each claim to specific policy provisions)\n"
-    "- framework_synthesis: str (compare against international expectations)\n"
-    "- recommendations: list of str (each identifies which mechanism it extends,\n"
-    "  and NAMES the reference instrument and provision that expects it — e.g.\n    'per NIST AI RMF MANAGE-4.1', 'as UNESCO Recommendation \u00a7 35 requires'.\n"
-    "  Never write 'international best practice' or 'global standards' when the\n"
-    "  actual instrument is in the framework context above.)\n"
-    "- smallest_effective_improvement: str\n"
-    "- uncertainty_note: str\n"
-    '- confidence_in_assessment: "High" | "Medium" | "Low"\n'
-    "- reason_flagged: str\n"
-    '- risk_level: "High" | "Medium" | "Low"\n'
-    "- risk_reason: str\n"
-    "- potential_consequence: str\n"
-    "- evidence_quotes: list of str\n"
-    "- gap_analysis: str"
-)
 
 
 # ── Module 1 + Module 2 — Combined single-call prompt ──────────────────
@@ -427,11 +190,17 @@ the normative benchmark.
    exists but lacks operational detail, list it anyway — the depth and
    gap reasoning reflect the detail gap, the mechanism is not erased. If the
    document only names the principle without any mechanism, return [].
-8. document_evidence: citations supporting the evaluation FROM THE UPLOADED
-   DOCUMENT ONLY.
-9. framework_evidence: citations FROM MODULE 1 SOURCES establishing the
+8. document_evidence: 2-4 citations supporting the evaluation FROM THE
+   UPLOADED DOCUMENT ONLY. Measured: this averaged 1.9 per dimension, so a
+   whole verdict rested on a single quote. Where the document carries several
+   provisions bearing on this dimension, cite the STRONGEST ones — a binding
+   duty before a stated intention, an article before a recital — and let them
+   differ from each other rather than quoting one provision twice.
+9. framework_evidence: 2-3 citations FROM MODULE 1 SOURCES establishing the
    normative requirement — even when coverage is Missing, cite the specific
-   framework text that establishes the requirement being unmet.
+   framework text that establishes the requirement being unmet. Prefer
+   different instruments over several passages from one, so a reader can see
+   the expectation is shared rather than one body's opinion.
 
 CITATION RULES (MANDATORY):
 - Every field above requires a real citation. Even when coverage is "Missing",
@@ -445,6 +214,19 @@ CITATION RULES (MANDATORY):
 - Quote the passage VERBATIM from the chunk. If you cannot find a specific
   supporting passage, state "insufficient evidence for citation" rather than
   constructing a plausible-sounding one.
+- QUOTE THE WHOLE OPERATIVE PASSAGE, not a fragment of it. Measured: quotes
+  averaged 176 characters, which is a clause — a reader cannot see who is
+  bound or what follows from it. Carry the sentence from its subject through
+  to its consequence, including the enumerated points when the duty lives in
+  them. Roughly 200-450 characters is the useful range; stop at the end of the
+  provision, do not pad with surrounding text.
+- EVERY citation carries a `claim`: one plain sentence naming what this
+  passage establishes for THIS dimension. Not a summary of the quote — the
+  reader can read the quote. It states the finding the quote is evidence FOR,
+  e.g. "Providers owe users an explicit disclosure duty before deployment" or
+  "The framework expects testing to precede placing a system on the market".
+  A quote with no claim cannot be checked, because a reader cannot tell what
+  it was offered to prove.
 
 ════════════════════════════════════════════════════════════════════
 SECTION 2 — RECOMMENDATIONS & ALIGNMENT (MODULE 2)
@@ -615,8 +397,8 @@ OUTPUT — return ONLY valid JSON with EXACTLY this shape:
   "coverage_example": "The document establishes a National AI Ethics Board and mandates annual explainability reporting for high-risk systems...",
   "principle_acknowledged": true,
   "operational_mechanisms": ["National AI Council (named body)", "Annual transparency reporting"],
-  "document_evidence": [{"chunk_id": "9f3a2b...", "quote": "verbatim passage", "page_number": 12}],
-  "framework_evidence": [{"chunk_id": "c81d07...", "quote": "verbatim passage", "page_number": 4}],
+  "document_evidence": [{"chunk_id": "9f3a2b...", "quote": "verbatim passage", "page_number": 12, "claim": "what this passage establishes for this dimension"}],
+  "framework_evidence": [{"chunk_id": "c81d07...", "quote": "verbatim passage", "page_number": 4, "claim": "the expectation this passage sets"}],
   "recommendations": [],
   "priority": "",
   "future_strengthening_opportunities": ["Extend the existing annual transparency report to include model-level cards"],
@@ -740,7 +522,15 @@ HARD RULES:
   incident_matches: [] and matched: false.
 - For each matched incident, write the write-up as an explicit COMPARISON
   between what happened in the real incident and THIS document's actual
-  gap — using the SAME four fields below, no new section:
+  gap — using the SAME five fields below, no new section:
+    - what_happened: 2-3 sentences of the incident's CONCRETE FACTS, taken
+      from the cited passage — who deployed what system, on whom, what went
+      wrong, and the scale or outcome where the source gives it. This field
+      was missing, and without it the section named an incident and then
+      described it only in the abstract ("developers lack agreed-upon
+      techniques"), which a reader cannot weigh. Names, numbers and dates
+      belong here, but ONLY where the cited passage supplies them — never
+      supply a figure the source does not state.
     - dimension_relevance: state what mechanism failed or was absent in the
       real incident, in one sentence.
     - potential_consequence: state, specifically, why the SAME failure mode
@@ -773,7 +563,7 @@ OUTPUT — return ONLY valid JSON with EXACTLY this shape:
   "monitoring_checklist": ["item 1"],
   "implementation_citations": [{"chunk_id": "9f3a2b...", "quote": "verbatim passage", "page_number": 4, "claim": "which step this passage supports"}],
   "incident_matches": [
-    {"incident_name": "...", "source": "...", "dimension_relevance": "...", "potential_consequence": "...", "lessons_learned": "...", "mitigation": "...", "chunk_id": "c81d07...", "quote": "verbatim passage", "page_number": 2}
+    {"incident_name": "...", "source": "...", "what_happened": "...", "dimension_relevance": "...", "potential_consequence": "...", "lessons_learned": "...", "mitigation": "...", "chunk_id": "c81d07...", "quote": "verbatim passage", "page_number": 2}
   ],
   "matched": true
 }
@@ -1117,81 +907,87 @@ def build_module1_2_combined_prompt(
     return system_prompt, "\n\n".join(parts)
 
 
-def build_recommendation_and_final_prompt(
-    dimension: str,
-    evidence_interpretation: dict[str, Any],
-    depth_result: dict[str, Any],
-    framework_synthesis: dict[str, Any],
-    plausibility_result: dict[str, Any],
-    dimension_definition: str,
-    evidence_quotes: list[str] | None = None,
-) -> tuple[str, str]:
-    validated_level = plausibility_result.get(
-        "validated_depth_level", depth_result.get("depth_level", 0)
-    )
-    validated_coverage = plausibility_result.get(
-        "validated_coverage", depth_result.get("coverage", "Missing")
-    )
-    confidence = plausibility_result.get("confidence_in_assessment", "Medium")
+# ── Several dimensions, one request ──────────────────────────────────────
+#
+# A run used to cost one Module 1+2 call per dimension and one Module 3+4 call
+# per gapped dimension — 10 to 17 requests a country, when the free tier allows
+# 20 a day. Batched, a country costs three: the mechanism check, one Module 1+2
+# call and one Module 3+4 call.
+#
+# What each dimension is told does not change. The instructions are the same
+# text; the only dimension-specific parts of the system prompt — its definition,
+# its carried-forward verdict, its name in the output example — move into that
+# dimension's own section, verbatim. Each section is the exact prompt the
+# dimension would have had to itself.
+#
+# The preamble names citations separately because the first live batches
+# cited fewer: a dimension sharing a response gave 3-4 passages where on its
+# own it gives 5-6 (median 6 over 54 dimensions), all of them still verified.
+# A dimension that ended up alone in a batched call cited 6, so the count
+# tracked sharing, not the format.
 
-    fm = framework_synthesis or {}
-    existing = fm.get("existing_mechanisms", [])
-    missing = fm.get("missing_mechanisms", [])
-    synthesis_text = fm.get("synthesis", "")
+_BATCH_PREAMBLE = """SEVERAL DIMENSIONS, ONE RESPONSE.
+You are assessing {n} governance dimensions of the same national document in a
+single response. Each has its own section after these instructions, headed
+"═══ DIMENSION k of {n}: <name> ═══", carrying that dimension's definition{extra}
+and its own evidence.
 
-    uncertainty_block = (
-        "Evidence Strength Descriptors:\n"
-        "Not Demonstrated — No evidence exists.\n"
-        "Weakly Demonstrated — Indirectly touched.\n"
-        "Implicitly Addressed — Reasonably inferred.\n"
-        "Explicitly Addressed — Clearly stated.\n"
-        "Strongly Operationalised — Implemented with specific processes and oversight."
-    )
+Treat every section as a separate, complete assessment:
+- Apply every instruction below to each dimension in turn.
+- Cite only the evidence given in that dimension's own section.
+- Give every dimension the full depth the instructions ask for. The last
+  section gets the same care as the first.
+- Give every dimension its full citation lists, at the counts the
+  instructions set: as many passages as it would cite if it were the only
+  dimension asked about. Sharing a response is never a reason to cite fewer.
 
-    system_prompt = RECOMMENDATION_AND_FINAL_SYSTEM.format(
-        dimension_definition=dimension_definition,
-        uncertainty_note=uncertainty_block,
-    )
+The output shape shown at the end describes ONE dimension's object. Return one
+per section as a list under "dimensions", in the order given, each with
+"dimension" set exactly to the section's name.
 
-    prompt_lines = [
-        f"Dimension: {dimension}",
-        f"Validated Implementation depth: Level {validated_level}",
-        f"Validated Coverage: {validated_coverage}",
-        f"Confidence: {confidence}",
-        "",
-        "Evidence Interpretation:",
-        evidence_interpretation.get("interpretation_summary", ""),
-        "",
-        "Implementation depth Reasoning:",
-        depth_result.get("depth_reasoning", ""),
-        "",
-        "Framework Synthesis:",
-        synthesis_text,
-        "",
-    ]
-    if existing:
-        prompt_lines.append(f"Existing Policy Mechanisms: {'; '.join(existing[:5])}")
-    if missing:
-        prompt_lines.append(f"Missing Universal Mechanisms: {'; '.join(missing[:5])}")
-    if evidence_quotes:
-        quote_str = "\n".join(f'- "{q}"' for q in evidence_quotes[:3])
-        prompt_lines.append(f"\nRelevant Evidence Quotes:\n{quote_str}")
+"""
 
-    prompt_lines.append(
-        "\nBefore writing, identify the smallest realistic improvement. "
-        "Then generate recommendations that strengthen existing mechanisms first. "
-        "Every recommendation must name the specific mechanism it extends. "
-        # Measured across 138 stored recommendations: 4% named a specific
-        # international instrument. The reference corpus is in this prompt,
-        # so "drawing on international incident response frameworks" is a
-        # vagueness a policy adviser would be pulled up on — the instrument
-        # and its clause are available and should be stated.
-        "Where a reference framework in the context supports the change, NAME "
-        "it and the provision (e.g. 'per NIST AI RMF MANAGE-4.1', 'as UNESCO "
-        "Recommendation \u00a7 35 requires'). Never write 'international best "
-        "practice', 'global standards' or 'recognised frameworks' when the "
-        "specific instrument is in the context above. "
-        "Output valid JSON only."
+
+def _batch_system(template: str, n: int, country: str, extra: str) -> str:
+    return _BATCH_PREAMBLE.format(n=n, extra=extra) + (
+        template.replace('"dimension": "{dimension}"', '"dimension": "<the section\'s dimension>"')
+        .replace("{dimension_definition}", "")
+        .replace("{dimension_verdict}", "")
+        .replace("{dimension}", "the section's dimension")
+        .replace("{national_context}", _national_context_block(country))
     )
 
-    return system_prompt, "\n".join(prompt_lines)
+
+def _batch_sections(sections: list[tuple[str, list[str]]]) -> str:
+    n = len(sections)
+    return "\n\n".join(
+        f"═══ DIMENSION {i} of {n}: {name} ═══\n" + "\n\n".join(p for p in parts if p)
+        for i, (name, parts) in enumerate(sections, 1)
+    )
+
+
+_BATCH_HEADER_RE = re.compile(r"═══ DIMENSION \d+ of \d+: (.+?) ═══\n")
+
+
+def split_batched_prompt(prompt: str) -> list[tuple[str, str]]:
+    """The (dimension, section) pairs of a batched prompt, in order."""
+    parts = _BATCH_HEADER_RE.split(prompt)
+    return list(zip(parts[1::2], parts[2::2]))
+
+
+def build_module1_2_batched_prompt(calls: list[Any], country: str = "") -> tuple[str, str]:
+    """One Module 1+2 request for several dimensions (see the note above)."""
+    system = _batch_system(MODULE1_2_COMBINED_SYSTEM, len(calls), country, ", its computed verdict")
+    return system, _batch_sections(
+        [(c.dimension, [c.dimension_definition, c.prompt]) for c in calls]
+    )
+
+
+def build_module3_4_batched_prompt(calls: list[Any], country: str = "") -> tuple[str, str]:
+    """One Module 3+4 request for several gapped dimensions (see the note above)."""
+    system = _batch_system(
+        MODULE3_4_COMBINED_SYSTEM, len(calls), country, ", its carried-forward assessment"
+    )
+    return system, _batch_sections(
+        [(c.dimension, [c.dimension_definition, c.dimension_verdict, c.prompt]) for c in calls]
+    )

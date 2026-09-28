@@ -11,9 +11,9 @@
  *      text), as if the ink catches the light.
  *
  * Distinct from the app's other text effects: BlurText blurs letters in,
- * SplitText rises letters, EditorialReveal rises words through masks,
- * ScrollFloat floats — this one layers a wipe + a light sweep, so it reads
- * as a document being finished rather than mere motion.
+ * SplitText rises letters, EditorialReveal rises words through masks —
+ * this one layers a wipe + a light sweep, so it reads as a document being
+ * finished rather than mere motion.
  *
  * The base words are solid navy (inherited); the sheen is an absolutely
  * positioned duplicate of the text whose gradient band is parked off-screen

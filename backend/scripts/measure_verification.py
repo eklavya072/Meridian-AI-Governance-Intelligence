@@ -22,14 +22,15 @@ import statistics
 import sys
 import time
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-os.environ.setdefault(
-    "CHROMA_PERSIST_DIR", str(pathlib.Path(__file__).resolve().parent / "data" / "chroma")
-)
+# scripts/ is on the path when run as `python scripts/measure_verification.py`;
+# backend/ is what `src` imports need, and where the index lives.
+BACKEND_DIR = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_DIR))
+os.environ.setdefault("CHROMA_PERSIST_DIR", str(BACKEND_DIR / "data" / "chroma"))
 
 import psycopg2  # noqa: E402
 
-DSN = "postgresql://aura:aura@localhost:5432/aura_sdg"
+DSN = os.getenv("MEASURE_DSN", "postgresql://aura:aura@localhost:5432/aura_sdg")
 
 
 def normalise(s: str) -> str:

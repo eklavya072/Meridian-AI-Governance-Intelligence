@@ -23,8 +23,8 @@ import NavBar from "@/components/NavBar";
 const DESCRIPTION =
   "Meridian reads a national AI strategy and reports what it obliges — " +
   "every commitment graded from a stated aspiration to an enforceable duty, " +
-  "against forty-four international instruments, with a citation behind " +
-  "every line.";
+  "its gaps ranked against forty-three international instruments, with a " +
+  "citation behind every line.";
 
 export const metadata: Metadata = {
   title: "Meridian — AI Governance Intelligence Workbench",

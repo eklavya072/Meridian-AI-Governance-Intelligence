@@ -4,6 +4,21 @@ import { motion } from "motion/react";
 import type { RetrievedEvidence } from "@/lib/api";
 import { verifiedSnap } from "@/lib/motion";
 
+// A section label a reader can look up: a numbered division, as ingestion now
+// records it. Stored runs predate that and can carry any line of the PDF as
+// their "section" ("available;", "EN OJ L, 12.7.2024"), so the same rule is
+// applied here rather than trusting the stored value.
+const DIVISION_RE =
+  /^(?:Article|Section|Chapter|Part|Title|Annex|Schedule|Appendix|Principle|ARTICLE|SECTION|CHAPTER|PART|TITLE|ANNEX|SCHEDULE|APPENDIX)\s+[0-9IVXLC]+[A-Za-z]?(?:\s*[-–:]?\s+[A-Z][^.;]*)?\s*$/;
+const SENTENCE_VERB_RE = /\b(?:shall|must|may|is|are|be|will|should)\b/;
+
+function sectionLabel(title: string | null | undefined): string | null {
+  const t = (title || "").replace(/\s+/g, " ").trim();
+  if (!t || !DIVISION_RE.test(t)) return null;
+  if (t.length > 80 || SENTENCE_VERB_RE.test(t)) return t.split(" ").slice(0, 2).join(" ");
+  return t;
+}
+
 export default function CitationCard({
   evidence,
 }: {
@@ -11,6 +26,7 @@ export default function CitationCard({
 }) {
   const verified = evidence.verified;
   const verification = evidence.verification;
+  const section = sectionLabel(evidence.section_title);
 
   return (
     <div className="border rounded-lg p-4 space-y-2 bg-gray-50">
@@ -32,11 +48,10 @@ export default function CitationCard({
         )}
       </div>
 
+      {/* Where to find it, and nothing else. The storage id and the raw
+          retrieval similarity used to sit here too; neither tells a reader
+          anything they can check against the document. */}
       <div className="flex flex-wrap gap-3 text-xs font-medium text-navy-900">
-        <span className="font-mono">
-          Chunk: {evidence.chunk_id.slice(0, 8)}...
-        </span>
-        {evidence.page_number && <span>Page: {evidence.page_number}</span>}
         {evidence.document_name ? (
           <span className="text-undp-blue">
             Document: {evidence.document_name}
@@ -44,10 +59,8 @@ export default function CitationCard({
         ) : (
           <span>Framework: {evidence.source_framework}</span>
         )}
-        {evidence.similarity_score != null && (
-          <span>Score: {evidence.similarity_score.toFixed(3)}</span>
-        )}
-        {evidence.section_title && <span>Section: {evidence.section_title}</span>}
+        {section && <span>{section}</span>}
+        {evidence.page_number && <span>Page {evidence.page_number}</span>}
       </div>
 
       {verification && !verified && (
@@ -57,13 +70,13 @@ export default function CitationCard({
           </summary>
           <ul className="mt-1 space-y-0.5 list-disc list-inside">
             <li>
-              Chunk exists: {verification.chunk_exists ? "✓" : "✗"}
+              Passage found in the document: {verification.chunk_exists ? "✓" : "✗"}
             </li>
             <li>
-              Page exists: {verification.page_exists ? "✓" : "✗"}
+              Page number matches: {verification.page_exists ? "✓" : "✗"}
             </li>
             <li>
-              Text supports claim:{" "}
+              Passage supports the claim:{" "}
               {verification.text_supports_claim ? "✓" : "✗"}
             </li>
             {verification.failure_reason && (

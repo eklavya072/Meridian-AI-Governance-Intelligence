@@ -32,6 +32,8 @@ def parse_pdf(file_path: Path) -> list[dict[str, Any]]:
 
     from pypdf import PdfReader
 
+    from src.text_repair import repair_split_words
+
     parser_name = "pypdf.PdfReader"
     file_bytes = file_path.read_bytes()
     reader = PdfReader(io.BytesIO(file_bytes))
@@ -42,7 +44,18 @@ def parse_pdf(file_path: Path) -> list[dict[str, Any]]:
     page_text_lengths = []
 
     for i, page in enumerate(reader.pages):
-        text = page.extract_text() or ""
+        # NUL carries no text, and Postgres jsonb refuses it: one inside a
+        # quoted provision would fail the dimension cache write mid-run.
+        # None of the 2,000+ chunks indexed when this was added contained one,
+        # so no chunk id moved.
+        text = (page.extract_text() or "").replace("\x00", "")
+        # Some PDFs encode text with no reliable word boundaries, so the
+        # extractor returns "P osition of the European Parl iament". Measured,
+        # the EU AI Act loses 71.6 words per 1,000 this way — the instrument
+        # every other document is scored against. Repaired here, before
+        # chunking, so retrieval, cue matching and citations all see the
+        # document as it reads. See src/text_repair.
+        text = repair_split_words(text)
         char_count = len(text.strip())
         page_text_lengths.append(char_count)
         if char_count == 0:
@@ -68,12 +81,59 @@ def parse_pdf(file_path: Path) -> list[dict[str, Any]]:
     return pages
 
 
+# What a reader can look up: a numbered division — "Article 13", "CHAPTER III",
+# "Part 2 Society to aim for with AI". Case-sensitive, and deliberately blind
+# to lines merely set in capitals: a ministerial signature ("RT HON MICHELLE
+# DONELAN MP") or a gazette banner ("SPECIAL ISSUE") is indistinguishable from
+# a heading by its shape, and a label carried forward from one mislabels every
+# chunk until the next real division. A document with no numbered divisions
+# gets no titles, and its citations are located by page alone.
+_HEADING_RE = re.compile(
+    r"^(?P<division>(?:Article|Section|Chapter|Part|Title|Annex|Schedule|Appendix|Principle|"
+    r"ARTICLE|SECTION|CHAPTER|PART|TITLE|ANNEX|SCHEDULE|APPENDIX)\s+[0-9IVXLC]+[A-Za-z]?)"
+    r"(?:\s*[-–:]?\s+[A-Z][^.;]*)?\s*$"
+)
+# Past this length, or once it has a verb, the "title" is the provision's own
+# first sentence running on from the division number, as APPI lays its
+# articles out ("Article 81 If non-disclosure information is supposed to be
+# disclosed by merely"). A heading names a subject; it does not assert anything.
+_HEADING_MAX_CHARS = 80
+_SENTENCE_VERB_RE = re.compile(r"\b(?:shall|must|may|is|are|be|will|should)\b")
+# A contents page names every division in the document, so a heading carried
+# forward from one mislabels the body that follows: the UK white paper's last
+# contents entry, "Annex C: How to respond to this consultation 83", titled 105
+# of its 112 chunks. Recognised by lines ending in a page number.
+_CONTENTS_ENTRY_RE = re.compile(r"\S\s*\.*\s+\d{1,3}\s*$")
+_CONTENTS_MIN_ENTRIES = 5
+
+
+def _heading_label(line: str) -> str | None:
+    match = _HEADING_RE.match(line)
+    if not match:
+        return None
+    line = " ".join(line.split())
+    if len(line) > _HEADING_MAX_CHARS or _SENTENCE_VERB_RE.search(line):
+        return match.group("division")
+    return line
+
+
 def structure_aware_split(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     current_section: str | None = None
     current_text: list[str] = []
     current_pages: set[int] = set()
+    last_heading: str | None = None
 
+    # A BOUNDARY heuristic, not a heading detector, whatever it looks like.
+    # Under IGNORECASE the capitals branch matches any line that opens with a
+    # three-letter word, so on the EU AI Act it fires on 84% of lines; the
+    # small-section merge below glues those back into ~3k-character blocks,
+    # and that is the chunking every stored verdict was scored on. Tightening
+    # it would re-chunk every document and move every result, so it stays as
+    # it is and names nothing — it used to title sections too, which is how
+    # citations came to read "Section: available;" and "Section: EN OJ L,
+    # 12.7.2024". Titles come from _HEADING_RE, carried forward from the last
+    # real heading, and are left empty when a document has none.
     SECTION_PATTERNS = re.compile(
         r"^(#{1,3}\s+|(?:\d+\.)+\s+|[A-Z][A-Z\s\-]{2,50}|"
         r"(?:Article|Section|Clause|Chapter|Annex|Appendix)\s+\d+|"
@@ -96,10 +156,16 @@ def structure_aware_split(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     for page in pages:
         lines = page["text"].split("\n")
+        contents_page = (
+            sum(1 for line in lines if _CONTENTS_ENTRY_RE.search(line)) >= _CONTENTS_MIN_ENTRIES
+        )
         for line in lines:
-            if SECTION_PATTERNS.match(line.strip()):
+            stripped = line.strip()
+            if not contents_page:
+                last_heading = _heading_label(stripped) or last_heading
+            if SECTION_PATTERNS.match(stripped):
                 flush_section()
-                current_section = line.strip()[:200]
+                current_section = last_heading
                 current_text = []
                 current_pages = set()
             current_text.append(line)
@@ -140,6 +206,26 @@ def structure_aware_split(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         section_titles=[s.get("section_title") for s in sections[:10]],
     )
     return sections
+
+
+#: Part of every stored chunk's ingest key. Bump it whenever parsing, split-word
+#: repair, chunking or titling changes, so documents indexed under the old
+#: rules are read again rather than reused.
+#: 2026-09-28: the chunk window no longer skips text past a paragraph break.
+INGESTION_VERSION = "2026-09-28"
+
+
+def ingest_key(file_path: Path) -> str:
+    """Identifies one exact file read under one version of the ingestion rules.
+
+    A run re-reads every document in its workspace, and parsing plus embedding
+    was the largest fixed cost of a run — 106 seconds for the UK's three
+    documents — spent re-deriving chunks the store already held. Chunk ids are
+    derived from the document and the chunk text, so an unchanged file under
+    unchanged rules produces exactly the chunks that are there.
+    """
+    digest = hashlib.sha256(file_path.read_bytes()).hexdigest()[:24]
+    return f"{digest}:{INGESTION_VERSION}"
 
 
 TOKEN_ESTIMATE_CHARS_PER_TOKEN = 4
@@ -435,11 +521,15 @@ def recursive_character_split(
         # progress is always proportional to the chunk.
         overlap_chars = min(MAX_CHUNK_CHARS // 4, (end - start) // 4)
         carry_start = max(end - overlap_chars, start + 1)
-        next_para = text.find("\n\n", carry_start)
-        if next_para != -1 and next_para < end + MAX_CHUNK_CHARS:
-            start = next_para
-        else:
-            start = carry_start
+        # Snap the next window to a paragraph break only INSIDE the overlap,
+        # never past `end`. The bound used to be `end + MAX_CHUNK_CHARS`, so a
+        # section with a paragraph break a page after the chunk boundary had
+        # everything in between skipped: measured on the stored uploads, Egypt's
+        # guidelines lost 2,623 characters of operative text ("The following
+        # attributes must be integrated into the system architecture...") that
+        # were never indexed or scored. The other documents lost nothing.
+        next_para = text.find("\n\n", carry_start, end)
+        start = next_para if next_para != -1 else carry_start
 
     return chunks
 
@@ -514,7 +604,6 @@ def ingest_document(
             framework_name=framework_name,
             section_pages=section_pages,
         )
-        section.get("text", "")
         for c in chunks:
             c.workspace_id = workspace_id
             if not c.text.strip():

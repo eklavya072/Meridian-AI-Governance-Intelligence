@@ -70,16 +70,6 @@ class AnalysisSlots:
         with self._lock:
             return self._in_flight
 
-    @property
-    def available(self) -> int:
-        with self._lock:
-            return max(self.limit - self._in_flight, 0)
-
-    @property
-    def draining(self) -> bool:
-        with self._lock:
-            return self._draining
-
     def acquire(self) -> None:
         """Take a slot, or refuse. Never blocks.
 

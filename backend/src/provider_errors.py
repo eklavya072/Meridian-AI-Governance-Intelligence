@@ -46,10 +46,6 @@ class ProviderFailure:
     status_code: int | None = None
     retry_after_seconds: float | None = None
 
-    @property
-    def is_retryable(self) -> bool:
-        return self.kind is not FailureKind.TERMINAL
-
 
 # Ordered most-specific first. A 404 must be tested before the generic 4xx
 # rule, and "quota" before "rate", or the wrong branch wins.
@@ -65,7 +61,10 @@ _TERMINAL_MARKERS = (
     "permission denied",
     "unauthorized",
     "invalid argument",
-    "safety",
+    # Specific phrases only. A bare "safety" matched the echoed text of any
+    # reply about the Safety dimension and benched a healthy credential.
+    "blocked by the provider",
+    "blocked due to safety",
 )
 
 _QUOTA_MARKERS = (

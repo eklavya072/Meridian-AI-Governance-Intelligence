@@ -38,11 +38,35 @@ class ScriptedProvider:
 
     def generate_structured(self, prompt, schema, system_prompt=None, **kw):
         self.calls.append({"schema": schema.__name__, "prompt": prompt})
-        return _fill(schema, self.chunk_ids)
+        batch = _batched(schema, prompt, self.chunk_ids)
+        return batch if batch is not None else _fill(schema, self.chunk_ids)
 
     def generate_text(self, prompt, system_prompt=None, **kw):
         self.calls.append({"schema": "text", "prompt": prompt})
         return "A deterministic fixture reply."
+
+
+def _batched(schema, prompt, chunk_ids):
+    """One answer per dimension section, named as the model is told to name it.
+
+    Filling a batched reply like any other schema would return an empty list,
+    and every dimension would take the no-answer path: the invariants below
+    would still hold, having tested nothing but failure.
+    """
+    from typing import get_args, get_origin
+
+    from src.analysis_prompts import split_batched_prompt
+
+    field = schema.model_fields.get("dimensions")
+    if field is None or get_origin(field.annotation) is not list:
+        return None
+    item = get_args(field.annotation)[0]
+    return schema(
+        dimensions=[
+            _fill(item, chunk_ids).model_copy(update={"dimension": name})
+            for name, _ in split_batched_prompt(prompt)
+        ]
+    )
 
 
 def _fill(schema, chunk_ids):
@@ -133,9 +157,6 @@ class FakeVectorStore:
     def get_all_frameworks(self):
         return ["policy.pdf"]
 
-    def get_all_document_names(self):
-        return ["policy.pdf"]
-
     def get_workspace_documents(self, workspace_id):
         return ["policy.pdf"]
 
@@ -163,7 +184,6 @@ def analyzer():
     store = FakeVectorStore()
     provider = ScriptedProvider(chunk_ids=[c["chunk_id"] for c in CHUNKS])
     instance = GapAnalyzer(vector_store=store, provider=provider)
-    instance.nli_verifier = None
     return instance
 
 
@@ -206,8 +226,17 @@ class TestRunCompletes:
     def test_the_call_count_is_reported(self, analyzer):
         result = _run(analyzer)
 
-        # Quota usage has to be observable against the ~8 + up to 8 budget.
-        assert result.llm_call_count >= 1
+        # Quota usage has to be observable against the budget: the mechanism
+        # check, one evaluation per dimension, one roadmap batch.
+        assert 1 <= result.llm_call_count <= 10
+
+    def test_a_healthy_run_fails_no_dimension(self, analyzer):
+        result = _run(analyzer)
+
+        # Guards the fixture as much as the pipeline. A fake that stopped
+        # answering the batched request would send every dimension down the
+        # failure path, and the invariants below would hold over nothing.
+        assert [g.dimension for g in result.governance_gaps if g.analysis_error] == []
 
 
 class TestEvidenceInvariants:
@@ -321,7 +350,6 @@ class TestFailureHandling:
                 raise RuntimeError("provider is down")
 
         analyzer = GapAnalyzer(vector_store=FakeVectorStore(), provider=_Failing())
-        analyzer.nli_verifier = None
 
         result = _run(analyzer)
 

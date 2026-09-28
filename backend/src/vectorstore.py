@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -35,10 +36,22 @@ class NullEmbeddingFunction(EmbeddingFunction):
         return [[0.0] * 384 for _ in range(len(input))]
 
 
+# One encode at a time, process-wide. On Apple silicon the model runs on the
+# GPU (MPS), which is not safe to drive from several threads at once: three
+# dimension workers embedding together took the whole API down with a
+# segfault (exit 139), leaving the run stuck in PROCESSING. An encode takes
+# milliseconds, so queueing them costs nothing, and the vectors are the same.
+_ENCODE_LOCK = threading.Lock()
+
+
 class EmbeddingService:
     def __init__(self, model_name: str = EMBEDDING_MODEL_NAME):
         self.model = SentenceTransformer(model_name)
-        self.dimension = self.model.get_sentence_embedding_dimension()
+        get_dim = (
+            getattr(self.model, "get_embedding_dimension", None)
+            or self.model.get_sentence_embedding_dimension
+        )
+        self.dimension = get_dim()
         logger.info("embedding_model_loaded", model=model_name, dimension=self.dimension)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -48,9 +61,10 @@ class EmbeddingService:
         for i in range(0, len(texts), BATCH):
             batch = texts[i : i + BATCH]
             try:
-                embs = self.model.encode(
-                    batch, normalize_embeddings=True, batch_size=32, show_progress_bar=False
-                )
+                with _ENCODE_LOCK:
+                    embs = self.model.encode(
+                        batch, normalize_embeddings=True, batch_size=32, show_progress_bar=False
+                    )
                 all_embs.extend(embs.tolist())
             except Exception as exc:
                 failed += len(batch)
@@ -70,7 +84,8 @@ class EmbeddingService:
         return all_embs
 
     def embed_query(self, text: str) -> list[float]:
-        return self.model.encode(text, normalize_embeddings=True).tolist()
+        with _ENCODE_LOCK:
+            return self.model.encode(text, normalize_embeddings=True).tolist()
 
 
 def _build_client(persist_dir: Path):
@@ -103,6 +118,52 @@ def _build_client(persist_dir: Path):
     )
 
 
+def _open_collection(client):
+    try:
+        return client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=NullEmbeddingFunction(),
+        )
+    except ValueError as e:
+        if "embedding function already exists" in str(e):
+            return client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+            )
+        raise
+
+
+def open_collection(persist_dir: str | Path = CHROMA_PERSIST_DIR):
+    """The chunk collection alone, without loading the embedding model.
+
+    For readers that only page stored text and metadata. Building a full
+    VectorStore for them loaded a second copy of the model into the process.
+    """
+    return _open_collection(_build_client(Path(persist_dir)))
+
+
+def iter_library_chunks(collection, page_size: int = 5000):
+    """Every reference-library chunk as (text, metadata), paged, with no cap.
+
+    Library chunks are the ones with an empty workspace_id; a country
+    document, live or retired, is never part of the reference corpus.
+    """
+    offset = 0
+    while True:
+        rows = collection.get(
+            where={"workspace_id": ""},
+            include=["documents", "metadatas"],
+            limit=page_size,
+            offset=offset,
+        )
+        metadatas = rows.get("metadatas") or []
+        if not metadatas:
+            return
+        yield from zip(rows.get("documents") or [""] * len(metadatas), metadatas, strict=True)
+        offset += len(metadatas)
+
+
 class VectorStore:
     def __init__(
         self,
@@ -112,25 +173,59 @@ class VectorStore:
         self.persist_dir = Path(persist_dir)
         self.embedding_service = embedding_service or EmbeddingService()
         self.client = _build_client(self.persist_dir)
-        try:
-            self.collection = self.client.get_or_create_collection(
-                name=COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"},
-                embedding_function=NullEmbeddingFunction(),
-            )
-        except ValueError as e:
-            if "embedding function already exists" in str(e):
-                self.collection = self.client.get_or_create_collection(
-                    name=COLLECTION_NAME,
-                    metadata={"hnsw:space": "cosine"},
-                )
-            else:
-                raise
+        self.collection = _open_collection(self.client)
         logger.info(
             "vector_store_initialized",
             backend="remote" if os.getenv("CHROMA_HOST", "").strip() else "embedded",
             persist_dir=str(self.persist_dir),
         )
+
+    def stored_document_chunks(
+        self, workspace_id: str, document_name: str, ingest_key: str
+    ) -> list[Chunk]:
+        """A workspace document's chunks, if they were indexed from this exact file.
+
+        Empty unless every chunk the ingestion produced is present under the
+        same key, so a run interrupted halfway through indexing is read again
+        rather than reused short.
+        """
+        try:
+            raw = self.collection.get(
+                where={
+                    "$and": [
+                        {"workspace_id": workspace_id},
+                        {"document_name": document_name},
+                        {"ingest_key": ingest_key},
+                    ]
+                },
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            logger.warning("stored_document_lookup_failed", document=document_name, error=str(exc))
+            return []
+        ids, texts, metas = (
+            raw.get("ids") or [],
+            raw.get("documents") or [],
+            raw.get("metadatas") or [],
+        )
+        expected = int((metas[0] or {}).get("ingest_total") or 0) if metas else 0
+        if not ids or len(ids) != expected:
+            return []
+        out = []
+        for cid, text, md in zip(ids, texts, metas):
+            md = md or {}
+            page = str(md.get("page_number") or "")
+            out.append(
+                Chunk(
+                    chunk_id=cid,
+                    text=text or "",
+                    metadata=dict(md),
+                    page_number=int(page) if page.isdigit() else None,
+                    section_title=md.get("section") or None,
+                    workspace_id=workspace_id,
+                )
+            )
+        return out
 
     def add_chunks(self, chunks: list[Chunk]) -> int:
         if not chunks:
@@ -165,6 +260,8 @@ class VectorStore:
                 "workspace_id": str(c.metadata.get("workspace_id") or c.workspace_id or ""),
                 "roles": str(c.metadata.get("roles") or ""),
                 "source_type": str(c.metadata.get("source_type") or "framework"),
+                "ingest_key": str(c.metadata.get("ingest_key") or ""),
+                "ingest_total": int(c.metadata.get("ingest_total") or 0),
             }
             for c in chunks
         ]
@@ -262,7 +359,15 @@ class VectorStore:
         framework_filter: list[str] | None = None,
         workspace_filter: list[str] | None = None,
         role_filter: list[str] | None = None,
+        frameworks_only: bool = False,
     ) -> list[dict[str, Any]]:
+        """Dense retrieval with optional scope filters.
+
+        `frameworks_only` restricts the search to the reference library (chunks
+        with no workspace). With no scope at all the search also reaches every
+        workspace's uploaded documents, so on a shared deployment one visitor's
+        PDF could be quoted in another visitor's general answer.
+        """
         query_embedding = self.embedding_service.embed_query(query)
 
         where_parts: list[dict[str, Any]] = []
@@ -270,6 +375,8 @@ class VectorStore:
             where_parts.append({"framework": {"$in": framework_filter}})
         if workspace_filter:
             where_parts.append({"workspace_id": {"$in": workspace_filter}})
+        elif frameworks_only:
+            where_parts.append({"workspace_id": ""})
 
         where: dict[str, Any] | None = None
         if len(where_parts) == 1:
@@ -464,38 +571,17 @@ class VectorStore:
             offset += batch_size
         return sorted(frameworks)
 
-    def get_all_document_names(self) -> list[str]:
-        """Display names of uploaded workspace documents (framework chunks have
-        empty framework metadata but carry a document_name)."""
-        names: set[str] = set()
-        offset = 0
-        batch_size = 1000
-        while True:
-            results = self.collection.get(
-                include=["metadatas"],
-                limit=batch_size,
-                offset=offset,
-            )
-            if not results["ids"]:
-                break
-            for m in results["metadatas"]:
-                name = (m.get("document_name") or "").strip()
-                if name:
-                    names.add(name)
-            offset += batch_size
-        return sorted(names)
-
     def embed_query(self, text: str) -> list[float]:
         return self.embedding_service.embed_query(text)
 
     def delete_workspace_document(self, workspace_id: str, document_name: str) -> int:
         """Remove a single document's chunks from one workspace.
 
-        Makes re-uploading a document IDEMPOTENT. Chunk ids are fresh uuid4s
-        on every ingestion (see ingestion.py), so `collection.add` can never
-        collide with a previous copy — it appends. Without this call, every
-        re-run of the same document stacked another complete copy of it into
-        the workspace.
+        Makes re-uploading a document IDEMPOTENT. Chunk ids were once fresh
+        uuid4s per ingestion, so `collection.add` never collided with a previous
+        copy — it appended, and every re-run stacked another complete copy of
+        the document into the workspace. The pipeline now uses
+        `retire_workspace_document`, which keeps chunks stored analyses cite.
 
         The damage was severe and silent. A measured audit of the live store
         found the EU AI Act workspace holding 15,363 chunks of which only
@@ -540,6 +626,70 @@ class VectorStore:
             count=len(ids),
         )
         return len(ids)
+
+    def retire_workspace_document(
+        self,
+        workspace_id: str,
+        document_name: str,
+        keep_ids: set[str],
+        replacing_ids: set[str],
+    ) -> tuple[int, int]:
+        """Take a document's chunks out of its workspace before re-indexing it.
+
+        `delete_workspace_document` removes them outright, which is right for
+        retrieval (no stale duplicates) and wrong for the record: stored
+        analyses cite chunks by id, and a re-read under newer ingestion rules
+        mints new ids wherever the text changed, so every earlier run of that
+        country was left citing chunks that no longer existed.
+
+        So a chunk a stored analysis still cites is RETIRED instead — moved to a
+        `retired:<workspace>` scope that no workspace query matches, while a
+        lookup by id still resolves. Everything else is deleted. A chunk whose id
+        the new ingestion re-creates is deleted too: the id encodes the text, so
+        the replacement is the same passage, and Chroma silently ignores an add
+        for an id that already exists.
+
+        Returns (deleted, retired).
+        """
+        if not workspace_id or not document_name:
+            return 0, 0
+        try:
+            found = self.collection.get(
+                where={
+                    "$and": [
+                        {"workspace_id": {"$eq": str(workspace_id)}},
+                        {"document_name": {"$eq": str(document_name)}},
+                    ]
+                },
+                include=["metadatas"],
+            )
+        except Exception as exc:
+            logger.warning("workspace_document_retire_query_failed", error=str(exc))
+            return 0, 0
+        ids = found.get("ids") or []
+        metas = found.get("metadatas") or []
+        retire = [
+            (cid, md) for cid, md in zip(ids, metas) if cid in keep_ids and cid not in replacing_ids
+        ]
+        retire_ids = {cid for cid, _ in retire}
+        doomed = [cid for cid in ids if cid not in retire_ids]
+        if retire:
+            self.collection.update(
+                ids=[cid for cid, _ in retire],
+                metadatas=[
+                    {**(md or {}), "workspace_id": f"retired:{workspace_id}"} for _, md in retire
+                ],
+            )
+        if doomed:
+            self.collection.delete(ids=doomed)
+        logger.info(
+            "workspace_document_retired",
+            workspace_id=workspace_id,
+            document_name=document_name,
+            deleted=len(doomed),
+            retired=len(retire),
+        )
+        return len(doomed), len(retire)
 
     def delete_framework_chunks(self, framework_name: str) -> int:
         results = self.collection.get(where={"framework": framework_name})

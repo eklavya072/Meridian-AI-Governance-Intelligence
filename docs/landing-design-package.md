@@ -1739,3 +1739,85 @@ Live detector **27 → 24**; contrast findings **3 → 1** (median now above
 floor). 173 elements sampled across every surface, **zero** failures. No
 horizontal overflow at 1440 or 375. Desktop scrub intact. `tsc` clean,
 `next build` clean.
+
+---
+
+## 76 — Tier 3, and three corrections
+
+**Tabular figures came off the display face.** `tnum` widens punctuation to a
+figure width so decimal columns align — right on the three numeric selectors
+that keep it, wrong on headlines containing no figures. Measured with it on:
+the full stop in `.l-h1` rendered **27.84px against 11.95px** normal. Every
+hero line read "…name a duty ." in 47px type. Verified after:
+`font-variant-numeric: normal` on the hero, `lining-nums tabular-nums`
+retained on `.l-stat-value`, `.l-ink-fig`, `.l-ink-rule-n`.
+
+**Dead code removed.** `ProofBand` and its entire PROOF dataset (exported,
+imported by nothing, while §62 claimed it shipped); `HorizontalTrack`'s
+`rail` prop and `.l-track-rail-fixed`; `lastP` and `C = 169.646`, the circle
+indicator's circumference constant, outliving the circle by six sections;
+`eyebrowless` and its `void`.
+
+**`.l-ink-rule-b` measured 83.2 characters** against a 75 ceiling — because
+`68ch` is not 68 characters. `ch` is the width of the zero glyph, and at
+15.68px Public Sans that under-counts by 22%. A 30rem cap measures 61.
+
+**Easings folded.** `cubic-bezier(0.16,1,0.3,1)` and `(0.22,1,0.36,1)` are
+the same exponential ease-out at two strengths, used interchangeably rather
+than deliberately — 7 occurrences in the sheet plus 3 inline in
+`ProductFrames`. One `--ease-enter` token now.
+
+### The three corrections
+
+**The opening line took 2.2 seconds.** An entrance the reader waits through
+is not an entrance. The ramp is 1050ms, and the arrival now gets the same
+three-part treatment as the departure — rise, scale, and a 3px blur it
+resolves out of, against the exit's 5px. Arrival and departure are one
+gesture run in opposite directions; before this the entrance was transform
+and opacity alone, which is where most scroll type stops.
+
+**Beat three was anchored right and set flush left** — a hard edge on the
+side nobody reads from and a ragged one on the side everybody does. That is
+what made it feel unplaced: the composition's edge and the reading's edge
+were on opposite sides. Both blocks set flush right now, sharing `800 / 1344`.
+
+**The dark chapter was 1223px against a 900px viewport**, so it could never
+be seen whole. Now **901px**. One structural error surfaced doing it: the nav
+clearance added in §75 was applied to every `.l-ink-head` and
+`.l-method-head`, but only a heading that is its section's *first child* can
+sit under the pill — this one follows the figures and was paying 42px for a
+collision it cannot have. Scoped to `:first-child`; both headings re-verified
+clear of the pill.
+
+### Verification state
+
+`tsc` clean, `next build` clean. Layout and typography measured in the
+browser pane before the build.
+
+**The URL detector could not be re-run after Tier 3.** It reports `[]` with
+exit 0, which looks clean and is not: stderr says *"No Chrome, Chromium, Edge,
+or Brave installation found for URL scanning."* There is no Chromium on this
+machine and `IMPECCABLE_BROWSER` is unset. The earlier 27 → 24 runs in §75
+were real; whatever browser served them is no longer resolvable. **An empty
+detector result is only meaningful with a readable stderr and a live target.**
+
+**The dev server was wedged and has since been restarted.** `rm -rf .next`
+run against a live dev server destroys its compiled output — the process
+keeps the port and returns 404 to everything. Build against a stopped server,
+or to a different directory.
+
+### Re-verified on the restored server
+
+| | |
+|---|---|
+| dark chapter | **901px** against a 900px viewport — one screen |
+| beat three | `text-align: right`, both blocks on `800 / 1344` |
+| hero figures | `font-variant-numeric: normal`; the three numeric selectors keep `tabular-nums` |
+| dead code | arc, rail and ProofBand all absent from the DOM |
+| contrast | **171 sampled, zero failures** |
+| easings | **5 distinct**, down from 7 — `linear` is the dust drift, `ease`/`ease-out` are button and link states |
+| mobile | all five beats visible, `<h1>` present, no overflow at 375 |
+
+The URL detector still cannot run: no Chromium on this machine and
+`IMPECCABLE_BROWSER` unset. It returns `[]` with exit 0 regardless, so that
+result must never be read as a pass without checking stderr.

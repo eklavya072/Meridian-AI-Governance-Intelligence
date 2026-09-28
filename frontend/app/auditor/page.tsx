@@ -138,6 +138,11 @@ export default function AuditorPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // Bumped whenever the conversation on screen changes (new chat, another
+  // session, a new document). A reply still in flight from the old one used
+  // to land in the new one — and hand it the old session id. It is saved
+  // server-side either way, in its own session, so it is dropped here.
+  const conversation = useRef(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -159,6 +164,7 @@ export default function AuditorPage() {
       const res = await api.auditorUpload(file);
       setDoc({ workspace_id: res.workspace_id, file_name: res.file_name });
       // New document → fresh conversation about it.
+      conversation.current++;
       setSessionId(null);
       setMessages([]);
     } catch (e) {
@@ -205,6 +211,7 @@ export default function AuditorPage() {
       { id: `user-${Date.now()}`, role: "user", content: trimmed, citations: [] },
     ]);
     setLoading(true);
+    const mine = conversation.current;
     try {
       // With a document attached, questions are routed to that document
       // (Mode B); without one, they draw on the framework knowledge base.
@@ -216,6 +223,7 @@ export default function AuditorPage() {
         null,
         "auditor"
       );
+      if (conversation.current !== mine) return;
       if (!sessionId) {
         setSessionId(res.session_id);
         loadSessions();
@@ -232,6 +240,7 @@ export default function AuditorPage() {
         },
       ]);
     } catch {
+      if (conversation.current !== mine) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -247,11 +256,14 @@ export default function AuditorPage() {
   }
 
   async function switchSession(sid: string) {
+    conversation.current++;
+    const mine = conversation.current;
     setShowHistory(false);
     setSessionId(sid);
     setMessages([]);
     try {
       const data = await api.chat.getSession(sid);
+      if (conversation.current !== mine) return;
       setMessages(
         data.messages.map((m) => ({
           id: m.id,
@@ -277,7 +289,9 @@ export default function AuditorPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] min-h-[560px]">
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Wraps on a phone: at 375px the buttons ran 27px past the edge and
+          History was cut off. */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <SplitText
             tag="h1"
@@ -300,6 +314,7 @@ export default function AuditorPage() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => {
+              conversation.current++;
               setSessionId(null);
               setMessages([]);
             }}

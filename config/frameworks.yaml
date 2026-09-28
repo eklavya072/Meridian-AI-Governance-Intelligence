@@ -7,7 +7,7 @@ frameworks:
     pdf_url: "https://unesdoc.unesco.org/ark:/48223/pf0000381137"
     website: "https://unesdoc.unesco.org/ark:/48223/pf0000381137"
     version: "2021"
-    checksum: null
+    checksum: "cd7d800ffce531f4c3f2151dcdfa7aaa4f67e698abfe04142812df637d820a92"
     local_path: null
     roles: ["module_1_normative"]
 
@@ -15,7 +15,7 @@ frameworks:
     pdf_url: "https://oecd.ai/assets/files/OECD-LEGAL-0449-en.pdf"
     website: "https://oecd.ai/en/ai-principles"
     version: "2024"
-    checksum: null
+    checksum: "2fbdb4e5a82962073d252d2e867801941ad08bfd79c6d364387b6582038d7852"
     local_path: null
     roles: ["module_1_normative"]
 
@@ -23,7 +23,7 @@ frameworks:
     pdf_url: "https://digitalstrategy.undp.org/documents/Digital-Strategy-2022-2025-Full-Document_ENG_Interactive.pdf"
     website: "https://digitalstrategy.undp.org"
     version: "2022"
-    checksum: null
+    checksum: "13b941870b79890c1f3199008cb0b7d3dcd3cfa6f2dec93886271469b2eafd5c"
     local_path: null
     roles: ["module_1_normative"]
 
@@ -31,7 +31,7 @@ frameworks:
     pdf_url: "https://www.un.org/digital-emerging-technologies/sites/www.un.org.techenvoy/files/general/Roadmap_for_Digital_Cooperation_9June.pdf"
     website: "https://www.un.org/en/content/digital-cooperation-roadmap"
     version: "2020"
-    checksum: null
+    checksum: "e686282a3772c8beb00bf1f0e544be08a1685d0d645dbfdafdd526f7211a79f2"
     local_path: null
     roles: ["module_1_normative"]
 
@@ -39,7 +39,7 @@ frameworks:
     pdf_url: "https://www.un.org/global-digital-compact/sites/default/files/2024-09/Global%20Digital%20Compact%20-%20English_0.pdf"
     website: "https://www.un.org/global-digital-compact"
     version: "2024"
-    checksum: null
+    checksum: "e2657b5f1cf30e84685b7ab95eb60f141d85990bc60ac70b98cb93ec37c2cc3d"
     local_path: null
     roles: ["module_1_normative"]
 
@@ -47,7 +47,7 @@ frameworks:
     pdf_url: "https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=OJ:L_202401689"
     website: "https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai"
     version: "2024"
-    checksum: null
+    checksum: "bba630444b3278e881066774002a1d7824308934f49ccfa203e65be43692f55e"
     local_path: null
     roles: ["module_1_normative"]
 
@@ -55,7 +55,7 @@ frameworks:
     pdf_url: "https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf"
     website: "https://www.nist.gov/itl/ai-risk-management-framework"
     version: "1.0"
-    checksum: null
+    checksum: "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1"
     local_path: null
     roles: ["module_1_normative"]
 
@@ -63,7 +63,7 @@ frameworks:
     pdf_url: "https://papers.ssrn.com/sol3/Delivery.cfm/6576159.pdf?abstractid=6576159&mirid=1"
     website: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6576159"
     version: "2026"
-    checksum: null
+    checksum: "48f3ea89bca8d42f3407ed1f241389db3f9b4ba938f966d6f967b20609937510"
     local_path: null
     roles: ["module_1_normative"]
     # Routed: searched ONLY when evaluating the Human Autonomy dimension.
@@ -80,7 +80,7 @@ frameworks:
     pdf_url: "https://assets.publishing.service.gov.uk/media/60142096d3bf7f70ba377b20/Review_into_bias_in_algorithmic_decision-making.pdf"
     website: "https://www.gov.uk/government/publications/review-into-bias-in-algorithmic-decision-making"
     version: "2020"
-    checksum: null
+    checksum: "a9148a1afa972e8ba140da7bd9e18c4a0656f858c7b45b5ba4ccfb62c7d81d7e"
     local_path: null
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot when Fairness is
@@ -92,7 +92,7 @@ frameworks:
     pdf_url: "https://ico.org.uk/media2/about-the-ico/consultations/2616434/explaining-ai-decisions-part-1.pdf"
     website: "https://www.gov.uk/data-ethics-guidance/explaining-decisions-made-with-ai"
     version: "2020"
-    checksum: null
+    checksum: "1b3dadc17a4e00fb08eb8438abb0d0d0b774005a20f460e7cce6bad5bb48e5a6"
     local_path: null
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot for Transparency.
@@ -117,7 +117,7 @@ frameworks:
     pdf_url: "https://www.oecd.org/content/dam/oecd/en/publications/reports/2021/06/tools-for-trustworthy-ai_0e36bb08/008232ec-en.pdf"
     website: "https://oecd.ai/en/"
     version: "2021"
-    checksum: null
+    checksum: "ccfbe9825081d47544f7332939158f79d7cf9229d3184fc57f0d054b23d2042b"
     local_path: null
     roles: ["module_2_practical"]
 
@@ -125,7 +125,7 @@ frameworks:
     pdf_url: "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.1270.pdf"
     website: "https://www.nist.gov/publications/toward-standard-identification-and-management-bias-artificial-intelligence"
     version: "2025"
-    checksum: null
+    checksum: "334042ba11ed24d7446cc31967e6e1eb4921f50a17eec4eb14ef1bff078f1e09"
     local_path: null
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot for Fairness.
@@ -136,7 +136,7 @@ frameworks:
     pdf_url: "https://www.informationpolicycentre.com/wp-content/uploads/2017/09/cipl_pets_and_ppts_in_ai_mar25-2.pdf"
     website: "https://www.informationpolicycentre.com/"
     version: "2025"
-    checksum: null
+    checksum: "14210d50ce07f0932fc619cb956f344744010bd348edaf45962a8838b28ca3d1"
     local_path: null
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot for Privacy.
@@ -147,7 +147,7 @@ frameworks:
     pdf_url: "https://arxiv.org/pdf/1810.03993"
     website: "https://dl.acm.org/doi/epdf/10.1145/3287560.3287596"
     version: "2019"
-    checksum: null
+    checksum: "a4049cdc78c3d635bdfb5165e495b0672d85690d66ccd6f149079d6e11e64aa1"
     local_path: null
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot for Transparency.
@@ -158,7 +158,7 @@ frameworks:
     pdf_url: "https://documents1.worldbank.org/curated/en/099655407192421260/pdf/IDU-e0c45264-79f8-4c19-a6c8-b46c294d674e.pdf"
     website: "https://documents.worldbank.org/en/publication/documents-reports"
     version: "2024"
-    checksum: null
+    checksum: "2075d2ca984b4aa6d08a181188f671b4e19e4db0a664fdcb9f0b6b1b090a040f"
     local_path: "backend/data/raw_policies/Revisiting_the_Measurement_of_Digital_Inclusion.pdf"
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot for Inclusivity.
@@ -169,7 +169,7 @@ frameworks:
     pdf_url: "https://arxiv.org/pdf/2511.17179"
     website: "https://arxiv.org/abs/2511.17179"
     version: "2025"
-    checksum: null
+    checksum: "b28bc53c33200835651b1f57dffae708ca135b40b6ca1f8b73ac30123b1eab57"
     local_path: "backend/data/raw_policies/Toward_Sustainable_Generative_AI_Scoping_Review_of_Carbon_Footprint.pdf"
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot for Environmental
@@ -181,7 +181,7 @@ frameworks:
     pdf_url: "https://arxiv.org/pdf/2505.07317"
     website: "https://arxiv.org/abs/2505.07317"
     version: "2025"
-    checksum: null
+    checksum: "2a0d1c73db227bddd287bd4fee070571fbd23f3ac1de5e8fd23b6dae6239c5fe"
     local_path: "backend/data/raw_policies/How_Do_Companies_Manage_the_Environmental_Sustainability_of_AI.pdf"
     roles: ["module_2_practical"]
     # Dimension-tagged: guaranteed a Module 2 budget slot for Environmental
@@ -199,7 +199,7 @@ frameworks:
     pdf_url: null
     website: "https://unesdoc.unesco.org/ark:/48223/pf0000381137"
     version: "2021"
-    checksum: null
+    checksum: "968cc4f4ab632fd071c286dec2cda4761aed6a5100cdcd53e901050f884dca99"
     local_path: null
     roles: ["module_1_normative"]
     # Routed: searched ONLY for Environmental Sustainability. This is the
@@ -216,7 +216,7 @@ frameworks:
     pdf_url: null
     website: "https://www.unesco.org/ethics-ai/en/node/288"
     version: "2026"
-    checksum: null
+    checksum: "21f8920dab06290f76f4fb0ac96bd1b43d4fe6d695553ff563b47b8d8136bd2d"
     local_path: "backend/data/raw_policies/AI_for_Environment_and_Ecosystems_Toolkit_for_Policymakers.pdf"
     roles: ["module_1_normative"]
     # Routed: searched ONLY for Environmental Sustainability. Indexed corpus =
@@ -234,7 +234,7 @@ frameworks:
     pdf_url: "https://asean.org/wp-content/uploads/2024/02/ASEAN-Guide-on-AI-Governance-and-Ethics_beautified_201223_v2.pdf"
     website: "https://asean.org/asean-guide-on-ai-governance-and-ethics/"
     version: "2024"
-    checksum: null
+    checksum: "6464a6d912a918a1b49c36b7dbd7f66b4756352e49164c5020f28b0b190bfe4e"
     local_path: null
     roles: ["module_1_normative"]
     # Routed: searched ONLY when the document's country is an ASEAN member.
@@ -246,7 +246,7 @@ frameworks:
     pdf_url: null
     website: "https://www.imda.gov.sg/model-ai-governance-framework"
     version: "2026"
-    checksum: null
+    checksum: "ca077df0037a5096cb15397708b71e873f9694d60790d9f2e2da3af312ce6b72"
     local_path: "backend/data/raw_policies/Singapore_Model_AI_Governance_Framework_for_Generative_AI.pdf"
     roles: ["module_1_normative"]
     # Routed: searched ONLY when the document's country is an ASEAN member.
@@ -266,7 +266,7 @@ frameworks:
     pdf_url: "https://au.int/sites/default/files/documents/44004-doc-EN-_Continental_AI_Strategy_July_2024.pdf"
     website: "https://au.int/en/continental-ai-strategy"
     version: "2024"
-    checksum: null
+    checksum: "c5429f73786c0a0c170a78278016339ab86f914b239290ba1d6623cc07734e3f"
     local_path: null
     roles: ["module_1_normative"]
     # Routed: searched ONLY when the document's country is an African Union member.
@@ -278,7 +278,7 @@ frameworks:
     pdf_url: "https://documents.worldbank.org/en/publication/documents-reports"
     website: "https://www.worldbank.org/en/news/press-release/2026/08/04/ai-offers-lifeline-to-developing-economies-in-an-era-of-weak-growth"
     version: "2026"
-    checksum: null
+    checksum: "f3d90a98d139be00e0635f88b4771d32da0a807682cead11718f61cf42906dd5"
     local_path: "backend/data/raw_policies/World_Development_Report_2026_The_Promise_of_Artificial_Intelligence.pdf"
     roles: ["module_1_normative"]
     # Routed: searched ONLY when evaluating the Inclusivity dimension. World
@@ -293,7 +293,7 @@ frameworks:
     pdf_url: "https://www.worldbank.org/en/publication/dptr2025-ai-foundations"
     website: "https://www.worldbank.org/en/publication/dptr2025-ai-foundations"
     version: "2025"
-    checksum: null
+    checksum: "b120b4fc5c30de01e3823384fb02f5215a8268a3d59e2b645d74e9592859ade2"
     local_path: "backend/data/raw_policies/Digital_Progress_and_Trends_Report_2025_Strengthening_AI_Foundations.pdf"
     roles: ["module_1_normative"]
     # Routed: searched ONLY when evaluating the Inclusivity dimension. World
@@ -308,7 +308,7 @@ frameworks:
     pdf_url: null
     website: "https://www.unesco.org/en/articles/mainstreaming-accessibility-and-inclusivity-ai-and-digital-technologies"
     version: "2024"
-    checksum: null
+    checksum: "5bcdd1dc0ad1bcbdede403b91544429f01dd1d15674a081e7573e4cc701d3d9e"
     local_path: "backend/data/raw_policies/Mainstreaming_Accessibility_and_Inclusivity_in_AI_and_Digital_Technologies.pdf"
     roles: ["module_1_normative"]
     # Routed: searched ONLY when evaluating the Inclusivity dimension. UNESCO
@@ -324,7 +324,7 @@ frameworks:
     pdf_url: null
     website: "https://www.oecd.org/en/topics/digital-divides.html"
     version: "2024"
-    checksum: null
+    checksum: "f7ae54857223a7ba6c518dd939b9dae8d3c83429f52b560853fe909015528f79"
     local_path: "backend/data/raw_policies/OECD_Digital_Divides_Topic_Overview.pdf"
     roles: ["module_1_normative"]
     # Routed: searched ONLY when evaluating the Inclusivity dimension. OECD
@@ -347,7 +347,7 @@ frameworks:
     pdf_url: "https://assurance.aiverifyfoundation.sg/wp-content/uploads/2025/06/Assurance-Pilot-Main-Report.pdf"
     website: "https://www.imda.gov.sg/about-imda/emerging-technologies-and-research/artificial-intelligence"
     version: "2025"
-    checksum: null
+    checksum: "6da5c143d57e0619d9d3682c16af0453cee985c8a4e40a95ea1b4d88f08bffa1"
     local_path: "backend/data/raw_policies/AI_Verify_Assurance_Pilot_Main_Report.pdf"
     roles: ["module_3_implementation"]
     # Dimension-tagged: guaranteed a Module 3 budget slot for Safety (the
@@ -359,7 +359,7 @@ frameworks:
     pdf_url: null
     website: "https://oecd.ai/en/transparency/overview"
     version: "2023"
-    checksum: null
+    checksum: "5874e58509b0088cec9ca61a7334e750128be9281e510bfcb615ef4cbc3e4419"
     local_path: null
     roles: ["module_3_implementation"]
     # NOTE: hosted as a web overview on oecd.ai — no stable direct PDF.
@@ -371,7 +371,7 @@ frameworks:
     pdf_url: "https://www.cisa.gov/sites/default/files/2025-01/JCDC%20AI%20Playbook.pdf"
     website: "https://www.cisa.gov/resources-tools/resources/ai-cybersecurity-collaboration-playbook"
     version: "2024"
-    checksum: null
+    checksum: "facac39ddd4e020f7a3d743f3d14f69c2611ce756b4e6b0c28750f939b4fb671"
     local_path: null
     roles: ["module_3_implementation"]
     # Dimension-tagged: guaranteed a Module 3 budget slot for Safety
@@ -392,7 +392,7 @@ frameworks:
     pdf_url: null
     website: "https://incidentdatabase.ai/"
     version: "2025"
-    checksum: null
+    checksum: "5881a333e2bb8006e0875caa7dc635249ebb7053af654d531b8cbe58bd8932f7"
     local_path: "backend/data/raw_policies/AI_Incident_Database_Curated_Records.pdf"
     roles: ["module_4_incident"]
     source_type: incident_record
@@ -406,7 +406,7 @@ frameworks:
     pdf_url: "https://www.royalcommission.gov.au/system/files/2023-07/RC-robodebt-report.pdf"
     website: "https://www.royalcommission.gov.au/robodebt"
     version: "2023"
-    checksum: null
+    checksum: "9837ca00ecf7022694abb9eae1be57f49a8a791d4df8951339be282a2c76cf42"
     local_path: "backend/data/raw_policies/Royal_Commission_Robodebt_Report.pdf"
     roles: ["module_4_incident"]
     source_type: incident_record
@@ -415,7 +415,7 @@ frameworks:
     pdf_url: "https://analytics.alleghenycounty.us/wp-content/uploads/2019/05/Impact-Evaluation-Summary-from-16-ACDHS-26_PredictiveRisk_Package_050119_FINAL-5.pdf"
     website: "https://www.alleghenycountyanalytics.us/"
     version: "2019"
-    checksum: null
+    checksum: "63109cf3e01f9cb081afe2de3abf904a29daf24abcad3998c76e0b02fe56bc20"
     local_path: null
     roles: ["module_4_incident"]
     source_type: incident_record

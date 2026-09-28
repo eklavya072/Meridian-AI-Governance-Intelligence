@@ -26,11 +26,6 @@ WHAT THIS MODULE DOES, IN ORDER
                             withheld rather than published.
   5. Mechanism gate         a dimension cannot be "operational" while binding
                             none of the mechanisms it requires.
-  6. Aggregation            geometric mean across dimensions, so a regime with
-                            a hole in it does not read like a uniformly
-                            middling one. This is the reform UNDP made to the
-                            Human Development Index in 2010, for the same
-                            reason.
 
 EVERY RULE HERE REPLACED ONE THAT WAS MEASURABLY WRONG. The comments name the
 document and the sentence that exposed each, because those are the only
@@ -40,10 +35,8 @@ evidence that the rule is worth having.
 from __future__ import annotations
 
 import collections
-import math
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
@@ -65,7 +58,6 @@ from src.evidence_strength import (
     TIER_INTENTIONAL,
     TIER_OBLIGATORY,
     ScoredSentence,
-    _norm,
     _words,
     is_structural_noise,
     is_third_party_attribution,
@@ -122,6 +114,34 @@ ADMIN_SANCTION_RE = re.compile(
     r"\border\w*\s+(?:that\s+)?correction"
     r"|\border\w*\s+(?:\w+\s+){0,3}?to\s+(?:make\s+)?correct"
     r"|\b(?:give|gives|given|giving|issue|issues|issued)\s+(?:a\s+)?warnings?\b",
+    re.IGNORECASE,
+)
+
+# PENAL PROVISION: the consequence stated as the operative act.
+#
+# T4 otherwise needs a duty modal — "providers shall ... or face a fine". But
+# the most binding sentence in a statute usually contains no modal at all,
+# because it states the consequence instead of restating the duty:
+# "A person who contravenes subsection (1) is guilty of an offence."
+# Those landed on `has_regulated and has_consequence` -> Obligatory, so a
+# criminal penalty scored below an ordinary "shall".
+#
+# Measured on the country corpus: 9 penalty-style provisions, 7 of them
+# capped at T3 this way, all in the UK Data Protection Act — the most
+# enforceable instrument in that workspace. Since Institutionalized requires
+# n_enforceable >= 2, the cap was suppressing depth on the dimensions with
+# the strongest possible backing.
+#
+# Deliberately narrow: an offence, a conviction, or a stated liability to a
+# penalty. "May face reputational consequences" is not this pattern, and a
+# duty-free consequence on a non-regulated subject still does not qualify.
+PENAL_PROVISION_RE = re.compile(
+    r"\b(?:commits?|committed|is|are|shall\s+be)\s+(?:guilty\s+of|an?\s+)?"
+    r"(?:an\s+)?offen[cs]e\b"
+    r"|\bguilty\s+of\s+an\s+offen[cs]e\b"
+    r"|\bon\s+conviction\b"
+    r"|\bliable\s+(?:on\s+conviction\s+)?to\s+(?:a\s+)?"
+    r"(?:fine|penalty|imprisonment|administrative\s+fine)",
     re.IGNORECASE,
 )
 
@@ -245,6 +265,10 @@ def _classify_base(
         tier = TIER_OBLIGATORY
     elif has_gov and (has_commitment or has_obligation):
         tier = TIER_ASSIGNED
+    elif has_regulated and PENAL_PROVISION_RE.search(probe):
+        # The consequence IS the provision. See PENAL_PROVISION_RE.
+        tier = TIER_ENFORCEABLE
+        enforcement_credit = True
     elif has_regulated and (has_consequence or has_subjection):
         tier = TIER_OBLIGATORY
         enforcement_credit = has_consequence
@@ -329,238 +353,7 @@ def detect_enforcement_regime(sample_texts: Iterable[str], min_signals: int | No
     return False
 
 
-# ── Aggregation across the eight dimensions ──────────────────────────────
-#
-# The stage scores are v1's and are deliberately unchanged: the ladder was
-# validated, and changing the scale and the aggregation in the same step would
-# make the comparison uninterpretable.
-DEPTH_STAGE_SCORE_V2 = {
-    "Unaddressed": 0.0,
-    "Emerging": 50.0,
-    "Delegated": 65.0,
-    "Operationalized": 78.0,
-    "Institutionalized": 100.0,
-}
-
-# A geometric mean containing a zero is zero, which would collapse any
-# jurisdiction with one Unaddressed dimension to an index of 0 and destroy all
-# information about the other seven. HDI has the same problem and solves it
-# with goalposts — a minimum above zero. GEOMETRIC_FLOOR is that goalpost: a
-# document that was assessed and found silent on a dimension still sits on the
-# scale, it just sits at the bottom of it. The value is small enough that an
-# Unaddressed dimension dominates the index, which is the intended behaviour.
-GEOMETRIC_FLOOR = 5.0
-
-
-def arithmetic_index(stage_scores: Sequence[float]) -> float:
-    """v1's aggregation. Fully compensatory: a 100 offsets a 0 exactly."""
-    if not stage_scores:
-        return 0.0
-    return round(sum(stage_scores) / len(stage_scores), 1)
-
-
-def geometric_index(stage_scores: Sequence[float], floor: float = GEOMETRIC_FLOOR) -> float:
-    """Imperfectly compensatory (OECD/JRC Handbook; UNDP HDI since 2010).
-
-    Rewards a regime that governs every dimension somewhat over one that
-    governs most dimensions superbly and one not at all.
-    """
-    if not stage_scores:
-        return 0.0
-    vals = [max(float(s), floor) for s in stage_scores]
-    return round(math.exp(sum(math.log(v) for v in vals) / len(vals)), 1)
-
-
-def penalised_index(stage_scores: Sequence[float]) -> float:
-    """Adjusted Mazziotta-Pareto: the mean, minus a penalty for imbalance.
-
-        M - (S^2 / M)   where M is the mean and S the standard deviation
-
-    Included as the third aggregation because it handles a genuine zero
-    without a floor — unlike the geometric mean it needs no goalpost, so it
-    acts as a check that the geometric result is not an artefact of the floor
-    we chose.
-    """
-    if not stage_scores:
-        return 0.0
-    n = len(stage_scores)
-    mean = sum(stage_scores) / n
-    if mean <= 0:
-        return 0.0
-    var = sum((s - mean) ** 2 for s in stage_scores) / n
-    return round(max(0.0, mean - var / mean), 1)
-
-
-@dataclass
-class DepthAggregation:
-    """All three aggregations plus the spread that separates them.
-
-    Reported together on purpose. The OECD/JRC Handbook asks that a composite
-    indicator be shown robust to its own aggregation choice; publishing one
-    number and calling it the answer is what the Handbook warns against.
-    """
-
-    arithmetic: float
-    geometric: float
-    penalised: float
-    imbalance: float
-    stages: dict[str, str] = field(default_factory=dict)
-
-    @property
-    def headline(self) -> float:
-        return self.geometric
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "implementation_depth_index": self.headline,
-            "depth_arithmetic": self.arithmetic,
-            "depth_geometric": self.geometric,
-            "depth_penalised": self.penalised,
-            "depth_imbalance": self.imbalance,
-        }
-
-
-def aggregate_depth(stages: dict[str, str]) -> DepthAggregation:
-    """Aggregate per-dimension stage labels into the depth index.
-
-    `stages` maps dimension name → stage label, for ASSESSED dimensions only.
-    A dimension that was never assessed is absent rather than zero: scoring a
-    dimension the pipeline could not evaluate as "absent governance" would
-    report a retrieval failure as a policy finding.
-    """
-    scores = [DEPTH_STAGE_SCORE_V2.get(v, 0.0) for v in stages.values()]
-    if not scores:
-        return DepthAggregation(0.0, 0.0, 0.0, 0.0, dict(stages))
-    mean = sum(scores) / len(scores)
-    sd = (sum((s - mean) ** 2 for s in scores) / len(scores)) ** 0.5
-    return DepthAggregation(
-        arithmetic=arithmetic_index(scores),
-        geometric=geometric_index(scores),
-        penalised=penalised_index(scores),
-        imbalance=round(sd, 1),
-        stages=dict(stages),
-    )
-
-
-# ── Corpus completeness ──────────────────────────────────────────────────
-#
-# The failure that v1 cannot see. India governs AI through sectoral regulators
-# by stated policy, so the two documents supplied are a deliberately small
-# slice of the regime — and v1 reports a number for it with no caveat and an
-# undiminished confidence score. A score computed from an incomplete corpus is
-# not wrong, but presenting it as a jurisdiction's depth is.
-#
-# This does NOT adjust the score. It cannot: we have no way to grade an
-# instrument we were not given. It qualifies the score, which is the honest
-# thing available.
-_INSTRUMENT_REF_RE = re.compile(
-    r"\b("
-    r"(?:the\s+)?[A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*){0,5}\s+"
-    r"(?:Act|Bill|Law|Regulation|Code|Ordinance|Decree|Directive)"
-    r"(?:\s*,?\s*(?:No\.\s*\d+\s*(?:of\s*)?)?\d{4})?"
-    r")\b"
-)
-_REGULATOR_REF_RE = re.compile(
-    r"\b("
-    r"sectoral\s+regulators?|"
-    r"Reserve\s+Bank[A-Za-z\s]{0,20}|"
-    r"Securities\s+and\s+Exchange\s+Board[A-Za-z\s]{0,20}|"
-    r"[A-Z][A-Za-z]*\s+Regulatory\s+Authority|"
-    r"Data\s+Protection\s+(?:Authority|Board|Commission(?:er)?)"
-    r")\b"
-)
-_SELF_REF_STOP = re.compile(r"\b(this|the present)\s+(act|bill|law|regulation)\b", re.IGNORECASE)
-
-
-def referenced_instruments(text: str) -> set[str]:
-    """Named legal instruments and regulators a document points at."""
-    if not text:
-        return set()
-    found: set[str] = set()
-    for m in _INSTRUMENT_REF_RE.finditer(text):
-        name = " ".join(m.group(1).split())
-        if _SELF_REF_STOP.search(name) or len(name) < 8:
-            continue
-        found.add(name)
-    for m in _REGULATOR_REF_RE.finditer(text):
-        found.add(" ".join(m.group(1).split()))
-    return found
-
-
-def corpus_completeness(
-    document_texts: dict[str, str],
-) -> dict[str, Any]:
-    """Which instruments the corpus points at but does not contain.
-
-    `document_texts` maps supplied document name → its full text.
-    """
-    supplied = " ".join(document_texts.keys()).lower()
-    referenced: set[str] = set()
-    for text in document_texts.values():
-        referenced |= referenced_instruments(text)
-
-    missing = sorted(
-        r
-        for r in referenced
-        if not any(tok in supplied for tok in _norm(r).split() if len(tok) > 4)
-    )
-    return {
-        "documents_supplied": len(document_texts),
-        "instruments_referenced_not_supplied": missing[:12],
-        "referenced_not_supplied_count": len(missing),
-        # A single guidance document that points at many instruments it does
-        # not contain is the distributed-regime signature.
-        "corpus_likely_incomplete": len(missing) >= 3,
-    }
-
-
 # ── Profile building, v2 ─────────────────────────────────────────────────
-
-
-def _build_profile_base(
-    sentences: Iterable[str],
-    dimension: str = "",
-    own_jurisdiction: str = "",
-    document_is_nonbinding: bool = False,
-):
-    """v1's profile, built with v2's classifier.
-
-    The counters, their cumulative semantics and the verdict functions that
-    read them are v1's and unchanged — only what puts a sentence at the top
-    tier is different.
-    """
-    from src.evidence_strength import EvidenceProfile
-
-    profile = EvidenceProfile(dimension=dimension)
-    # Overlapping chunk windows deliver the same provision several times; see
-    # dedupe_sentences. Counting it once is the difference between "twelve
-    # binding provisions" and the four that actually exist.
-    for raw in dedupe_sentences(sentences):
-        scored = _classify_base(
-            raw,
-            dimension=dimension,
-            own_jurisdiction=own_jurisdiction,
-            document_is_nonbinding=document_is_nonbinding,
-        )
-        profile.sentences.append(scored)
-        if scored.excluded == "foreign":
-            profile.n_excluded_foreign += 1
-            continue
-        if scored.excluded == "structural":
-            profile.n_excluded_structural += 1
-            continue
-        profile.n_scored += 1
-        profile.tier_counts[scored.tier] = profile.tier_counts.get(scored.tier, 0) + 1
-        profile.max_tier = max(profile.max_tier, scored.tier)
-        if scored.tier >= TIER_ENFORCEABLE:
-            profile.n_enforceable += 1
-        if scored.tier >= TIER_OBLIGATORY:
-            profile.n_binding += 1
-        if scored.tier >= TIER_ASSIGNED:
-            profile.n_institutional += 1
-        if scored.tier >= TIER_INTENTIONAL:
-            profile.n_commitment += 1
-    return profile
 
 
 def dimension_enforcement_backing(
@@ -581,8 +374,13 @@ def dimension_enforcement_backing(
         if doc not in documents_with_regime:
             continue
         for s in sents:
+            # classify_provision, the classifier that scores the profile. The
+            # narrower base ladder missed artifact-borne duties ("the AI
+            # system shall be...") and the be-to construction, so a dimension
+            # could hold binding provisions yet be denied its document's
+            # enforcement backing.
             if (
-                _classify_base(s, dimension=dimension, own_jurisdiction=own_jurisdiction).tier
+                classify_provision(s, dimension=dimension, own_jurisdiction=own_jurisdiction).tier
                 >= TIER_OBLIGATORY
             ):
                 return True
@@ -621,6 +419,16 @@ def dimension_enforcement_backing(
 # So below nine scored sentences, "no duty found" carries less than 80%
 # confidence and should not be published as a governance verdict. Above it,
 # silence is evidence.
+#
+# SUPERSEDED AS A GATE. The derivation assumes the k sentences are a SAMPLE of
+# the dimension's provisions. Since the profile began sweeping every sentence of
+# every supplied document (gap_analyzer._dimension_profile), k is a census: India
+# reads 1,099 sentences in full and exactly two mention the environment. A low
+# count is then the finding, not a reason to doubt it, so the threshold now
+# grades how much text a verdict describes (verdict_confidence) and withholds
+# nothing. Measured before settling it: withholding the two cells below the
+# floor lifted India's index by ten points for saying less, and cost the GIRAI
+# correlation 0.08 with no change on the binding-force family.
 #
 # CAUTION, and it is a real one. That insensitivity held before de-duplication
 # removed 16% of scored sentences. With the counts corrected, k=9 withholds
@@ -667,10 +475,15 @@ def verdict_confidence(
     """
     if n_scored == 0:
         return "none", "no provisions were scored for this dimension"
+    # Thin, not insufficient. The count below the floor used to be read as
+    # "too little was sampled to trust the absence", but the profile is no
+    # longer a sample: every sentence of every supplied document is swept, so
+    # a low count means the document itself barely touches the dimension. The
+    # verdict stands; what this band says is how little text it describes.
     if not evidence_is_sufficient(n_scored, n_binding):
-        return "insufficient", (
-            f"only {n_scored} provisions were scored and none binds, below the "
-            f"{MIN_SCORED_FOR_ABSENCE} needed before an absence is publishable"
+        return "thin", (
+            f"every provision was read and only {n_scored} touch this dimension, "
+            f"none of them binding — the document barely addresses it"
         )
     if n_binding == 0:
         return "moderate", (
@@ -688,51 +501,6 @@ def verdict_confidence(
         + (f", {n_enforceable} enforceable" if n_enforceable else ", none enforceable")
         + " — read the provisions before quoting this cell"
     )
-
-
-def aggregate_depth_gated(
-    stages: dict[str, str],
-    sufficiency: dict[str, bool] | None = None,
-) -> DepthAggregation:
-    """Aggregate, excluding dimensions whose verdict the evidence cannot carry.
-
-    This is what makes geometric aggregation safe to use. The geometric mean's
-    virtue is that a weak dimension pulls the whole index down; its danger is
-    that it does the same for a MEASUREMENT ERROR, and ours cluster in exactly
-    the low tail — a vocabulary gap produces a false Unaddressed, never a false
-    Institutionalized. Excluding the cells we cannot stand behind removes the
-    error before it is amplified, rather than damping the amplifier.
-
-    An excluded dimension is NOT scored zero and NOT silently dropped: the
-    count is reported so a reader can see the index rests on six dimensions
-    rather than eight.
-    """
-    if sufficiency is None:
-        return aggregate_depth(stages)
-    kept = {d: s for d, s in stages.items() if sufficiency.get(d, True)}
-    agg = aggregate_depth(kept)
-    agg.stages = dict(stages)
-    return agg
-
-
-def depth_report(
-    stages: dict[str, str],
-    sufficiency: dict[str, bool] | None = None,
-) -> dict[str, Any]:
-    """The full v3 depth block, including what it could not assess."""
-    agg = aggregate_depth_gated(stages, sufficiency)
-    insufficient = sorted(d for d, ok in (sufficiency or {}).items() if not ok)
-    out = agg.as_dict()
-    out.update(
-        {
-            "dimensions_assessed": len(stages) - len(insufficient),
-            "dimensions_insufficient_evidence": insufficient,
-            # More than two dimensions unassessable means the corpus, not the
-            # country, is what the index is really measuring.
-            "assessment_evidence_limited": len(insufficient) > 2,
-        }
-    )
-    return out
 
 
 # ── Duplicate provisions ─────────────────────────────────────────────────
@@ -954,10 +722,6 @@ def recital_boundary(chunks: Sequence[dict[str, Any]]) -> int | None:
     return first
 
 
-def is_operative(sentence: str, is_recital: bool = False) -> bool:
-    return sentence_function(sentence, is_recital) == "operative"
-
-
 # ── (B) Structural relevance: admit duties the vocabulary gate cannot see ─
 #
 # The core-term gate admits 3,046 sentences and rejects 57,066. Among the
@@ -1050,9 +814,10 @@ def apply_mechanism_gate(stage: str, mechanisms_bound: int) -> tuple[str, str | 
     The demotions CASCADE. An earlier version returned after the first one, so
     a dimension sitting at Institutionalized with zero bound mechanisms landed
     on Operationalized and stopped — it never reached the rule that would have
-    taken it to Delegated. Found on Brazil, where a data-protection statute
-    read "Operationalized" for Human Autonomy, Inclusivity and Environmental
-    Sustainability on 0 of 0 mechanisms.
+    taken it to Delegated. The shape that exposes it is a data-protection
+    statute: strong enough on its own subject to reach the top stage, while
+    reading "Operationalized" for Human Autonomy, Inclusivity and
+    Environmental Sustainability on 0 of 0 mechanisms.
     """
     note: str | None = None
     if stage == "Institutionalized" and mechanisms_bound < MECHANISMS_FOR_INSTITUTIONAL:
@@ -1351,10 +1116,14 @@ def build_provision_profile(
             document_is_unenforced=cap == SOURCE_UNENFORCED,
         )
         profile.sentences.append(scored)
-        if scored.excluded in ("foreign", "structural"):
-            if scored.excluded == "foreign":
+        # Every exclusion the classifier reports is left out of the counts.
+        # This tested for "foreign", a label nothing produces, so a sentence
+        # describing another jurisdiction's law ("third_party") was counted as
+        # a scored Aspirational provision of this document.
+        if scored.excluded:
+            if scored.excluded == "third_party":
                 profile.n_excluded_foreign += 1
-            else:
+            elif scored.excluded == "structural":
                 profile.n_excluded_structural += 1
             continue
         profile.n_scored += 1
@@ -1369,98 +1138,6 @@ def build_provision_profile(
         if scored.tier >= TIER_INTENTIONAL:
             profile.n_commitment += 1
     return profile
-
-
-# ══ v6 ═══════════════════════════════════════════════════════════════════
-#
-# ── The duty-bearer holds for the whole division ─────────────────────────
-#
-# Article 10(2) of the AI Act opens by naming what is regulated — "Training,
-# validation and testing data sets shall be subject to data governance and
-# management practices..." — and then enumerates:
-#
-#     "Those practices shall concern in particular: ... (g) appropriate
-#      measures to detect, prevent and mitigate possible biases ..."
-#
-# "Those practices" is anaphora. The bearer was established two sentences
-# earlier and governs every point in the paragraph. Classified sentence by
-# sentence, point (g) has no bearer at all and scores Aspirational, so the
-# AI Act's bias-mitigation duty reads as an aspiration.
-#
-# This is only safe to fix now. Resolving a bearer across sentences requires
-# knowing where the provision ENDS, and until src/legal_structure.py gave us
-# real divisions there was no boundary — a bearer would have leaked from one
-# article into the next. A numbered paragraph is exactly the right scope: it
-# is the unit a drafter writes one duty in.
-def classify_division(
-    fragments: Sequence[str],
-    dimension: str = "",
-    own_jurisdiction: str = "",
-    document_is_nonbinding: bool = False,
-) -> list[ScoredSentence]:
-    """Classify the fragments of ONE division, sharing its duty-bearer.
-
-    A fragment that carries a hard modal but names nobody is re-read with the
-    bearer the division established. Nothing is promoted without a modal of
-    its own, so a bare aspiration inside a binding paragraph stays aspirational.
-    """
-    from src.evidence_strength import REGULATED_PARTY_RE
-
-    joined = rejoin_list_items(list(fragments))
-    scored = [
-        classify_provision(
-            f,
-            dimension=dimension,
-            own_jurisdiction=own_jurisdiction,
-            document_is_nonbinding=document_is_nonbinding,
-        )
-        for f in joined
-    ]
-
-    # The bearer this division establishes, if any.
-    bearer = ""
-    for f in joined:
-        probe = strip_policing(f)
-        if GOV_BODY_RE.search(probe):
-            bearer = ""  # a government-directed division must not be lifted
-            break
-        m = REGULATED_PARTY_RE.search(probe) or REGULATED_ARTIFACT_RE.search(probe)
-        if m:
-            bearer = m.group(0)
-            break
-    if not bearer:
-        return scored
-
-    out: list[ScoredSentence] = []
-    for frag, sc in zip(joined, scored):
-        probe = strip_policing(frag)
-        needs_bearer = (
-            not sc.excluded
-            and sc.tier < TIER_OBLIGATORY
-            and _HARD_MODAL_RE.search(probe)
-            and not REGULATED_PARTY_RE.search(probe)
-            and not REGULATED_ARTIFACT_RE.search(probe)
-            and not GOV_BODY_RE.search(probe)
-        )
-        if not needs_bearer:
-            out.append(sc)
-            continue
-        # Re-read the fragment with the bearer restored, exactly as the
-        # drafter's cross-reference intends it to be read.
-        out.append(
-            classify_provision(
-                f"{bearer} {frag}",
-                dimension=dimension,
-                own_jurisdiction=own_jurisdiction,
-                document_is_nonbinding=document_is_nonbinding,
-            )
-        )
-    # Keep the ORIGINAL text on each result: evidence must still quote the
-    # document, not our reconstruction of it.
-    return [
-        ScoredSentence(orig, s.tier, s.duty_bearer, s.has_enforcement, excluded=s.excluded)
-        for orig, s in zip(joined, out)
-    ]
 
 
 # ── The "be + to-infinitive" obligation ──────────────────────────────────

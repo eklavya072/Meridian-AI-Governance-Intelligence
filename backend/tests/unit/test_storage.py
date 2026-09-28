@@ -68,6 +68,26 @@ class TestFilesystemStorage:
         assert ref.startswith("/")
         assert ref.endswith("doc.pdf")
 
+    def test_a_key_cannot_climb_out_of_the_root(self, tmp_path):
+        # The backstop behind the upload route's own stripping of the name.
+        fs = FilesystemStorage(tmp_path / "uploads")
+
+        with pytest.raises(StorageError):
+            fs.put("1234_../../../escaped.pdf", PDF)
+        assert not list(tmp_path.rglob("escaped.pdf"))
+
+    def test_a_relative_root_still_hands_back_a_findable_reference(self, tmp_path, monkeypatch):
+        # The shipped default is "./data/uploads". Relative, it returned
+        # "data/uploads/doc.pdf", which exists() looked for under
+        # data/uploads/data/uploads — every fresh upload read as missing.
+        monkeypatch.chdir(tmp_path)
+        fs = FilesystemStorage("data/uploads")
+
+        ref = fs.put("doc.pdf", PDF)
+
+        assert ref.startswith("/")
+        assert fs.exists(ref)
+
     def test_local_path_does_not_copy(self, fs):
         ref = fs.put("doc.pdf", PDF)
 

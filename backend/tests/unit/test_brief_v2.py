@@ -200,6 +200,17 @@ class TestExporters:
         assert data[:2] == b"PK"  # zip magic — python-docx output
         assert len(data) > 1000
 
+    def test_docx_survives_characters_pdf_text_carries(self, gaps):
+        """Form feeds and vertical tabs come out of PDF extraction; Word's XML
+        refuses them, and one inside a quote used to fail the whole export."""
+        from src.brief_export import render_docx
+
+        brief = self._brief(gaps)
+        brief["country"] = "Testland\x0c"
+        brief["policy_title"] = "AI\x0bStrategy & R&D <2025>"
+
+        assert render_docx(brief)[:2] == b"PK"
+
     def test_pdf_valid(self, gaps):
         from src.brief_export import render_pdf
 

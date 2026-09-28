@@ -11,16 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from src import metrics
-from src.concurrency import get_slots
 from src.db_models import WorkspaceStatus
 from src.gap_analyzer import (
     CoverageLevel,
     GapAnalysisResult,
     GapAnalyzer,
     GovernanceGap,
+    evaluation_mode,
 )
-from src.ingestion import ingest_document
+from src.ingestion import ingest_document, ingest_key
 from src.logging_config import log_analysis_run
+from src.mechanism_adjudication import UNAVAILABLE
 from src.provenance import build_provenance
 from src.storage import get_storage
 from src.vectorstore import VectorStore
@@ -34,6 +35,49 @@ CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
 
 _engine = None
 _session_factory = None
+
+
+# Where each country's personal-data rules principally live, and how to
+# recognise that instrument among the uploaded file names. Facts about which
+# law exists — never an expectation about what any verdict should be.
+_DATA_PROTECTION_STATUTES: dict[str, tuple[str, str]] = {
+    "european union": (
+        "General Data Protection Regulation (GDPR)",
+        r"gdpr|general data protection|2016/679",
+    ),
+    "united kingdom": ("Data Protection Act 2018 and UK GDPR", r"data protection act|uk gdpr"),
+    "china": (
+        "Personal Information Protection Law (PIPL)",
+        r"pipl|personal information protection law",
+    ),
+    "japan": (
+        "Act on the Protection of Personal Information (APPI)",
+        r"appi|protection of personal information",
+    ),
+    "india": (
+        "Digital Personal Data Protection Act, 2023",
+        r"dpdp|digital personal data protection",
+    ),
+    "kenya": ("Data Protection Act, 2019", r"data protection act"),
+    "egypt": ("Personal Data Protection Law No. 151 of 2020", r"personal data protection|151"),
+    "nigeria": ("Nigeria Data Protection Act, 2023", r"data protection act|ndpa|ndp act"),
+    "rwanda": (
+        "Law No. 058/2021 relating to the Protection of Personal Data and Privacy",
+        r"058/2021|protection of personal data|data protection",
+    ),
+    "south korea": (
+        "Personal Information Protection Act (PIPA)",
+        r"pipa|personal information protection",
+    ),
+    "korea": (
+        "Personal Information Protection Act (PIPA)",
+        r"pipa|personal information protection",
+    ),
+    "republic of korea": (
+        "Personal Information Protection Act (PIPA)",
+        r"pipa|personal information protection",
+    ),
+}
 
 
 def _build_scope_disclaimer(
@@ -50,12 +94,12 @@ def _build_scope_disclaimer(
     and single-document workspaces state the one document evaluated.
 
     Companion-instrument scope note (deterministic, document-name based —
-    never an LLM judgment): when a country's governance for a dimension
-    lives in a separate statute, an analysis of the uploaded document alone
-    would silently understate that dimension. Korea's personal-data
-    governance is in the Personal Information Protection Act (PIPA), not the
-    AI Basic Act — if PIPA is not among the ingested documents, the Privacy
-    dimension is scope-limited and the disclaimer says so explicitly.
+    never an LLM judgment): a country's personal-data rules usually sit in a
+    separate statute, so an analysis of its AI instruments alone reads Privacy
+    from whatever data provisions they happen to carry. When that statute is
+    not among the ingested documents, the disclaimer says the Privacy verdict
+    is scope-limited. This began as a Korea-only rule, while the EU's Privacy
+    was read from the AI Act without a word about the GDPR.
     """
     docs = vector_store.get_workspace_documents(workspace_id) or []
     if len(docs) == 1:
@@ -73,16 +117,17 @@ def _build_scope_disclaimer(
         "outside this evaluation, and coverage verdicts should be read as "
         "relative to the evidence supplied."
     )
-    pipa_absent = not any(
-        re.search(r"pipa|personal information protection", d, re.IGNORECASE) for d in docs
-    )
-    if (country or "").lower() in ("south korea", "korea", "republic of korea") and pipa_absent:
+    statute = _DATA_PROTECTION_STATUTES.get((country or "").strip().lower())
+    if statute and not any(re.search(statute[1], d, re.IGNORECASE) for d in docs):
+        name = country.strip()
+        if name.lower() in ("european union", "united kingdom", "republic of korea"):
+            name = "the " + name
         disclaimer += (
-            " Note: Korea's personal-data governance lives primarily in the "
-            "Personal Information Protection Act (PIPA), which is not among "
-            "the provided documents — the Privacy dimension reflects only the "
-            "uploaded document's own data provisions and is a scope-limited "
-            "assessment, not an evaluation of Korea's privacy regime."
+            f" Note: {name[0].upper() + name[1:]}'s personal-data protection sits "
+            f"primarily in the {statute[0]}, which is not among the provided "
+            "documents — the Privacy dimension reflects only the supplied "
+            "documents' own data provisions and is a scope-limited assessment, "
+            f"not an evaluation of {name}'s privacy regime."
         )
     return {
         "documents": docs,
@@ -93,7 +138,6 @@ def _build_scope_disclaimer(
 def _get_db_session() -> AsyncSession:
     global _engine, _session_factory
     if _engine is None:
-        DATABASE_URL.replace("+asyncpg", "").replace("+psycopg2", "")
         _engine = create_async_engine(DATABASE_URL, echo=False)
         _session_factory = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     return _session_factory()
@@ -112,6 +156,65 @@ _UPLOAD_UUID_PREFIX_RE = re.compile(
 
 def _display_name(file_name: str | None) -> str:
     return _UPLOAD_UUID_PREFIX_RE.sub("", file_name or "") or (file_name or "document.pdf")
+
+
+def reusable_cached_gaps(
+    cached: dict[str, Any], made_now: dict[str, str], workspace_id: str
+) -> dict[str, GovernanceGap]:
+    """The cached dimensions this run may reuse instead of analysing again.
+
+    A cached dimension is a result from an earlier attempt at this run, kept so
+    a failure costs only what failed. It is reused only if it was made the way
+    this run would make it — same model, same evaluation mode. Otherwise a
+    resumed run stitches one model's or one mode's answers to another's, and
+    nothing on the page says so. Each one dropped is logged: after a change of
+    settings every run pays full price again, and that should not be silent.
+    """
+    reusable: dict[str, GovernanceGap] = {}
+    for dim_name, data in cached.items():
+        if data.get("status") != "completed" or not data.get("result"):
+            continue
+        made_then = data.get("provider") or {}
+        if any(made_then.get(k) != v for k, v in made_now.items()):
+            logger.warning(
+                "cached_dimension_discarded",
+                workspace_id=workspace_id,
+                dimension=dim_name,
+                error=f"made with {made_then}, this run uses {made_now}",
+            )
+            continue
+        try:
+            reusable[dim_name] = GovernanceGap(**data["result"])
+        except Exception as exc:
+            logger.warning(
+                "cached_dimension_discarded",
+                workspace_id=workspace_id,
+                dimension=dim_name,
+                error=str(exc),
+            )
+    return reusable
+
+
+def cited_chunk_ids(records: Any) -> set[str]:
+    """Every chunk id a stored analysis (or cached dimension) cites.
+
+    Walks the stored JSON rather than naming fields, because citations sit in
+    several places — evidence, three module-1/2 citation lists, roadmap
+    citations, incident matches, international examples — and a field added
+    later would otherwise be missed silently.
+    """
+    found: set[str] = set()
+    stack = [records]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            cid = item.get("chunk_id")
+            if isinstance(cid, str) and cid:
+                found.add(cid)
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return found
 
 
 async def run_full_analysis_pipeline(
@@ -156,6 +259,12 @@ async def run_full_analysis_pipeline(
 
         try:
             await ws_service.update_status(workspace_id, WorkspaceStatus.PROCESSING)
+            # Chunks the workspace's earlier runs cite. Re-reading a document
+            # under newer ingestion rules replaces its chunks; these are kept
+            # (retired, not deleted) so every stored run still resolves.
+            earlier = await ws_service.get_analyses_for_workspace(workspace_id)
+            still_cited = cited_chunk_ids([a.governance_gaps for a in earlier])
+            still_cited |= cited_chunk_ids(await ws_service.get_dimension_results(workspace_id))
 
             logger.info(
                 "pipeline_orchestration_initializing",
@@ -197,6 +306,21 @@ async def run_full_analysis_pipeline(
                     get_storage().local_path(doc["file_path"]) as local_pdf,
                     metrics.timed_stage("ingest"),
                 ):
+                    key = await asyncio.to_thread(ingest_key, local_pdf)
+                    stored = await asyncio.to_thread(
+                        vector_store.stored_document_chunks, workspace_id, doc_name, key
+                    )
+                    if stored:
+                        # The same file under the same rules: its chunks are
+                        # already indexed, byte for byte, with the same ids.
+                        chunks.extend(stored)
+                        logger.info(
+                            "pipeline_orchestration_document_reused",
+                            workspace_id=workspace_id,
+                            document_name=doc_name,
+                            num_chunks=len(stored),
+                        )
+                        continue
                     doc_chunks = await asyncio.to_thread(
                         ingest_document,
                         local_pdf,
@@ -208,20 +332,28 @@ async def run_full_analysis_pipeline(
                         # chain.
                         document_name=doc_name,
                     )
-                # Replace, don't append. Chunk ids are fresh uuid4s per
-                # ingestion, so re-uploading a document would otherwise stack a
-                # second full copy into the workspace and starve retrieval with
-                # duplicates — see delete_workspace_document for the measured
-                # impact.
-                removed = await asyncio.to_thread(
-                    vector_store.delete_workspace_document, workspace_id, doc_name
+                for c in doc_chunks:
+                    c.metadata["ingest_key"] = key
+                    c.metadata["ingest_total"] = len(doc_chunks)
+                # Replace, don't append: a second full copy in the workspace
+                # starves retrieval with duplicates (see
+                # delete_workspace_document for the measured impact). Chunks an
+                # earlier run cites are retired rather than deleted, so that
+                # run's citations still resolve.
+                removed, retired = await asyncio.to_thread(
+                    vector_store.retire_workspace_document,
+                    workspace_id,
+                    doc_name,
+                    still_cited,
+                    {c.chunk_id for c in doc_chunks},
                 )
-                if removed:
+                if removed or retired:
                     logger.info(
                         "pipeline_orchestration_replaced_previous_copy",
                         workspace_id=workspace_id,
                         document_name=doc_name,
                         removed_chunks=removed,
+                        retired_chunks=retired,
                     )
                 with metrics.timed_stage("index"):
                     await asyncio.to_thread(vector_store.add_chunks, doc_chunks)
@@ -254,13 +386,11 @@ async def run_full_analysis_pipeline(
             full_text_length = len(full_text)
 
             existing_dim = await ws_service.get_dimension_results(workspace_id)
-            existing_gaps: dict[str, GovernanceGap] = {}
-            for dim_name, data in existing_dim.items():
-                if data.get("status") == "completed" and data.get("result"):
-                    try:
-                        existing_gaps[dim_name] = GovernanceGap(**data["result"])
-                    except Exception:
-                        pass
+            existing_gaps = reusable_cached_gaps(
+                existing_dim,
+                {"provider": analyzer.provider.model_name, "evaluation": evaluation_mode()},
+                workspace_id,
+            )
 
             def on_dimension(dim: str, gap: GovernanceGap, provider_info: dict) -> None:
                 completed_dimensions.append((dim, gap.model_dump(), provider_info))
@@ -302,12 +432,13 @@ async def run_full_analysis_pipeline(
                 workspace_id=workspace_id,
                 stage="gap_analysis_complete",
                 dimensions_analyzed=len(result.governance_gaps),
-                # Real call count: 8 combined Module 1+2 calls + 1 conditional
-                # Module 3+4 call per Partial/Missing dimension (Fully Covered
-                # dimensions cost exactly one call). Reported so quota usage
-                # is observable against the ~8 + up to 8 = up to 16 budget.
+                # One Module 1+2 call per dimension analysed this run, one
+                # Module 3+4 call per Partial/Missing one, and one mechanism
+                # adjudication call for the workspace. The breakdown is logged
+                # by the analyzer, which counted the calls; subtracting here
+                # went negative on a resumed run, where cached dimensions cost
+                # nothing.
                 total_llm_calls=result.llm_call_count,
-                module34_calls=result.llm_call_count - len(result.governance_gaps),
                 covered=sum(
                     1 for g in result.governance_gaps if g.coverage == CoverageLevel.COVERED
                 ),
@@ -339,7 +470,6 @@ async def run_full_analysis_pipeline(
                 stage="citation_verification",
             )
             citation_results = []
-            sum(len(gap.evidence) for gap in result.governance_gaps)
             for gap in result.governance_gaps:
                 ev_dicts = [e.model_dump() for e in gap.evidence]
                 verified = verify_gap_analysis_citations(
@@ -423,7 +553,7 @@ async def run_full_analysis_pipeline(
             # Persisted with the analysis so an auditor can ask what produced
             # a verdict without needing to know which build was deployed.
             provenance = build_provenance(
-                llm_model=getattr(result, "generated_by", None),
+                llm_model=(getattr(result, "generated_by", None) or {}).get("provider"),
                 llm_calls=result.llm_call_count,
             )
             analysis_dict["provenance"] = provenance
@@ -432,6 +562,8 @@ async def run_full_analysis_pipeline(
                 "llm_call_count": result.llm_call_count,
                 "tier_stats": result.tier_stats,
                 "decision_analytics": result.decision_analytics,
+                # Computed on every run and, until now, only logged.
+                "consistency": result.consistency_report,
                 "scope_disclaimer": scope_disclaimer,
                 "evaluated_documents": scope_disclaimer["documents"],
             }
@@ -470,10 +602,24 @@ async def run_full_analysis_pipeline(
                 # succeed pure luck-of-the-draw each retry, including ones
                 # that had just succeeded seconds earlier.
             else:
+                # Every dimension landed, but if mechanism adjudication did not
+                # run, the depth stages rest on raw cue matches and can read
+                # higher than they should. Complete, and said to be provisional.
+                provisional = any(
+                    g.mechanism_adjudication == UNAVAILABLE for g in result.governance_gaps
+                )
                 await ws_service.update_status(
                     workspace_id,
                     WorkspaceStatus.COMPLETE,
-                    detail=f"Analysis complete. {cit_pass}/{len(citation_results)} citations verified.",
+                    detail=(
+                        f"Analysis complete. {cit_pass}/{len(citation_results)} citations verified."
+                        + (
+                            " Mechanism evidence could not be checked on this run, so "
+                            "implementation depth is provisional; re-run to confirm it."
+                            if provisional
+                            else ""
+                        )
+                    ),
                 )
                 # Only safe to drop the scratch cache once every dimension is
                 # clean — nothing left that a future re-run would need to skip.
@@ -527,8 +673,3 @@ async def run_full_analysis_pipeline(
                 "status": "error",
                 "error": str(exc),
             }
-        finally:
-            # Whatever happened, the slot goes back. A leaked slot silently
-            # shrinks capacity until a restart, which looks like the server
-            # getting slower for no reason.
-            get_slots().release()

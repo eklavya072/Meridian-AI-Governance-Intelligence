@@ -1,6 +1,14 @@
 # Meridian reverse proxy — used by docker-compose.prod.yml
 # SITE_ADDRESS comes from .env.prod via compose environment substitution.
 {$SITE_ADDRESS:localhost} {
+    # There is no user auth in the application, and every analysis spends the
+    # operator's model quota. Until a site is meant to be public, uncomment
+    # this and set a user and a bcrypt hash (`caddy hash-password`):
+    #
+    # basic_auth {
+    #     {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+    # }
+
     handle /api/* {
         reverse_proxy api:8000
     }

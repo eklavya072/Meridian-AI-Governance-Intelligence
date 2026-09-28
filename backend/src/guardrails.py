@@ -14,9 +14,16 @@ SCOPE_MESSAGE = (
     "Please upload a policy document or ask a question related to an indexed document."
 )
 
+# A greeting is a message that is NOTHING BUT a greeting. Matched only as a
+# prefix with no word boundary, this caught real questions: "Highlight the main
+# obligations", "History of the EU AI Act", "Supervisory authorities..." and
+# "Your scoring..." all begin with a greeting's letters and were answered with
+# a hello — or refused outright by the Rapporteur.
 GREETING_PATTERNS = re.compile(
-    r"^(hello|hi|hey|good morning|good afternoon|good evening|thanks|thank you|"
-    r"how are you|what'?s up|yo|sup|greetings)",
+    r"^\s*(hello|hi|hiya|hey|good morning|good afternoon|good evening|thanks|thank you|"
+    r"how are you|what'?s up|yo|sup|greetings)\b"
+    r"[\s,!.?]*(there|all|everyone|team|again|so much|a lot|meridian|auditor|rapporteur)?"
+    r"[\s,!.?]*$",
     re.IGNORECASE,
 )
 

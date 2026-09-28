@@ -24,6 +24,9 @@ class FakeWorkspaceService:
     async def get_dimension_results(self, workspace_id):
         return {}
 
+    async def get_analyses_for_workspace(self, workspace_id):
+        return []
+
     async def update_dimension_result(self, workspace_id, dim, gap, info):
         self.dimension_results[dim] = gap
 
@@ -196,6 +199,28 @@ class TestScopeDisclaimer:
         assert "Note:" not in scope["disclaimer"]
         assert "scope-limited assessment" not in scope["disclaimer"]
 
+    def test_the_eu_scored_from_the_ai_act_alone_says_so(self):
+        """Privacy read from the AI Act, with the GDPR not supplied, used to
+        carry no caveat at all — only Korea had one."""
+        scope = tasks._build_scope_disclaimer(
+            _FakeVS(["EU AI ACT.pdf"]), "w1", country="European Union"
+        )
+
+        assert "GDPR" in scope["disclaimer"]
+        assert "scope-limited assessment" in scope["disclaimer"]
+
+    def test_a_supplied_data_protection_statute_needs_no_note(self):
+        scope = tasks._build_scope_disclaimer(
+            _FakeVS(["UK Data Protection Act 2018.pdf"]), "w1", country="United Kingdom"
+        )
+
+        assert "Note:" not in scope["disclaimer"]
+
+    def test_a_country_without_an_entry_gets_no_note(self):
+        scope = tasks._build_scope_disclaimer(_FakeVS(["policy.pdf"]), "w1", country="Atlantis")
+
+        assert "Note:" not in scope["disclaimer"]
+
     def test_the_note_is_country_specific_not_global(self):
         scope = tasks._build_scope_disclaimer(_FakeVS(["policy.pdf"]), "w1", country="Kenya")
 
@@ -218,3 +243,50 @@ class _FakeVS:
 
 def _boom_store(*a, **kw):
     raise RuntimeError("vector store unavailable")
+
+
+class TestCachedDimensionReuse:
+    """A resumed run may reuse only what it would itself have produced."""
+
+    NOW = {"provider": "gemini-3.5-flash", "evaluation": "per_dimension"}
+
+    def _entry(self, dimension, **provider):
+        from src.models import CoverageLevel, GovernanceGap
+
+        gap = GovernanceGap(
+            dimension=dimension,
+            coverage=CoverageLevel.PARTIAL,
+            reason_flagged="",
+            recommendation="",
+        )
+        return {"status": "completed", "provider": provider, "result": gap.model_dump()}
+
+    def test_an_answer_made_the_same_way_is_reused(self):
+        from src.tasks import reusable_cached_gaps
+
+        cached = {"Privacy": self._entry("Privacy", **self.NOW)}
+
+        assert list(reusable_cached_gaps(cached, self.NOW, "w")) == ["Privacy"]
+
+    def test_another_model_or_mode_is_analysed_again(self):
+        from src.tasks import reusable_cached_gaps
+
+        cached = {
+            # A fallback model on a bad day, then the usual one the next.
+            "Privacy": self._entry(
+                "Privacy", provider="gemini-3.6-flash", evaluation="per_dimension"
+            ),
+            # A shared reply cites fewer passages than a dimension asked alone.
+            "Safety": self._entry("Safety", provider="gemini-3.5-flash", evaluation="shared"),
+            # Written before the mode was recorded: which one is unknown.
+            "Fairness": self._entry("Fairness", provider="gemini-3.5-flash"),
+        }
+
+        assert reusable_cached_gaps(cached, self.NOW, "w") == {}
+
+    def test_a_failed_dimension_is_never_reused(self):
+        from src.tasks import reusable_cached_gaps
+
+        cached = {"Privacy": {**self._entry("Privacy", **self.NOW), "status": "failed"}}
+
+        assert reusable_cached_gaps(cached, self.NOW, "w") == {}

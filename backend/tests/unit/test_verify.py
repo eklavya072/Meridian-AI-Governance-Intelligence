@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.verify import (
-    Citation,
     CitationVerificationResult,
     verify_citation,
 )
@@ -55,7 +54,7 @@ class TestChunkExistsCheck:
         )
         assert result.passed is False
         assert result.chunk_exists is False
-        assert "chunk_id does not exist" in (result.failure_reason or "")
+        assert "could not be found" in (result.failure_reason or "")
 
 
 class TestPageExistsCheck:

@@ -31,12 +31,9 @@ dependencies = [
     # Declared explicitly only so [tool.uv.sources] below can pin where it
     # comes from. Nothing imports torch directly; sentence-transformers does.
     "torch>=2.9.0",
-    # LLM providers. google-genai is the primary path; openai is the client
-    # for the Groq and Cerebras endpoints (both OpenAI-compatible) and was
-    # imported by llm_provider.py while absent from requirements.txt, so the
-    # built image raised ImportError the moment a fallback was needed.
+    # LLM provider. Gemini is the only one; the OpenAI-compatible fallbacks
+    # (Groq, Cerebras) were removed along with the openai client.
     "google-genai>=2.13.0",
-    "openai>=2.46.0",
     # Brief export. Both were imported by brief_export.py and undeclared, so
     # PDF and DOCX export were dead in any environment built from the
     # dependency file rather than inherited from a local venv.
@@ -54,6 +51,7 @@ dependencies = [
     "numpy>=2.5.1",
     "azure-storage-blob>=12.23.0",
     "prometheus-client>=0.21.0",
+    "tzdata>=2026.4",
 ]
 
 [dependency-groups]
@@ -139,8 +137,6 @@ python_version = "3.13"
 # of ignores. The scope widens as modules are typed, and the list is the
 # honest statement of what is checked today — not an aspiration.
 files = [
-    "src/evaluation.py",
-    "src/stability.py",
     "src/utils.py",
     "src/validation.py",
     "src/guardrails.py",

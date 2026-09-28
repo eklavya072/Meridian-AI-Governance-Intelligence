@@ -62,3 +62,16 @@ class TestOrphanRecoverySql:
         brief. Sending it back to QUEUED would throw that work away."""
         moves = {source: target for target, source in _reclaim_statements()}
         assert moves[WorkspaceStatus.GENERATING_REPORT.name] == WorkspaceStatus.COMPLETE.name
+
+    def test_only_this_runs_analysis_counts_as_finishing_it(self):
+        """An older analysis is the previous run, not proof this one landed."""
+        source = MAIN.read_text().replace('"\n                "', "")
+        finished = re.search(
+            r"UPDATE workspaces SET status = 'COMPLETE', status_detail = "
+            r"'Analysis complete\..*?WHERE status = 'PROCESSING'(.*?)\"",
+            source,
+            re.DOTALL,
+        )
+        assert finished, "no reclaim path for a run whose analysis landed"
+        assert "analyses.created_at >= workspaces.updated_at" in finished.group(1)
+        assert "was interrupted by a server restart; the previous analysis is shown" in source

@@ -148,19 +148,6 @@ def build_analysis_overview_context(analysis_results: dict[str, Any] | None) -> 
             lines.append(
                 "Stage distribution: " + ", ".join(f"{k} {v}" for k, v in dist.items() if v)
             )
-        if analytics.get("average_confidence") is not None:
-            lines.append(f"Mean confidence across dimensions: {analytics['average_confidence']}.")
-        # Flags worth volunteering rather than hiding — a reader asking about
-        # a verdict deserves to know it was reconciled or held for review.
-        if analytics.get("synthesis_drift_downgraded"):
-            lines.append(
-                "Downgraded after synthesis drift check: "
-                + ", ".join(analytics["synthesis_drift_downgraded"])
-            )
-        if analytics.get("ladder_raise_review"):
-            lines.append(
-                "Flagged for ladder-raise review: " + ", ".join(analytics["ladder_raise_review"])
-            )
         lines.append("")
 
     lines.append("Per dimension:")

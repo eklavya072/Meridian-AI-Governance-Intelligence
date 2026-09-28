@@ -23,7 +23,7 @@
  * it loads. Copy is authored in docs/landing-design-package.md.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import MeridianMark from "@/components/MeridianMark";
 import {
@@ -158,7 +158,6 @@ function usePanelActive<T extends HTMLElement>() {
    middle of the window, and drives both the heading's word rise and the
    body's fade. */
 function Panel({
-  eyebrowless = true,
   heading,
   body,
   visual,
@@ -167,7 +166,6 @@ function Panel({
   active,
   innerRef,
 }: {
-  eyebrowless?: boolean;
   heading: string;
   body: React.ReactNode;
   visual: React.ReactNode;
@@ -176,7 +174,6 @@ function Panel({
   active: boolean;
   innerRef?: React.Ref<HTMLDivElement>;
 }) {
-  void eyebrowless;
   /* A CSS transition needs frames to advance. Where they do not arrive the
      element keeps reporting its start value however the class list reads,
      which strands the body and the screen at opacity zero on an active

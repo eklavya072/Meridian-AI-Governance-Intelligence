@@ -94,6 +94,19 @@ def build_framework_qa_system_prompt() -> str:
     )
 
 
+def _library_size() -> int:
+    """How many reference instruments the library holds — read, never typed.
+
+    The greeting said "33 sources" for weeks after the library grew to 43.
+    """
+    try:
+        from src.framework_sync import load_frameworks_config
+
+        return len(load_frameworks_config())
+    except Exception:
+        return 0
+
+
 def build_auditor_greeting() -> str:
     """Greeting for the merged AI Auditor bot — one bot, both abilities: the
     uploaded policy document AND the international governance knowledge base.
@@ -104,7 +117,7 @@ def build_auditor_greeting() -> str:
         "**AI governance concepts** — what transparency or safety actually means, "
         "what the governance dimensions cover, how binding force differs from "
         "coverage.\n\n"
-        "**The frameworks** — all 33 sources in the knowledge base, including "
+        f"**The frameworks** — all {_library_size()} sources in the knowledge base, including "
         "UNESCO, the OECD AI Principles, the EU AI Act, NIST AI RMF, the G7 "
         "Hiroshima process, ASEAN and the African Union: what each says on a "
         "topic, and where they disagree.\n\n"
@@ -209,11 +222,11 @@ def build_drill_down_context(finding_context: dict[str, Any]) -> str:
         f"Coverage: {ctx.get('coverage', 'Unknown')}",
     ]
 
-    # Deterministic ladder / coverage reasoning — R1/R2 triggers, floors,
-    # raises are embedded here by the analyzer; pass verbatim.
+    # The verdict's own rationale, written by the scorer for a policy reader;
+    # passed verbatim. Labelled plainly, because the model repeats its labels.
     coverage_reasoning = ctx.get("coverage_reasoning") or ctx.get("reason_flagged")
     if coverage_reasoning:
-        lines.append(f"Coverage reasoning (deterministic ladder rules): {coverage_reasoning}")
+        lines.append(f"Why the verdict is what it is: {coverage_reasoning}")
     # Fully Covered tier: the document-grounded examples that justified the
     # verdict — useful for "what in the doc made it Covered".
     coverage_example = ctx.get("coverage_example")
@@ -494,11 +507,23 @@ def _clean_prose_source(raw: str) -> str:
 _known_source_cache: tuple[float, list[str]] | None = None
 
 
-def _known_framework_names(vector_store) -> list[str]:
-    """Names of frameworks + uploaded workspace documents actually present in
-    the vector store, so prose citations can be gated to real sources before
-    verification. Both are legitimate citation targets: Mode A/C cite the
-    framework knowledge base, Mode C can also cite the workspace document.
+def _known_framework_names(vector_store, workspace_id: str = "") -> list[str]:
+    """Frameworks in the library plus THIS workspace's own documents."""
+    names = list(_library_framework_names(vector_store))
+    if workspace_id:
+        try:
+            names += vector_store.get_workspace_documents(workspace_id)
+        except Exception:
+            pass
+    return names
+
+
+def _library_framework_names(vector_store) -> list[str]:
+    """Names of the frameworks actually present in the vector store, so prose
+    citations can be gated to real sources before verification. Uploaded
+    documents are added per workspace by _known_framework_names: collecting
+    every workspace's document names here let a reply cite another visitor's
+    upload as a source.
 
     Keyed on the collection size rather than a 5-minute clock. The old TTL
     meant that every five minutes some unlucky message paid for TWO full
@@ -517,10 +542,11 @@ def _known_framework_names(vector_store) -> list[str]:
         return _known_source_cache[1]
     try:
         frameworks: set[str] = set()
-        documents: set[str] = set()
         offset = 0
         while True:
-            rows = vector_store.collection.get(include=["metadatas"], limit=5000, offset=offset)
+            rows = vector_store.collection.get(
+                where={"workspace_id": ""}, include=["metadatas"], limit=5000, offset=offset
+            )
             metadatas = rows.get("metadatas") or []
             if not metadatas:
                 break
@@ -528,11 +554,8 @@ def _known_framework_names(vector_store) -> list[str]:
                 fw = (m or {}).get("framework") or ""
                 if fw:
                     frameworks.add(fw)
-                dn = (m or {}).get("document_name") or ""
-                if dn:
-                    documents.add(dn)
             offset += len(metadatas)
-        names = sorted(frameworks) + sorted(documents)
+        names = sorted(frameworks)
         _known_source_cache = (size, names)
         logger.info("known_source_names_cached", collection_size=size, names=len(names))
         return names
@@ -868,8 +891,9 @@ def chat(
         # If no workspace, fall through to Mode A style unscoped retrieval.
 
     if is_qa:
-        # Framework Q&A: full knowledge base — no workspace filter.
-        merged = vector_store.retrieve(query=user_message, top_k=8)
+        # Framework Q&A: the reference library only. An unscoped search also
+        # reached every workspace's uploaded documents.
+        merged = vector_store.retrieve(query=user_message, top_k=8, frameworks_only=True)
         retrieval_context = build_context_from_retrieval(merged, top_k=8)
 
     if mode in ("advisor", "auditor") and not is_overview:
@@ -900,7 +924,10 @@ def chat(
             # empty (picker removed) so no framework_filter — retrieve
             # broadly, plus any uploaded documents via workspace filter only
             # if a workspace happens to be loaded.
-            retrieved_fw = vector_store.retrieve(query=user_message, top_k=8)
+            # The reference library, never other workspaces' uploads: on a
+            # shared deployment an unscoped search could quote one visitor's
+            # PDF in another visitor's answer.
+            retrieved_fw = vector_store.retrieve(query=user_message, top_k=8, frameworks_only=True)
             if workspace_id:
                 retrieved_doc = vector_store.retrieve(
                     query=user_message,
@@ -1095,7 +1122,7 @@ def chat(
 
         # ── Citation Extraction & Verification (Modes A/C/framework_qa) ─
         if enrichment:
-            known_frameworks = _known_framework_names(vector_store)
+            known_frameworks = _known_framework_names(vector_store, workspace_id)
             raw_citations = extract_citations(final_reply)
             for cit in raw_citations:
                 # Gate: only verify citations whose claimed source resolves to a
@@ -1112,6 +1139,7 @@ def chat(
                     source_framework=source_known,
                     quote_text=cit["quote"],
                     vector_store=vector_store,
+                    workspace_id=workspace_id,
                 )
                 verified = getattr(v_result, "passed", False)
                 if verified:
@@ -1156,18 +1184,25 @@ def chat(
             from src.verify import find_unverifiable_citations
 
             if find_unverifiable_citations([final_reply], retrieved_text):
-                document_text = ""
+                # Per document, like the analysis path: joined, a long statute
+                # lends its section numbers to a short guidance note.
+                document_text: list[str] = []
                 if workspace_id:
                     try:
                         res = vector_store.collection.get(
                             where={"workspace_id": workspace_id},
-                            include=["documents"],
+                            include=["documents", "metadatas"],
                         )
-                        document_text = " \n".join(res.get("documents", []) or [])
+                        by_doc: dict[str, list[str]] = {}
+                        for txt, md in zip(res.get("documents") or [], res.get("metadatas") or []):
+                            by_doc.setdefault((md or {}).get("document_name") or "", []).append(
+                                txt or ""
+                            )
+                        document_text = [" \n".join(parts) for parts in by_doc.values()]
                     except Exception:
                         # No document to compare against means "unsupported",
                         # never "invented" — see classify_narrative_citations.
-                        document_text = ""
+                        document_text = []
                 narrative_citation_flags = classify_narrative_citations(
                     [final_reply], retrieved_text, document_text
                 )

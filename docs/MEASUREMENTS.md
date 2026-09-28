@@ -93,8 +93,8 @@ would have destroyed one the moment anyone switched it on.
 rejects 71% of excerpts that are verbatim copies of their own source — false
 negatives, not caught fabrications. A general-purpose MNLI checkpoint is
 being asked to judge 512-character statutory fragments with OCR damage, which
-is not the task it was trained for. It stays available behind
-`ENABLE_NLI_VERIFICATION=true`, now correct if enabled.
+is not the task it was trained for. It was later removed from the code
+altogether (see ENGINEERING-NOTES, "Four GenAI components").
 
 Worth revisiting only with a checkpoint suited to legal text, and only against
 this same dataset.
@@ -232,8 +232,7 @@ Still low and stated plainly: `framework_sync.py` 31% (it downloads PDFs),
 `document_overview.py` 39%.
 
 The CI gate is **76%** — just below measured, so it catches regression
-without being aspirational. The CI gate is set at **58%** — just below measured,
-so it catches regression without being aspirational.
+without being aspirational.
 
 ---
 

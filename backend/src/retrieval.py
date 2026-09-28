@@ -47,10 +47,6 @@ def _is_near_duplicate(key: str, accepted_keys: list[str]) -> bool:
 logger = structlog.get_logger()
 
 
-ASPECT_TOP_K = int(os.getenv("ASPECT_TOP_K", "5"))
-DEFINITION_TOP_K = int(os.getenv("DEFINITION_TOP_K", "10"))
-CONFIDENCE_FILTER_THRESHOLD = float(os.getenv("CONFIDENCE_FILTER_THRESHOLD", "0.1"))
-
 # Module budget: tuned to stay well under Gemini free-tier per-minute/per-day limits
 MODULE1_TOP_K = int(os.getenv("MODULE1_TOP_K", "4"))
 MODULE2_TOP_K = int(os.getenv("MODULE2_TOP_K", "3"))
@@ -114,13 +110,13 @@ MODULE34_DOC_TOP_K = int(os.getenv("MODULE34_DOC_TOP_K", "2"))
 # bucket) so two near-duplicate overlapping chunks cannot both consume slots in
 # the small per-bucket budget. Headroom multiplier: pull extra candidates so
 # dedup can drop redundant text and still fill the budget with DISTINCT content.
+MODULE_DEDUP_HEADROOM = int(os.getenv("MODULE_DEDUP_HEADROOM", "3"))
+
 # Sparse BM25 fused with the dense sweep by reciprocal rank fusion, applied to
 # the workspace-document bucket. Measured on Kenya: promotes 3-9 chunks per
 # dimension the dense sweep had not ranked. It changed no verdict on Kenya,
 # Japan or the EU — it is recall insurance, not a scoring change.
 USE_HYBRID_SEARCH = os.getenv("USE_HYBRID_SEARCH", "true").lower() == "true"
-
-MODULE_DEDUP_HEADROOM = int(os.getenv("MODULE_DEDUP_HEADROOM", "3"))
 
 # Comprehensive-evidence pool: a broad semantic sweep of the workspace
 # document BEYOND the prompt-budget bucket. The LLM judges the document on
@@ -154,7 +150,6 @@ class ModuleRetrievalResult(BaseModel):
     module1_chunks: list[dict[str, Any]] = Field(default_factory=list)
     module2_chunks: list[dict[str, Any]] = Field(default_factory=list)
     total_chunks: int = 0
-    retrieval_queries: list[str] = Field(default_factory=list)
 
     def all_chunks_labeled(self) -> list[dict[str, Any]]:
         """All chunks with a role label for the prompt builder."""
@@ -272,7 +267,7 @@ class RetrievalPipeline:
         if DIMENSION_PROFILES:
             return DIMENSION_PROFILES
 
-        profiles: dict[str, str] = {
+        definitions: dict[str, str] = {
             "Transparency": (
                 "The extent to which AI systems disclose information about their "
                 "operations, data sources, decision-making processes, and limitations. "
@@ -331,15 +326,18 @@ class RetrievalPipeline:
 
         core = {"Transparency", "Accountability", "Fairness", "Privacy", "Safety", "Human Autonomy"}
 
-        for dim, definition in profiles.items():
-            profiles[dim] = DimensionProfile(
+        # Stored, not just returned: the early return above is the cache, and
+        # without this assignment it never fired, so every dimension rebuilt
+        # the same eight profiles.
+        for dim, definition in definitions.items():
+            DIMENSION_PROFILES[dim] = DimensionProfile(
                 dimension=dim,
                 definition=definition,
                 aspects=self._generate_aspects(dim, definition),
                 is_core=dim in core,
             )
 
-        return profiles
+        return DIMENSION_PROFILES
 
     def _generate_aspects(self, dimension: str, definition: str) -> list[str]:
         aspects_map: dict[str, list[str]] = {
@@ -402,25 +400,6 @@ class RetrievalPipeline:
         }
         return aspects_map.get(dimension, [definition])
 
-    def _search_vectorstore(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
-        "document" in query.lower() or "report" in query.lower()
-        results = self.vectorstore.search(query, top_k=top_k)
-        chunks = []
-        for r in results:
-            md = r.get("metadata", {})
-            chunks.append(
-                {
-                    "chunk_id": r.get("id", ""),
-                    "text": r.get("text", r.get("content", "")),
-                    "page_number": md.get("page_number"),
-                    "section_title": md.get("section_title"),
-                    "source_framework": md.get("source_framework", md.get("framework", "")),
-                    "similarity_score": r.get("similarity", r.get("score", 0.0)),
-                    "is_document": md.get("is_document", not bool(md.get("framework", ""))),
-                }
-            )
-        return chunks
-
     def _query_by_embedding(
         self,
         query_emb: list[float],
@@ -441,8 +420,18 @@ class RetrievalPipeline:
                     dist = results["distances"][0][i] if results.get("distances") else 0.0
                     sim = max(0.0, 1.0 - dist / 2.0)
                     scored.append((cid, sim))
-        except Exception:
-            pass
+        except Exception as exc:
+            # Silence here is indistinguishable from "the store holds nothing
+            # relevant". A failed query shrinks the candidate pool that every
+            # verdict is computed from, so it has to be visible in the run's
+            # own log rather than inferred later from a thin evidence set.
+            logger.warning(
+                "vector_query_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                top_k=top_k,
+                where=where,
+            )
         return scored
 
     # ── Module 1 + Module 2 combined budget retrieval ─────────────────
@@ -1101,8 +1090,6 @@ class RetrievalPipeline:
         evidence that determines the Module 1 coverage verdict.
         """
         dim_query = dimension if not user_query else f"{dimension}: {user_query}"
-        queries = [dim_query]
-
         # Module 1 — normative sources (top_k=4), restricted to the routed
         # framework set when routing is active (deterministic, backend-only).
         # Extra headroom: text-level dedup below drops overlapping duplicates,
@@ -1290,7 +1277,6 @@ class RetrievalPipeline:
             document_chunks=doc_clean,
             module1_chunks=module1_clean,
             module2_chunks=module2_clean,
-            retrieval_queries=queries,
         )
         result.total_chunks = len(doc_clean) + len(module1_clean) + len(module2_clean)
 

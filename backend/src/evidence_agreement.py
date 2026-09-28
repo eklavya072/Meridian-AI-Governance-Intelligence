@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import structlog
@@ -11,46 +12,21 @@ from src.utils import cosine_similarity, l2_normalize
 logger = structlog.get_logger()
 
 AGREEMENT_SIMILARITY_THRESHOLD = float(os.getenv("AGREEMENT_SIMILARITY_THRESHOLD", "0.75"))
-CONFLICT_KEYWORD_THRESHOLD = float(os.getenv("CONFLICT_KEYWORD_THRESHOLD", "0.3"))
+
+
+# Whole words only. A substring test found "no" in "know", "not" in "notice"
+# and "nor" in "normative", so nearly every sentence counted as negated and
+# the agreement signal compared noise.
+_NEGATION_RE = re.compile(
+    r"\b(?:not|no|never|nor|neither|cannot|can't|don't|doesn't|didn't|won't|wouldn't|"
+    r"shouldn't|isn't|aren't|wasn't|weren't|hasn't|haven't|absence|lack(?:s|ing)?|"
+    r"without|fails? to|failure to)\b",
+    re.IGNORECASE,
+)
 
 
 def _contains_negation(text: str) -> bool:
-    negation_words = {
-        "not",
-        "no",
-        "never",
-        "nor",
-        "neither",
-        "cannot",
-        "can't",
-        "don't",
-        "doesn't",
-        "didn't",
-        "won't",
-        "wouldn't",
-        "shouldn't",
-        "isn't",
-        "aren't",
-        "wasn't",
-        "weren't",
-        "hasn't",
-        "haven't",
-        "does not",
-        "do not",
-        "will not",
-        "shall not",
-        "must not",
-        "absence",
-        "lack",
-        "without",
-        "fails to",
-        "failure to",
-    }
-    text_lower = text.lower()
-    for word in negation_words:
-        if word in text_lower:
-            return True
-    return False
+    return bool(_NEGATION_RE.search((text or "").replace("\u2019", "'")))
 
 
 def _has_contradictory_phrasing(text_a: str, text_b: str) -> bool:

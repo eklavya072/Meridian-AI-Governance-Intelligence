@@ -130,3 +130,40 @@ class TestFileNotFound:
         result = validate_file_path(Path("/nonexistent/path.pdf"))
         assert not result.valid
         assert result.error_type == "file_not_found"
+
+
+def _pdf_with_pages(text_pages: int, blank_pages: int) -> bytes:
+    """A real PDF: some pages with a text layer, some with none (as a scan)."""
+    import io
+
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    for i in range(text_pages):
+        for line in range(12):
+            c.drawString(
+                72,
+                760 - 14 * line,
+                f"Article {i}.{line}: the controller shall notify the Authority.",
+            )
+        c.showPage()
+    for _ in range(blank_pages):
+        c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+class TestPartlyScanned:
+    def test_a_document_that_is_mostly_text_passes_quietly(self):
+        result = validate_pdf_file(_pdf_with_pages(9, 1), "policy.pdf")
+
+        assert result.valid and not result.ocr_warning and not result.notice
+
+    def test_unreadable_pages_are_announced_not_silently_skipped(self):
+        # A third of the document is images: it is accepted, but whoever reads
+        # the verdicts has to know they rest on two thirds of it.
+        result = validate_pdf_file(_pdf_with_pages(6, 3), "policy.pdf")
+
+        assert result.valid and result.ocr_warning
+        assert "3 of 9 pages have no readable text" in result.notice

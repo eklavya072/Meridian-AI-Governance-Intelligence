@@ -12,7 +12,7 @@ import structlog
 from pydantic import ValidationError
 
 from src import metrics
-from src.key_health import get_registry
+from src.key_health import get_registry, quota_day
 from src.llm_provider import (
     GeminiProvider,
     LLMProvider,
@@ -109,7 +109,7 @@ _rpd_lock = threading.Lock()
 
 
 def _rpd_date_key() -> str:
-    return time.strftime("%Y-%m-%d")
+    return quota_day()
 
 
 def _load_daily_requests() -> int:
@@ -173,60 +173,6 @@ def _key_id(provider: LLMProvider, key_index: int | None) -> str:
     return f"{type(provider).__name__.lower()}:{key_index}"
 
 
-class TokenThrottle:
-    """Rolling-window token throttle to stay under a provider's TPM limit.
-
-    Tracks (timestamp, tokens) pairs in a sliding window. Before each call,
-    estimates whether the next call would exceed the limit; if so, sleeps
-    until the oldest entry falls out of the window. Actual tokens consumed
-    are recorded on success to keep the window accurate.
-    """
-
-    def __init__(self, limit: int, window: float) -> None:
-        self.limit = limit
-        self.window = window
-        self._entries: list[tuple[float, int]] = []
-
-    def _prune(self, now: float) -> None:
-        cutoff = now - self.window
-        self._entries = [(t, n) for t, n in self._entries if t > cutoff]
-
-    def wait(self, estimated_input: int, output_buffer: int = 500) -> None:
-        now = time.time()
-        self._prune(now)
-        window_total = sum(n for _, n in self._entries)
-        estimated_total = estimated_input + output_buffer
-        available = self.limit - window_total
-        if estimated_total > available and self._entries:
-            oldest_ts = self._entries[0][0]
-            wait = (oldest_ts + self.window) - now
-            if wait > 0:
-                pct = window_total / self.limit * 100
-                print(
-                    f"[THROTTLE] TPM: {window_total}/{self.limit} ({pct:.0f}%) "
-                    f"in last {self.window:.0f}s. "
-                    f"Next call needs ~{estimated_total} tokens, "
-                    f"only {available} available. "
-                    f"Sleeping {wait:.1f}s..."
-                )
-                time.sleep(wait)
-                self._prune(time.time())
-
-    def record(self, tokens: int) -> None:
-        now = time.time()
-        self._prune(now)
-        self._entries.append((now, tokens))
-
-    @property
-    def total_used(self) -> int:
-        now = time.time()
-        self._prune(now)
-        return sum(n for _, n in self._entries)
-
-    def reset(self) -> None:
-        self._entries.clear()
-
-
 class RequestThrottle:
     """Rolling-window REQUEST-COUNT throttle (RPM), for providers whose
     binding constraint is requests/minute rather than tokens/minute (Gemini
@@ -234,7 +180,7 @@ class RequestThrottle:
 
     Tracks request timestamps in a sliding window; before each call, sleeps
     until a slot frees when the window is full. record() is called on
-    success. Same shape as TokenThrottle so both are interchangeable.
+    success.
     """
 
     def __init__(self, limit: int, window: float) -> None:
@@ -258,11 +204,12 @@ class RequestThrottle:
                 oldest_ts = self._timestamps[0]
                 wait = (oldest_ts + self.window) - now
                 if wait > 0:
-                    pct = len(self._timestamps) / self.limit * 100
-                    print(
-                        f"[THROTTLE] Gemini RPM: {len(self._timestamps)}/{self.limit} "
-                        f"requests in last {self.window:.0f}s ({pct:.0f}%). "
-                        f"Sleeping {wait:.1f}s to stay under the free-tier RPM limit..."
+                    logger.info(
+                        "gemini_rpm_throttle",
+                        in_window=len(self._timestamps),
+                        limit=self.limit,
+                        window_s=self.window,
+                        sleep_s=round(wait, 1),
                     )
                     time.sleep(wait)
                     self._prune(time.time())
@@ -383,18 +330,12 @@ def _check_gemini_daily_budget() -> None:
                 f"unset GEMINI_RPD_LIMIT in .env to keep going."
             )
         if pct >= GEMINI_RPD_WARNING_PCT:
-            print(
-                f"[WARN] Self-imposed daily cap at {pct:.0%}: "
-                f"{_daily_gemini_requests}/{GEMINI_RPD_LIMIT} used today."
+            logger.warning(
+                "gemini_self_cap_near", used=_daily_gemini_requests, limit=GEMINI_RPD_LIMIT
             )
 
 
-DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
-DEV_TOKEN_CAP = int(os.getenv("DEV_TOKEN_CAP", "20000"))
-_daily_live_tokens: int = 0
-
 _provider: LLMProvider | None = None
-_original_provider: str | None = None
 
 _request_counter = 0
 _debug_stats: dict[str, Any] = {
@@ -408,7 +349,7 @@ _debug_stats: dict[str, Any] = {
 
 
 def get_provider() -> LLMProvider:
-    global _provider, _original_provider
+    global _provider
 
     if _provider is not None:
         return _provider
@@ -420,7 +361,6 @@ def get_provider() -> LLMProvider:
 
     if is_replay_enabled():
         _provider = ReplayProvider()
-        _original_provider = "replay"
         return _provider
 
     preferred = os.getenv("LLM_PROVIDER", "gemini").lower()
@@ -428,12 +368,13 @@ def get_provider() -> LLMProvider:
     if preferred == "gemini":
         _provider = GeminiProvider()
         keys = len(getattr(_provider, "api_keys", [1]))
-        print(f"[DEBUG] Provider: gemini (primary, {keys} key(s), model={_provider.model_name})")
+        logger.info(
+            "llm_provider_selected", provider="gemini", keys=keys, model=_provider.model_name
+        )
     else:
-        print(f"[DEBUG] Provider: unknown '{preferred}', defaulting to gemini")
+        logger.warning("llm_provider_unknown", requested=preferred, using="gemini")
         _provider = GeminiProvider()
 
-    _original_provider = preferred
     return _provider
 
 
@@ -484,6 +425,7 @@ def generate_with_retry(
     system_prompt: str | None = None,
     operation: str = "unknown",
     debug_ctx: dict[str, Any] | None = None,
+    max_output_tokens: int | None = None,
 ) -> Any:
     global _request_counter
     _request_counter += 1
@@ -493,8 +435,12 @@ def generate_with_retry(
         debug_ctx = {}
 
     if provider.tier != "primary":
-        print(
-            f"[DEBUG] REQ #{req_num} | {operation} | Using {provider.model_name} (tier={provider.tier}) directly"
+        logger.info(
+            "llm_request_direct",
+            req=req_num,
+            operation=operation,
+            model=provider.model_name,
+            tier=provider.tier,
         )
         return provider.generate_structured(
             prompt=prompt, schema=schema, system_prompt=system_prompt
@@ -586,10 +532,13 @@ def generate_with_retry(
                     # attempts in milliseconds and failed eight dimensions at
                     # once. Wait at least one backoff so the probe can resolve.
                     pause = max(wait, RETRY_BACKOFF_SECONDS) + 1.0
-                    print(
-                        f"[DEBUG] REQ #{req_num} | {operation} | every credential "
-                        f"cooling down; waiting {pause:.0f}s "
-                        f"(attempt {attempt + 1}/{max_attempts})"
+                    logger.info(
+                        "llm_credentials_cooling",
+                        req=req_num,
+                        operation=operation,
+                        wait_s=round(pause),
+                        attempt=attempt + 1,
+                        max_attempts=max_attempts,
                     )
                     _debug_stats["retries"] += 1
                     time.sleep(pause)
@@ -608,11 +557,15 @@ def generate_with_retry(
         try:
             start = time.time()
             if isinstance(provider, GeminiProvider):
+                # Only passed when set, so a single-dimension call is sent
+                # exactly as before.
+                extra = {"max_output_tokens": max_output_tokens} if max_output_tokens else {}
                 result = provider.generate_structured(
                     prompt=prompt,
                     schema=schema,
                     system_prompt=system_prompt,
                     key_index=key_index,
+                    **extra,
                 )
             else:
                 result = provider.generate_structured(
@@ -643,13 +596,17 @@ def generate_with_retry(
                         tokens=estimated_input_tokens,
                     )
 
-            print(
-                f"[DEBUG] REQ #{req_num} | {operation} | "
-                f"model={provider.model_name} "
-                f"prompt={prompt_chars}chars {token_str} "
-                f"chunks={n_chunks} frameworks={n_frameworks} "
-                f"status=200 latency={latency:.2f}s "
-                f"attempt={attempt}/{MAX_RETRIES}"
+            logger.info(
+                "llm_request_ok",
+                req=req_num,
+                operation=operation,
+                model=provider.model_name,
+                prompt_chars=prompt_chars,
+                tokens=token_str,
+                chunks=n_chunks,
+                frameworks=n_frameworks,
+                latency_s=round(latency, 2),
+                attempt=attempt,
             )
 
             request_info["output_tokens"] = _estimate_tokens(str(result))
@@ -682,12 +639,15 @@ def generate_with_retry(
                     retry_after=failure.retry_after_seconds,
                 )
 
-            print(
-                f"[DEBUG] REQ #{req_num} | {operation} | "
-                f"model={provider.model_name} "
-                f"status=429 latency={latency:.2f}s "
-                f"attempt={attempt}/{max_attempts} "
-                f"error={error_str[:200]}"
+            logger.warning(
+                "llm_request_quota",
+                req=req_num,
+                operation=operation,
+                model=provider.model_name,
+                latency_s=round(latency, 2),
+                attempt=attempt,
+                max_attempts=max_attempts,
+                error=error_str[:200],
             )
 
             # ── Step 1: retry on another credential, if one is healthy ──
@@ -702,14 +662,11 @@ def generate_with_retry(
             # sent the run to a fallback that cannot serve analysis prompts.
             #
             # The circuit breaker already knows which credentials can serve, so
-            # it decides. rotate_key() is left alone for callers that still use
-            # it directly.
+            # it decides. (rotate_key() has since been removed outright.)
             if isinstance(provider, GeminiProvider):
                 healthy = get_registry().available_keys(key_ids_for(provider))
                 if healthy and attempt < max_attempts:
-                    print(
-                        f"[DEBUG] {len(healthy)} credential(s) still healthy, retrying on another"
-                    )
+                    logger.info("llm_retry_on_other_credential", healthy=len(healthy))
                     _debug_stats["retries"] += 1
                     metrics.provider_failover.labels(event="key_rotation").inc()
                     time.sleep(_jittered_wait(RETRY_BACKOFF_SECONDS))
@@ -723,10 +680,14 @@ def generate_with_retry(
             retry_delay = _extract_retry_delay(error_str)
             if retry_delay is not None and retry_delay <= 120.0 and attempt < MAX_RETRIES:
                 wait = _honour_retry_after(max(retry_delay, RETRY_BACKOFF_SECONDS))
-                print(
-                    f"[DEBUG] REQ #{req_num} | {operation} | all keys exhausted; the "
-                    f"API asked for {retry_delay:.0f}s — waiting {wait:.0f}s "
-                    f"(attempt {attempt + 1}/{max_attempts})"
+                logger.info(
+                    "llm_retry_after",
+                    req=req_num,
+                    operation=operation,
+                    requested_s=round(retry_delay),
+                    wait_s=round(wait),
+                    attempt=attempt + 1,
+                    max_attempts=max_attempts,
                 )
                 _debug_stats["retries"] += 1
                 last_error = exc
@@ -767,13 +728,16 @@ def generate_with_retry(
             if attempt < MAX_RETRIES:
                 wait = _jittered_wait(RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)))
                 _debug_stats["retries"] += 1
-                print(
-                    f"[DEBUG] REQ #{req_num} | {operation} | "
-                    f"model={provider.model_name} "
-                    f"status=retryable({error_str[:100]}) "
-                    f"latency={latency:.2f}s "
-                    f"attempt={attempt}/{max_attempts} "
-                    f"retrying in {wait:.1f}s"
+                logger.warning(
+                    "llm_request_retryable",
+                    req=req_num,
+                    operation=operation,
+                    model=provider.model_name,
+                    error=error_str[:100],
+                    latency_s=round(latency, 2),
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    retry_in_s=round(wait, 1),
                 )
                 time.sleep(wait)
                 last_error = exc
@@ -803,6 +767,20 @@ def generate_with_retry(
             # instead of repeating the exact same call. This is what stops
             # long dimensions (e.g. Privacy) from degrading into
             # "Insufficient Evidence" gaps on truncation.
+            # A whole batch is the exception. gap_analyzer._ask_batched
+            # answers a malformed batch by splitting it in two at full
+            # length; the shrink instruction would thin every dimension in
+            # it, and a plain retry reproduces the same reply at the cost of
+            # a request. The halves (operation "..._batch_part") get the
+            # ordinary repair below, as a single dimension would.
+            if isinstance(exc, ValidationError) and operation.endswith("_batch"):
+                request_info["end_time"] = time.time()
+                request_info["latency"] = latency
+                request_info["status_code"] = "invalid_batch"
+                request_info["error_response"] = error_str[:500]
+                _debug_stats["primary_requests"].append(request_info)
+                raise
+
             if (
                 isinstance(exc, ValidationError)
                 and attempt < MAX_RETRIES
@@ -815,10 +793,12 @@ def generate_with_retry(
                     "verbatim quotes to at most 2-3 passages, drop the least "
                     "important citations, and output ONLY the JSON object."
                 )
-                print(
-                    f"[DEBUG] REQ #{req_num} | {operation} | schema validation "
-                    f"failed (truncated/invalid JSON) — retrying with shrink "
-                    f"instruction (attempt {attempt + 1}/{max_attempts})"
+                logger.warning(
+                    "llm_reply_invalid_retrying_shorter",
+                    req=req_num,
+                    operation=operation,
+                    attempt=attempt + 1,
+                    max_attempts=max_attempts,
                 )
                 _debug_stats["retries"] += 1
                 request_info["was_retried"] = True
@@ -830,12 +810,15 @@ def generate_with_retry(
             request_info["error_response"] = error_str[:500]
             request_info["was_retried"] = attempt > 1
 
-            print(
-                f"[DEBUG] REQ #{req_num} | {operation} | "
-                f"model={provider.model_name} "
-                f"status=error latency={latency:.2f}s "
-                f"attempt={attempt}/{max_attempts} "
-                f"error={error_str[:200]}"
+            logger.error(
+                "llm_request_failed",
+                req=req_num,
+                operation=operation,
+                model=provider.model_name,
+                latency_s=round(latency, 2),
+                attempt=attempt,
+                max_attempts=max_attempts,
+                error=error_str[:200],
             )
 
             if attempt == MAX_RETRIES:
@@ -845,54 +828,36 @@ def generate_with_retry(
     raise last_error or RuntimeError("generate_with_retry failed unexpectedly")
 
 
-def print_debug_summary() -> None:
+def log_run_summary() -> dict[str, Any]:
+    """Provider usage for the run just finished, as one log event."""
     primary_reqs = _debug_stats["primary_requests"]
-    total = len(primary_reqs)
-    successful = _debug_stats["successful"]
-    failed = _debug_stats["failed"]
-    quota_errors = _debug_stats["quota_errors"]
-    retries = _debug_stats["retries"]
-
-    total_input_tokens = sum(r.get("estimated_input_tokens", 0) for r in primary_reqs)
-    total_output_tokens = sum(
-        r.get("output_tokens", 0) for r in primary_reqs if r.get("output_tokens")
-    )
-    total_actual_input_tokens = sum(r.get("prompt_tokens_actual", 0) for r in primary_reqs)
-    total_actual_output_tokens = sum(r.get("completion_tokens_actual", 0) for r in primary_reqs)
-    total_actual_tokens = sum(r.get("total_tokens_actual", 0) for r in primary_reqs)
     prompt_chars_list = [r.get("prompt_chars", 0) for r in primary_reqs if r.get("prompt_chars")]
-    avg_prompt_size = sum(prompt_chars_list) // len(prompt_chars_list) if prompt_chars_list else 0
     latencies = [r.get("latency", 0) for r in primary_reqs if r.get("latency") is not None]
-    avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
-
-    print()
-    print("=" * 60)
-    print("LLM ANALYSIS SUMMARY")
-    print("=" * 60)
-    print()
-    print("Primary Provider Requests:")
-    print(f"  Total:          {total}")
-    print(f"  Successful:     {successful}")
-    print(f"  Failed:         {failed}")
-    print(f"  429 Errors:     {quota_errors}")
-    print(f"  Key Rotations:  {retries}")
-    print(f"  Estimated Total Input Tokens:  {total_input_tokens}")
-    print(f"  Estimated Total Output Tokens: {total_output_tokens}")
-    _snap = get_registry().snapshot()
-    _observed = _snap["requests_at_exhaustion_all"]
-    print(
-        f"  Gemini requests today:         {_daily_gemini_requests}"
-        + (f" (observed per-key limit: {max(_observed)})" if _observed else "")
-    )
-    print(f"  Credentials spent for the day: {_snap['daily_exhausted']}/{configured_gemini_keys()}")
-    if total_actual_tokens > 0:
-        print(f"  Actual Input Tokens:           {total_actual_input_tokens}")
-        print(f"  Actual Output Tokens:          {total_actual_output_tokens}")
-        print(f"  Actual Total Tokens:           {total_actual_tokens}")
-    print(f"  Average Prompt Size:           {avg_prompt_size} chars")
-    print(f"  Average Latency:               {avg_latency:.2f}s")
-    print()
-    print("=" * 60)
+    snap = get_registry().snapshot()
+    observed = snap["requests_at_exhaustion_all"]
+    summary: dict[str, Any] = {
+        "requests": len(primary_reqs),
+        "successful": _debug_stats["successful"],
+        "failed": _debug_stats["failed"],
+        "quota_errors": _debug_stats["quota_errors"],
+        "retries": _debug_stats["retries"],
+        "estimated_input_tokens": sum(r.get("estimated_input_tokens", 0) for r in primary_reqs),
+        "estimated_output_tokens": sum(
+            r.get("output_tokens", 0) for r in primary_reqs if r.get("output_tokens")
+        ),
+        "actual_input_tokens": sum(r.get("prompt_tokens_actual", 0) for r in primary_reqs),
+        "actual_output_tokens": sum(r.get("completion_tokens_actual", 0) for r in primary_reqs),
+        "requests_today": _daily_gemini_requests,
+        "observed_per_key_limit": max(observed) if observed else None,
+        "credentials_spent": snap["daily_exhausted"],
+        "credentials_configured": configured_gemini_keys(),
+        "avg_prompt_chars": (
+            sum(prompt_chars_list) // len(prompt_chars_list) if prompt_chars_list else 0
+        ),
+        "avg_latency_s": round(sum(latencies) / len(latencies), 2) if latencies else 0.0,
+    }
+    logger.info("llm_run_summary", **summary)
+    return summary
 
 
 # Chat replies are deliberately concise (the prompts cap them at ~120 words),
@@ -984,7 +949,14 @@ def generate_text_with_retry(
         key_index: int | None = None
         if isinstance(provider, GeminiProvider):
             throttles = _gemini_throttles(provider)
-            key_index = provider.next_key()
+            # Through the circuit breaker, like the analysis path. next_key()
+            # alone handed chat credentials the analysis path had already
+            # learned were spent for the day.
+            key_index = _pick_healthy_key(provider)
+            if key_index is None:
+                raise ChatDeadlineExceeded(
+                    f"Chat '{operation}': every credential is cooling down or spent for the day."
+                )
             gemini_throttle = throttles[key_index]
             gemini_throttle.wait()
 
@@ -1007,10 +979,18 @@ def generate_text_with_retry(
                     _persist_daily_requests(_daily_gemini_requests)
                 if gemini_throttle is not None:
                     gemini_throttle.record()
-                print(
-                    f"[DEBUG] CHAT REQ | {operation} | model={provider.model_name} "
-                    f"status=200 latency={latency:.2f}s attempt={attempt}/{attempts} "
-                    f"RPD={_daily_gemini_requests}"
+                if key_index is not None:
+                    get_registry().record_success(
+                        _key_id(provider, key_index), tokens=_estimate_tokens(prompt)
+                    )
+                logger.info(
+                    "chat_request_ok",
+                    operation=operation,
+                    model=provider.model_name,
+                    latency_s=round(latency, 2),
+                    attempt=attempt,
+                    max_attempts=attempts,
+                    requests_today=_daily_gemini_requests,
                 )
 
             _debug_stats["successful"] += 1
@@ -1018,26 +998,34 @@ def generate_text_with_retry(
 
         except QuotaExceededError as exc:
             last_error = exc
-            print(
-                f"[DEBUG] CHAT REQ | {operation} | status=429 attempt={attempt}/{attempts} "
-                f"error={str(exc)[:150]}"
+            logger.warning(
+                "chat_request_quota",
+                operation=operation,
+                attempt=attempt,
+                max_attempts=attempts,
+                error=str(exc)[:150],
             )
             # Chat shares the credentials, so a per-day refusal it discovers
             # has to reach the registry too — otherwise analysis walks back
             # into a key chat already learned was finished.
-            if isinstance(provider, GeminiProvider):
+            if isinstance(provider, GeminiProvider) and key_index is not None:
                 failure = classify(exc)
                 get_registry().record_failure(
-                    _key_id(provider, provider.current_key_index),
+                    _key_id(provider, key_index),
                     failure.kind,
                     str(exc),
                     retry_after=failure.retry_after_seconds,
                 )
-            if isinstance(provider, GeminiProvider) and provider.rotate_key():
-                print(
-                    f"[DEBUG] Chat rotated to Gemini key #{provider.current_key_index + 1}/"
-                    f"{len(provider.api_keys)}, retrying"
-                )
+            # Another credential the breaker still trusts, if there is one —
+            # the same rule as the analysis path. rotate_key() only ever moved
+            # forward from wherever the round-robin had landed, so a 429 on the
+            # last index reported every credential spent while others were fine.
+            if (
+                isinstance(provider, GeminiProvider)
+                and attempt < attempts
+                and get_registry().available_keys(key_ids_for(provider))
+            ):
+                logger.info("chat_retry_on_other_credential")
                 if not _sleep_within_budget(_jittered_wait(RETRY_BACKOFF_SECONDS)):
                     raise ChatDeadlineExceeded(
                         f"Chat '{operation}' out of budget while rotating keys."
@@ -1046,7 +1034,7 @@ def generate_text_with_retry(
             retry_delay = _extract_retry_delay(str(exc))
             if retry_delay is not None and retry_delay <= 120.0 and attempt < attempts:
                 wait = _honour_retry_after(max(retry_delay, RETRY_BACKOFF_SECONDS))
-                print(f"[DEBUG] Chat Gemini retry delay {retry_delay:.0f}s — waiting {wait:.0f}s")
+                logger.info("chat_retry_after", requested_s=round(retry_delay), wait_s=round(wait))
                 if not _sleep_within_budget(wait):
                     raise ChatDeadlineExceeded(
                         f"Chat '{operation}' out of budget: the API asked for "
@@ -1057,9 +1045,15 @@ def generate_text_with_retry(
 
         except RetryableError as exc:
             last_error = exc
+            if isinstance(provider, GeminiProvider) and key_index is not None:
+                get_registry().record_failure(
+                    _key_id(provider, key_index), FailureKind.RETRYABLE, str(exc)
+                )
             if attempt < attempts:
                 wait = _jittered_wait(RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)))
-                print(f"[DEBUG] CHAT REQ | {operation} | retryable, retrying in {wait:.1f}s")
+                logger.warning(
+                    "chat_request_retryable", operation=operation, retry_in_s=round(wait, 1)
+                )
                 if not _sleep_within_budget(wait):
                     raise ChatDeadlineExceeded(
                         f"Chat '{operation}' out of budget after a retryable error."
@@ -1072,7 +1066,7 @@ def generate_text_with_retry(
         except Exception as exc:
             last_error = exc
             _debug_stats["failed"] += 1
-            print(f"[DEBUG] CHAT REQ | {operation} | error={str(exc)[:150]}")
+            logger.error("chat_request_failed", operation=operation, error=str(exc)[:150])
             if attempt < attempts:
                 continue
             raise
@@ -1081,9 +1075,8 @@ def generate_text_with_retry(
 
 
 def reset_provider() -> None:
-    global _provider, _original_provider, _daily_gemini_requests, _gemini_rpm_throttles
+    global _provider, _daily_gemini_requests, _gemini_rpm_throttles
     _provider = None
-    _original_provider = None
     for t in _gemini_rpm_throttles:
         t.reset()
     _gemini_rpm_throttles = []

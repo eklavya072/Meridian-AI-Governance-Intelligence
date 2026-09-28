@@ -187,16 +187,17 @@ function useSettled(done: boolean, afterMs = 600) {
    Institutionalized. The spread below is a real run. */
 const ANALYSIS_ROWS = [
   { dim: "Transparency", tier: "Covered", color: COVERED, depth: "Operationalized", cites: 6 },
-  { dim: "Accountability", tier: "Covered", color: COVERED, depth: "Institutionalized", cites: 9 },
-  { dim: "Privacy", tier: "Covered", color: COVERED, depth: "Institutionalized", cites: 7 },
-  { dim: "Human Autonomy", tier: "Partial", color: PARTIAL, depth: "Emerging", cites: 4 },
-  { dim: "Environmental", tier: "Missing", color: MISSING, depth: "Unaddressed", cites: 0 },
+  { dim: "Accountability", tier: "Covered", color: COVERED, depth: "Institutionalized", cites: 6 },
+  { dim: "Privacy", tier: "Covered", color: COVERED, depth: "Institutionalized", cites: 5 },
+  { dim: "Fairness", tier: "Partial", color: PARTIAL, depth: "Emerging", cites: 6 },
+  { dim: "Environmental", tier: "Missing", color: MISSING, depth: "Unaddressed", cites: 4 },
 ];
 
-/* 4 covered / 3 partial / 1 missing across the 8 dimensions. */
+/* 5 covered / 2 partial / 1 missing across the 8 dimensions — India's run of
+   22 Sep 2026, the one ANALYSIS_ROWS and the gauge are also taken from. */
 const DONUT = [
-  { label: "Covered", value: 4, color: COVERED },
-  { label: "Partial", value: 3, color: PARTIAL },
+  { label: "Covered", value: 5, color: COVERED },
+  { label: "Partial", value: 2, color: PARTIAL },
   { label: "Missing", value: 1, color: MISSING },
 ];
 
@@ -272,7 +273,7 @@ function DepthGauge({ active }: { active: boolean }) {
      to 100. It was previously drawn as x/5, which is a scale this
      instrument does not have. The arc and the readout share one value so
      they can never disagree. */
-  const target = 63.2;
+  const target = 67.0;
   const [shown, setShown] = useState(0);
   useEffect(() => {
     if (!active) {
@@ -344,13 +345,12 @@ export function AnalysisFrame({ active }: { active: boolean }) {
             </h3>
             {/* This read "Kenya. National AI Strategy 2025-2030" over a
                 verdict spread, donut split and depth score that are a
-                REAL RUN ON A DIFFERENT COUNTRY — 63.2 is India's, per
-                docs/ENGINEERING-NOTES.md. Kenya has published a strategy of that name, so
-                the frame attributed one state's governance grade to
-                another, on a page whose stated position is that nothing is
-                asserted without a source. The label is now unattributed and
-                the frame is marked illustrative in the UI, not only in a
-                code comment. */}
+                REAL RUN ON A DIFFERENT COUNTRY — India's. Kenya has
+                published a strategy of that name, so the frame attributed
+                one state's governance grade to another, on a page whose
+                stated position is that nothing is asserted without a source.
+                The label is now unattributed and the frame is marked
+                illustrative in the UI, not only in a code comment. */}
             <p className="mt-0.5 truncate text-[10px] font-medium text-[#404040] sm:text-[11px]">
               Sample analysis · figures from a recorded run
             </p>
@@ -658,17 +658,19 @@ function ArrowUpGlyph({ className }: { className?: string }) {
 /* ── 3. Framework library ─────────────────────────────────────────────
    The real roster from config/frameworks.yaml — names, issuing bodies and
    versions exactly as the library page lists them, landing card by card as
-   the index reports in. */
+   the index reports in. No counts: the chunk figures that used to sit here
+   were invented (OECD "1320" against 17 indexed), and a reader who opened the
+   Frameworks page next would have caught it. */
 
 const FRAMEWORKS = [
-  { org: "UNDP", name: "Digital Strategy 2022-2025", version: "2022", chunks: 412 },
-  { org: "OECD", name: "AI Principles", version: "2024", chunks: 1320 },
-  { org: "G7", name: "Hiroshima AI Process (HAIP)", version: "2023", chunks: 268 },
-  { org: "UNESCO", name: "Recommendation on the Ethics of AI", version: "2021", chunks: 986 },
-  { org: "EU", name: "AI Act, Regulation 2024/1689", version: "2024", chunks: 2114 },
-  { org: "NIST", name: "AI Risk Management Framework", version: "1.0", chunks: 744 },
-  { org: "AU", name: "Continental AI Strategy", version: "2024", chunks: 503 },
-  { org: "ASEAN", name: "Guide on AI Governance & Ethics", version: "2024", chunks: 361 },
+  { org: "UNDP", name: "Digital Strategy 2022-2025", version: "2022" },
+  { org: "OECD", name: "AI Principles", version: "2024" },
+  { org: "G7", name: "Hiroshima AI Process (HAIP)", version: "2023" },
+  { org: "UNESCO", name: "Recommendation on the Ethics of AI", version: "2021" },
+  { org: "EU", name: "AI Act, Regulation 2024/1689", version: "2024" },
+  { org: "NIST", name: "AI Risk Management Framework", version: "1.0" },
+  { org: "AU", name: "Continental AI Strategy", version: "2024" },
+  { org: "ASEAN", name: "Guide on AI Governance & Ethics", version: "2024" },
 ];
 
 export function FrameworksFrame({ active }: { active: boolean }) {
@@ -690,7 +692,7 @@ export function FrameworksFrame({ active }: { active: boolean }) {
           <span
             style={{
               opacity: shown === FRAMEWORKS.length ? 1 : 0,
-              transition: settled ? "none" : "opacity 300ms cubic-bezier(0.16,1,0.3,1)",
+              transition: settled ? "none" : "opacity 300ms var(--ease-enter)",
             }}
             className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[rgba(10,10,10,0.12)] bg-white px-2.5 py-1 text-[10px] font-medium text-[#404040] sm:inline-flex"
           >
@@ -713,7 +715,7 @@ export function FrameworksFrame({ active }: { active: boolean }) {
                   i < shown ? "translateY(0) scale(1)" : "translateY(14px) scale(0.94)",
                 transition: settled
                   ? "none"
-                  : "opacity 340ms cubic-bezier(0.16,1,0.3,1), transform 340ms cubic-bezier(0.16,1,0.3,1)",
+                  : "opacity 340ms var(--ease-enter), transform 340ms var(--ease-enter)",
               }}
               className="flex flex-col rounded-lg border border-[rgba(10,10,10,0.10)] bg-white p-2.5 sm:p-3"
             >
@@ -726,7 +728,7 @@ export function FrameworksFrame({ active }: { active: boolean }) {
               <span className="mt-auto flex items-center gap-1.5 pt-2 text-[9.5px] font-medium text-[#737373]">
                 <Dot color={COVERED} />
                 <span className="tabular-nums">v{f.version}</span>
-                <span className="ml-auto tabular-nums">{f.chunks} chunks</span>
+                <span className="ml-auto">indexed</span>
               </span>
             </div>
           ))}

@@ -1,13 +1,12 @@
 import pytest
+from pydantic import BaseModel
 
 from src.gap_analyzer import (
     BEST_PRACTICES_OPENING,
     CORE_DIMENSIONS,
-    COVERAGE_RANK,
     DIMENSION_CLUSTERS,
     GOVERNANCE_DIMENSIONS,
     GapAnalyzer,
-    build_framework_synthesis,
     compute_calibrated_confidence,
     compute_decision_analytics,
     compute_risk,
@@ -36,6 +35,36 @@ def make_evidence(similarity: float | None = None) -> list[RetrievedEvidence]:
         )
         for i in range(5)
     ]
+
+
+def inject_verdict(analyzer: GapAnalyzer, coverage: str) -> None:
+    """Hand the analyzer a fixed deterministic verdict.
+
+    The verdict always comes from the evidence profile, which needs a
+    workspace and the retrieval pipeline. These tests exercise what happens
+    AROUND the verdict (tier enforcement, grounding, error propagation), so
+    they supply one directly with counts consistent with the label.
+    """
+    from src.evidence_strength import EvidenceProfile
+
+    counts = {
+        "Covered": {"n_scored": 6, "n_commitment": 6, "n_institutional": 4, "n_binding": 3},
+        "Partial": {"n_scored": 3, "n_commitment": 3},
+        "Missing": {},
+    }[coverage]
+    depth = {"Covered": "Operationalized", "Partial": "Emerging", "Missing": "Unaddressed"}[
+        coverage
+    ]
+    determined = {
+        "profile": EvidenceProfile(dimension="Transparency", **counts),
+        "scoring_pool": [],
+        "coverage_label": coverage,
+        "coverage_note": f"{coverage} by the evidence profile.",
+        "depth_label": depth,
+        "depth_note": f"{depth} by the evidence profile.",
+        "mechanisms": None,
+    }
+    analyzer._compute_deterministic_verdict = lambda **_kw: determined
 
 
 class TestComputeCalibratedConfidence:
@@ -122,7 +151,7 @@ class TestComputeRisk:
     def test_insufficient_evidence_returns_insufficient(self):
         risk, reason = compute_risk(CoverageLevel.INSUFFICIENT_EVIDENCE, "Transparency")
         assert risk == RiskLevel.INSUFFICIENT_EVIDENCE
-        assert "Insufficient evidence" in reason
+        assert "Too little evidence" in reason
 
     def test_compounding_with_worse_coverage_increases(self):
         other = [make_gap("Accountability", "Missing")]
@@ -160,7 +189,6 @@ class TestNoCitationSentinel:
     def _analyzer(self, store: FakeVectorStore) -> GapAnalyzer:
         a = GapAnalyzer.__new__(GapAnalyzer)
         a.vector_store = store
-        a.nli_verifier = None
         return a
 
     @pytest.mark.parametrize(
@@ -214,7 +242,7 @@ class TestNoCitationSentinel:
         assert len(citations) == 1
         assert citations[0].no_citation is False
         assert store.lookups == ["9f3a2b1c"]
-        assert "Chunk does not exist" in (citations[0].verification or {}).get("failure_reason", "")
+        assert "could not be found" in (citations[0].verification or {}).get("failure_reason", "")
 
     def test_verbatim_quote_starting_with_sentinel_prefix_keeps_real_chunk(self):
         """A genuine quote like 'Insufficient evidence exists...' with a real
@@ -256,7 +284,9 @@ class TestAnalysisErrorState:
         a = GapAnalyzer.__new__(GapAnalyzer)
         gap = a._build_error_gap("Fairness", "All Gemini API keys exhausted: 429")
         assert gap.analysis_error == "All Gemini API keys exhausted: 429"
-        assert "Analysis failed" in gap.reason_flagged
+        assert "could not be assessed" in gap.reason_flagged
+        # The provider's error is for whoever debugs the run, not the reader.
+        assert "Gemini" not in gap.reason_flagged and "Gemini" not in gap.recommendation
         assert gap.risk_reason == "Analysis Error"
         assert gap.confidence_score == 0.0
 
@@ -272,7 +302,7 @@ class TestAnalysisErrorState:
         ok = a._build_insufficient_gap("Inclusivity")
         failed = a._build_error_gap("Fairness", "quota exhausted")
         summary = a._generate_summary([ok, failed])
-        assert "1 dimension(s) could not be analysed (Fairness)" in summary
+        assert "1 dimension(s) could not be assessed on this run (Fairness)" in summary
         assert "1 dimensions had insufficient evidence" in summary
 
     def test_failed_gap_never_counts_as_insufficient_finding(self):
@@ -280,7 +310,7 @@ class TestAnalysisErrorState:
         failed = a._build_error_gap("Fairness", "quota exhausted")
         summary = a._generate_summary([failed])
         assert "had insufficient evidence" not in summary
-        assert "could not be analysed" in summary
+        assert "could not be assessed" in summary
 
     def test_error_gap_model_roundtrip_keeps_field(self):
         a = GapAnalyzer.__new__(GapAnalyzer)
@@ -322,6 +352,7 @@ class TestDimensionExceptionWiring:
         analyzer.vector_store = self._EmptyStore()
         analyzer.provider = self._RaisingProvider()
         analyzer.consistency_validator = ga.ConsistencyValidator()
+        inject_verdict(analyzer, "Partial")
 
         retrieval = ModuleRetrievalResult(
             dimension="Fairness",
@@ -376,7 +407,6 @@ class TestDimensionExceptionWiring:
         analyzer.provider = self._RaisingProvider()
         analyzer.retrieval_pipeline = _RP()
         analyzer.consistency_validator = ga.ConsistencyValidator()
-        analyzer.nli_verifier = None
 
         result = analyzer.analyze(
             document_text="x",
@@ -392,7 +422,7 @@ class TestDimensionExceptionWiring:
             assert g.risk_reason == "Analysis Error"
         # Summary must say the dimensions could not be analysed — never
         # 'had insufficient evidence'.
-        assert "could not be analysed" in result.summary
+        assert "could not be assessed" in result.summary
         assert "had insufficient evidence" not in result.summary
 
     def test_parallel_analyze_preserves_order_and_callback(self, monkeypatch):
@@ -407,6 +437,7 @@ class TestDimensionExceptionWiring:
             return _FakeCombined(coverage="Covered")
 
         monkeypatch.setattr(ga, "generate_with_retry", _fake_generate)
+        monkeypatch.setattr(ga, "BATCH_LLM_CALLS", False)
 
         class _VS:
             def get_all_frameworks(self):
@@ -437,7 +468,6 @@ class TestDimensionExceptionWiring:
         analyzer.provider = self._RaisingProvider()
         analyzer.retrieval_pipeline = _RP()
         analyzer.consistency_validator = ga.ConsistencyValidator()
-        analyzer.nli_verifier = None
 
         called: list[str] = []
         result = analyzer.analyze(
@@ -457,6 +487,261 @@ class TestDimensionExceptionWiring:
         assert len(called) == len(GOVERNANCE_DIMENSIONS)
         # Covered dimensions cost exactly one LLM call each.
         assert result.llm_call_count == len(GOVERNANCE_DIMENSIONS)
+
+    def _all_covered_run(self, monkeypatch, fake_generate):
+        """Analyse all eight dimensions against a one-chunk corpus, every answer Covered."""
+        import src.gap_analyzer as ga
+
+        monkeypatch.setattr(ga, "generate_with_retry", fake_generate)
+        monkeypatch.setattr(ga, "BATCH_LLM_CALLS", True)
+
+        class _VS:
+            def get_all_frameworks(self):
+                return ["UNESCO Recommendation on the Ethics of AI"]
+
+            def get_chunk(self, chunk_id):
+                return None
+
+        class _RP:
+            def retrieve_module_chunks(self, **kwargs):
+                from src.retrieval import ModuleRetrievalResult
+
+                r = ModuleRetrievalResult(
+                    dimension=kwargs.get("dimension"),
+                    document_chunks=[{"chunk_id": "d1", "text": "t", "module_role": "document"}],
+                    module1_chunks=[
+                        {"chunk_id": "n1", "text": "t", "module_role": "module_1_normative"}
+                    ],
+                    module2_chunks=[
+                        {"chunk_id": "p1", "text": "t", "module_role": "module_2_practical"}
+                    ],
+                )
+                r.total_chunks = 3
+                return r
+
+        analyzer = ga.GapAnalyzer.__new__(ga.GapAnalyzer)
+        analyzer.vector_store = _VS()
+        analyzer.provider = self._RaisingProvider()
+        analyzer.retrieval_pipeline = _RP()
+        analyzer.consistency_validator = ga.ConsistencyValidator()
+
+        called: list[str] = []
+        result = analyzer.analyze(
+            document_text="x",
+            document_name="policy.pdf",
+            workspace_id="ws",
+            country="India",
+            dimension_callback=lambda d, gap, info: called.append(d),
+        )
+        return result, called
+
+    def test_batched_evaluation_costs_one_request_for_every_covered_dimension(self, monkeypatch):
+        """With BATCH_EVALUATION the same contract — canonical order, one
+        callback per dimension, no errors — for one Module 1+2 request
+        instead of eight."""
+        import src.gap_analyzer as ga
+        from src.gap_analyzer import GOVERNANCE_DIMENSIONS
+
+        requests: list[dict] = []
+
+        def _fake_generate(**kwargs):
+            from types import SimpleNamespace
+
+            requests.append(kwargs)
+            answers = []
+            for d in GOVERNANCE_DIMENSIONS:
+                if f": {d} ═══" in kwargs["prompt"]:
+                    answer = _FakeCombined(coverage="Covered")
+                    answer.dimension = d
+                    answers.append(answer)
+            return SimpleNamespace(dimensions=answers)
+
+        monkeypatch.setattr(ga, "BATCH_EVALUATION", True)
+        result, called = self._all_covered_run(monkeypatch, _fake_generate)
+
+        assert [g.dimension for g in result.governance_gaps] == list(GOVERNANCE_DIMENSIONS)
+        assert all(not g.analysis_error for g in result.governance_gaps)
+        assert sorted(called) == sorted(GOVERNANCE_DIMENSIONS)
+        assert len(requests) == 1 and result.llm_call_count == 1
+        # Every dimension's own section went out in that one request.
+        assert all(f": {d} ═══" in requests[0]["prompt"] for d in GOVERNANCE_DIMENSIONS)
+
+    def test_each_dimension_is_evaluated_in_a_request_of_its_own(self, monkeypatch):
+        """The default: a shared reply cited a third fewer passages per dimension."""
+        import src.gap_analyzer as ga
+        from src.gap_analyzer import GOVERNANCE_DIMENSIONS
+
+        requests: list[dict] = []
+
+        def _fake_generate(**kwargs):
+            requests.append(kwargs)
+            return _FakeCombined(coverage="Covered")
+
+        monkeypatch.setattr(ga, "BATCH_EVALUATION", False)
+        result, called = self._all_covered_run(monkeypatch, _fake_generate)
+
+        assert [g.dimension for g in result.governance_gaps] == list(GOVERNANCE_DIMENSIONS)
+        assert all(not g.analysis_error for g in result.governance_gaps)
+        assert sorted(called) == sorted(GOVERNANCE_DIMENSIONS)
+        # One request per dimension, each in the single-dimension format.
+        assert sorted(r["operation"] for r in requests) == sorted(
+            f"module1_2_{d.lower().replace(' ', '_')}" for d in GOVERNANCE_DIMENSIONS
+        )
+        assert not any("═══ DIMENSION" in r["prompt"] for r in requests)
+        assert result.llm_call_count == len(GOVERNANCE_DIMENSIONS)
+
+    def test_a_malformed_reply_costs_only_its_dimension(self, monkeypatch):
+        import src.gap_analyzer as ga
+
+        class _Reply(BaseModel):
+            coverage: str
+
+        def _fake_generate(**kwargs):
+            if kwargs["operation"] == "module1_2_privacy":
+                _Reply.model_validate_json("{")
+            return _FakeCombined(coverage="Covered")
+
+        monkeypatch.setattr(ga, "BATCH_EVALUATION", False)
+        result, _ = self._all_covered_run(monkeypatch, _fake_generate)
+
+        failed = [g.dimension for g in result.governance_gaps if g.analysis_error]
+        assert failed == ["Privacy"]
+
+    def test_a_refused_evaluation_stops_the_ones_not_yet_sent(self, monkeypatch):
+        """Three attempts each on a model turning work away is quota for nothing."""
+        import src.gap_analyzer as ga
+        from src.gap_analyzer import GOVERNANCE_DIMENSIONS
+
+        sent: list[str] = []
+
+        def _fake_generate(**kwargs):
+            sent.append(kwargs["operation"])
+            raise RuntimeError("LLM call failed after 3 retries: 503 UNAVAILABLE: high demand")
+
+        monkeypatch.setattr(ga, "BATCH_EVALUATION", False)
+        monkeypatch.setattr(ga, "ANALYSIS_MAX_CONCURRENCY", 1)
+        result, _ = self._all_covered_run(monkeypatch, _fake_generate)
+
+        assert len(sent) == 1
+        errors = [g.analysis_error for g in result.governance_gaps]
+        assert len(errors) == len(GOVERNANCE_DIMENSIONS)
+        assert all(e and "503" in e for e in errors)
+
+
+class TestBatchedAnswerMatching:
+    """Which answer in a batched reply belongs to which dimension."""
+
+    class _Item(BaseModel):
+        dimension: str = ""
+
+    def _ask(self, monkeypatch, names):
+        from types import SimpleNamespace
+
+        import src.gap_analyzer as ga
+
+        reply = SimpleNamespace(dimensions=[self._Item(dimension=n) for n in names])
+        monkeypatch.setattr(ga, "generate_with_retry", lambda **kw: reply)
+        analyzer = ga.GapAnalyzer.__new__(ga.GapAnalyzer)
+        analyzer.provider = None
+        calls = [SimpleNamespace(dimension="Human Autonomy"), SimpleNamespace(dimension="Safety")]
+        out = analyzer._ask_batched(
+            calls,
+            lambda c, country: ("", ""),
+            self._Item,
+            "module1_2_batch",
+            "",
+            ga._DimensionRunState(),
+        )
+        return {d: a.dimension for d, a in out.items()}
+
+    def test_answers_are_matched_by_name_whatever_their_order(self, monkeypatch):
+        assert self._ask(monkeypatch, ["safety", "Human  Autonomy"]) == {
+            "Human Autonomy": "Human  Autonomy",
+            "Safety": "safety",
+        }
+
+    def test_an_abbreviated_name_is_matched_by_position(self, monkeypatch):
+        assert self._ask(monkeypatch, ["Autonomy", "Safety"]) == {
+            "Human Autonomy": "Autonomy",
+            "Safety": "Safety",
+        }
+
+    def test_a_missing_answer_is_left_out_rather_than_guessed(self, monkeypatch):
+        # One answer for two sections: nothing to align by position, so the
+        # unnamed dimension fails on its own instead of borrowing an answer.
+        assert self._ask(monkeypatch, ["Autonomy"]) == {}
+
+    def test_a_half_lost_to_the_provider_says_so(self, monkeypatch):
+        """Not "the reply did not include this dimension": there was no reply."""
+        from types import SimpleNamespace
+
+        import src.gap_analyzer as ga
+
+        try:
+            self._Item.model_validate_json("{")
+        except Exception as exc:
+            malformed = exc
+
+        replies = iter(
+            [
+                malformed,
+                RuntimeError("503 UNAVAILABLE: high demand"),
+                SimpleNamespace(dimensions=[self._Item(dimension="Safety")]),
+            ]
+        )
+
+        def _generate(**kw):
+            reply = next(replies)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+        monkeypatch.setattr(ga, "generate_with_retry", _generate)
+        analyzer = ga.GapAnalyzer.__new__(ga.GapAnalyzer)
+        analyzer.provider = None
+        calls = [SimpleNamespace(dimension="Human Autonomy"), SimpleNamespace(dimension="Safety")]
+        errors: dict[str, str] = {}
+
+        out = analyzer._ask_batched(
+            calls,
+            lambda c, country: ("", ""),
+            self._Item,
+            "module1_2_batch",
+            "",
+            ga._DimensionRunState(),
+            errors=errors,
+        )
+
+        assert set(out) == {"Safety"}
+        assert errors == {"Human Autonomy": "503 UNAVAILABLE: high demand"}
+
+    def test_an_outage_is_not_split_into_more_requests(self, monkeypatch):
+        """A refused batch spends quota; two refused halves spend three times as much."""
+        from types import SimpleNamespace
+
+        import src.gap_analyzer as ga
+
+        sent: list[dict] = []
+
+        def _generate(**kw):
+            sent.append(kw)
+            raise RuntimeError("LLM call failed after 3 retries: 503 UNAVAILABLE: high demand")
+
+        monkeypatch.setattr(ga, "generate_with_retry", _generate)
+        analyzer = ga.GapAnalyzer.__new__(ga.GapAnalyzer)
+        analyzer.provider = None
+        calls = [SimpleNamespace(dimension="Human Autonomy"), SimpleNamespace(dimension="Safety")]
+
+        with pytest.raises(RuntimeError, match="503"):
+            analyzer._ask_batched(
+                calls,
+                lambda c, country: ("", ""),
+                self._Item,
+                "module1_2_batch",
+                "",
+                ga._DimensionRunState(),
+            )
+        assert len(sent) == 1
 
 
 class TestDecisionAnalytics:
@@ -665,10 +950,9 @@ class TestResolvePriority:
 class _FakeCombined:
     """Mimics the schema-validated combined LLM output.
 
-    The fixture is internally consistent with the deterministic coverage
-    ladder: only a Covered verdict reports a named-body mechanism (a Partial
-    verdict reporting one would be deterministically raised to Covered by
-    R2, which is exactly what the raise tests assert).
+    Only a Covered answer reports a named-body mechanism, so the fixture reads
+    like a real reply. The verdict itself is injected (see inject_verdict);
+    the model's coverage label is never used as one.
     """
 
     def __init__(self, coverage="Covered", acknowledged=True, mechanisms=None):
@@ -710,7 +994,6 @@ class TestCoverageTierEnforcement:
     def _analyzer(self, store) -> GapAnalyzer:
         a = GapAnalyzer.__new__(GapAnalyzer)
         a.vector_store = store
-        a.nli_verifier = None
         a.provider = _FakeCombined  # only accessed by the mocked generate path
         return a
 
@@ -729,6 +1012,7 @@ class TestCoverageTierEnforcement:
         from src.retrieval import ModuleRetrievalResult
 
         analyzer = self._analyzer(FakeVectorStore())
+        inject_verdict(analyzer, coverage)
         retrieval = ModuleRetrievalResult(
             dimension="Transparency",
             document_chunks=[{"chunk_id": "d1", "text": "doc text", "module_role": "document"}],
@@ -774,33 +1058,12 @@ class TestCoverageTierEnforcement:
         assert gap.recommendation == "rec1\nrec2"
 
     def test_missing_keeps_recommendations_with_high_priority(self, monkeypatch):
-        # Not acknowledged + no mechanisms → the ladder does not raise a
-        # genuine Missing (R1 requires acknowledgment, R2 a commitment).
         gap = self._run(monkeypatch, "Missing", acknowledged=False)
         m2 = gap.module_2
         assert m2 is not None
         assert m2.recommendations == ["rec1", "rec2"]
         assert m2.priority == Priority.HIGH
         assert m2.best_practices is None
-
-    def test_partial_with_named_mechanism_is_raised_to_covered(self, monkeypatch):
-        """Deterministic ladder enforcement: a Partial verdict whose document
-        reports a named-body mechanism is an implementation commitment
-        (Level 3) → raised to Covered → Best Practices tier replaces
-        Recommendations, and the rule is visible in the reasoning."""
-        gap = self._run(
-            monkeypatch,
-            "Partial",
-            mechanisms=["National AI Ethics Board with quarterly public reporting (named body)"],
-        )
-        assert gap.module_1.coverage == CoverageLevel.COVERED
-        # User-facing text, not the internal "R2" rule label — see
-        # plain_language_ladder_note.
-        assert "Raised from Partial to Covered" in gap.module_1.coverage_reasoning
-        assert gap.module_2.best_practices is not None
-        assert gap.module_2.recommendations == []
-        assert gap.module_2.priority is None
-        assert gap.module_1.gap_detected is False
 
     def test_covered_never_carries_best_practices_for_gap_tiers(self, monkeypatch):
         # Even if the model mistakenly emits strengthening opportunities for a
@@ -834,6 +1097,7 @@ class TestCoverageTierEnforcement:
         from src.retrieval import ModuleRetrievalResult
 
         analyzer = self._analyzer(FakeVectorStore())
+        inject_verdict(analyzer, "Covered")
         retrieval = ModuleRetrievalResult(
             dimension="Transparency",
             document_chunks=[{"chunk_id": "d1", "text": "doc text", "module_role": "document"}],
@@ -1386,7 +1650,6 @@ class TestModule34TimelineOverride:
     def _analyzer(self, store) -> GapAnalyzer:
         a = GapAnalyzer.__new__(GapAnalyzer)
         a.vector_store = store
-        a.nli_verifier = None
         a.provider = object()  # only accessed by the mocked generate path
         return a
 
@@ -1455,117 +1718,6 @@ class TestModule34TimelineOverride:
         assert gap.module_4 is not None
         assert gap.module_4.matched is False
         assert gap.module_4.incident_matches == []
-
-
-class TestBuildFrameworkSynthesis:
-    def test_empty_positions_returns_empty(self):
-        result = build_framework_synthesis([], [])
-        assert result == ""
-
-    def test_unknown_chunk_omitted(self):
-        from src.models import FrameworkPositionRaw
-
-        positions = [
-            FrameworkPositionRaw(
-                framework="OECD", position="requires X", chunk_id="nonexistent", supporting_text="X"
-            )
-        ]
-        evidence = [
-            RetrievedEvidence(
-                chunk_id="real1", text="t", source_framework="OECD", similarity_score=0.8
-            )
-        ]
-        result = build_framework_synthesis(positions, evidence)
-        assert result == ""
-
-    def test_valid_position_included(self):
-        from src.models import FrameworkPositionRaw
-
-        positions = [
-            FrameworkPositionRaw(
-                framework="OECD AI Principles",
-                position="requires transparency",
-                chunk_id="c1",
-                supporting_text="organisations should provide meaningful information",
-            )
-        ]
-        evidence = [
-            RetrievedEvidence(
-                chunk_id="c1",
-                text="organisations should provide meaningful information",
-                source_framework="OECD AI Principles",
-                similarity_score=0.8,
-            )
-        ]
-        result = build_framework_synthesis(positions, evidence)
-        assert "OECD AI Principles" in result
-        assert "requires transparency" in result
-
-    def test_multiple_frameworks_joined(self):
-        from src.models import FrameworkPositionRaw
-
-        positions = [
-            FrameworkPositionRaw(
-                framework="OECD AI Principles",
-                position="requires transparency",
-                chunk_id="c1",
-                supporting_text="text a",
-            ),
-            FrameworkPositionRaw(
-                framework="UNESCO",
-                position="emphasizes ethics",
-                chunk_id="c2",
-                supporting_text="text b",
-            ),
-        ]
-        evidence = [
-            RetrievedEvidence(
-                chunk_id="c1",
-                text="text a",
-                source_framework="OECD AI Principles",
-                similarity_score=0.8,
-            ),
-            RetrievedEvidence(
-                chunk_id="c2", text="text b", source_framework="UNESCO", similarity_score=0.8
-            ),
-        ]
-        result = build_framework_synthesis(positions, evidence)
-        assert "OECD AI Principles" in result
-        assert "UNESCO" in result
-
-    def test_duplicate_frameworks_deduplicated(self):
-        from src.models import FrameworkPositionRaw
-
-        positions = [
-            FrameworkPositionRaw(
-                framework="OECD AI Principles",
-                position="requires transparency",
-                chunk_id="c1",
-                supporting_text="text a",
-            ),
-            FrameworkPositionRaw(
-                framework="OECD AI Principles",
-                position="also requires accountability",
-                chunk_id="c2",
-                supporting_text="text b",
-            ),
-        ]
-        evidence = [
-            RetrievedEvidence(
-                chunk_id="c1",
-                text="text a",
-                source_framework="OECD AI Principles",
-                similarity_score=0.8,
-            ),
-            RetrievedEvidence(
-                chunk_id="c2",
-                text="text b",
-                source_framework="OECD AI Principles",
-                similarity_score=0.8,
-            ),
-        ]
-        result = build_framework_synthesis(positions, evidence)
-        assert len(result.split("|")) == 1
 
 
 class TestCoveredSynthesisFallback:

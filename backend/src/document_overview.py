@@ -406,17 +406,56 @@ _FULL_ANALYSIS_MARKERS = re.compile(
 )
 
 
+# The user's OWN document or country as the subject of the question.
+_SELF_REFERENCE = re.compile(
+    r"\b(this|these|it|its|our|my|the (document|policy|strategy|guidelines?|bill|pdf|file|"
+    r"paper|country|upload(ed)?( document| file| pdf)?))\b",
+    re.IGNORECASE,
+)
+# A reference instrument as the subject. "How does the OECD compare with
+# UNESCO?" and "what does NIST recommend as best practice?" are questions about
+# the knowledge base — exactly what the Auditor advertises — not requests to
+# score anything.
+_REFERENCE_INSTRUMENT = re.compile(
+    r"\b(oecd|unesco|nist|eu ai act|ai act|gdpr|g7|hiroshima|asean|african union|"
+    r"united nations|un|undp|iso|ieee|council of europe|singapore|frameworks?|"
+    r"principles|recommendation|guidance|rmf)\b",
+    re.IGNORECASE,
+)
+# Standards vocabulary is ordinary governance language ("what is best practice
+# for human oversight?"); it only means "grade my document" when the document is
+# the subject.
+_STANDARDS_ONLY = re.compile(
+    r"\b(best practices?|international (standard|standards|practice|norms|benchmark)|"
+    r"global (standard|standards|norms))\b",
+    re.IGNORECASE,
+)
+
+
 def needs_full_analysis(message: str) -> bool:
     """Is this a question only a scored analysis run can honestly answer?
 
-    Comparison against a framework, prescriptive improvement advice, and
-    implementation planning all require the per-dimension verdicts, the
-    normative-force grading and the mechanism breakdown that the analysis
-    pipeline produces. Chat has none of those, so it points at the pipeline
-    rather than improvising a shallow version of its output.
+    Comparing the user's document against a framework, prescriptive
+    improvement advice, and implementation planning all require the
+    per-dimension verdicts, the normative-force grading and the mechanism
+    breakdown that the analysis pipeline produces. Chat has none of those, so
+    it points at the pipeline rather than improvising a shallow version of it.
+
+    Questions ABOUT the reference instruments are answered, not referred:
+    matching the scoring vocabulary alone sent "how does the OECD compare with
+    UNESCO?" and "penalties against providers under the EU AI Act" to a
+    referral, blocking the framework comparisons the Auditor offers.
     """
     normalized = (message or "").strip().lower()
-    return bool(normalized and _FULL_ANALYSIS_MARKERS.search(normalized))
+    match = normalized and _FULL_ANALYSIS_MARKERS.search(normalized)
+    if not match:
+        return False
+    about_self = bool(_SELF_REFERENCE.search(normalized))
+    if about_self:
+        return True
+    if _STANDARDS_ONLY.fullmatch(match.group(0).strip()):
+        return False
+    return not _REFERENCE_INSTRUMENT.search(normalized)
 
 
 def is_document_specific_question(message: str) -> bool:

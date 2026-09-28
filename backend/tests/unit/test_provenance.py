@@ -162,7 +162,7 @@ class TestRenderedLines:
         joined = "\n".join(lines)
 
         for expected in (
-            "Generated:",
+            "Analysis generated:",
             "Mode:",
             "Language model:",
             "Language-model calls:",
@@ -176,3 +176,15 @@ class TestRenderedLines:
 
     def test_empty_provenance_renders_nothing(self):
         assert render_provenance_lines({}) == []
+
+    def test_an_older_record_names_the_model_not_a_dict(self):
+        # Runs stored before the fix recorded {"provider": ..., "tier": ...}
+        # here, and the export printed the dict.
+        lines = render_provenance_lines(
+            {"llm_model": {"provider": "gemini-3.5-flash", "tier": "primary"}}
+        )
+        assert "Language model: gemini-3.5-flash" in lines
+
+    def test_the_brief_model_is_named_when_recorded(self):
+        lines = render_provenance_lines({"llm_model": "m", "brief_llm_model": "gemini-x"})
+        assert "Brief narrative written by: gemini-x" in lines

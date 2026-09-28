@@ -106,6 +106,13 @@ def build_dimension_digest(gaps: list[dict[str, Any]]) -> str:
         m1 = g.get("module_1") or {}
         if m1.get("implementation_depth"):
             lines.append(f"  Implementation depth: {m1['implementation_depth']}")
+        # What the verdict rests on, and what is missing, so the summary can
+        # say what kind of instrument this is from counts rather than guess.
+        if g.get("evidence_confidence_reason"):
+            lines.append(f"  Evidence: {g['evidence_confidence_reason']}")
+        missing = _absent_mechanisms(g)[:3]
+        if missing:
+            lines.append("  Mechanisms not established: " + "; ".join(missing))
         m2 = g.get("module_2") or {}
         if m2.get("priority"):
             lines.append(f"  Priority: {m2['priority']}")
@@ -122,7 +129,9 @@ def build_dimension_digest(gaps: list[dict[str, Any]]) -> str:
                 for o in opps[:2]:
                     lines.append(f"    - {o}")
         if g.get("analysis_error"):
-            lines.append(f"  [Not analysed — {str(g['analysis_error'])[:100]}]")
+            # Never the provider's error: the model restates this digest, and
+            # "API keys exhausted" has no business in a ministry's brief.
+            lines.append("  [Not assessed on this run — no finding either way]")
     return "\n".join(lines) if lines else "(no dimension results available)"
 
 
@@ -143,6 +152,17 @@ def build_brief_prompt(
             f"{decision.get('partial', 0)} Partial, "
             f"{decision.get('missing', 0)} Missing"
         )
+        if decision.get("implementation_depth_index") is not None:
+            parts.append(
+                f"Implementation depth index (force, 0-100): "
+                f"{decision['implementation_depth_index']}"
+            )
+        if decision.get("mechanisms_total"):
+            parts.append(
+                f"Mechanism breadth: {decision.get('mechanisms_met', 0)} of "
+                f"{decision['mechanisms_total']} expected mechanisms present; "
+                f"{decision.get('mechanisms_binding', 0)} of those carried by a binding duty"
+            )
         strongest = decision.get("strongest_dimension")
         if strongest:
             parts.append(f"Strongest dimension: {strongest}")
@@ -191,7 +211,7 @@ def build_risk_overview(
     priority_dims.sort(key=lambda x: PRIORITY_RANK.get(x[1], 9))
     high_priority_dimensions = [d for d, _ in priority_dims]
 
-    assessed = len(gaps)
+    assessed = sum(1 for g in gaps if not g.get("analysis_error"))
     para = (
         f"The analysis assessed {assessed} dimension(s). Risk distribution: "
         f"{distribution['High']} High, {distribution['Medium']} Medium, "
@@ -266,10 +286,9 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
                     "dimension": g.get("dimension", ""),
                     "coverage": "Not assessed",
                     "depth": "",
-                    "basis": "This dimension could not be analysed (provider or quota error). "
+                    "basis": "This dimension could not be assessed on this run. "
                     "It is not a finding about the document.",
                     "absent_mechanisms": [],
-                    "confidence": None,
                 }
             )
             continue
@@ -287,27 +306,57 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
                     "", (g.get("risk_basis") or g.get("coverage_reasoning") or "")
                 ).strip(),
                 "absent_mechanisms": _absent_mechanisms(g),
-                "confidence": g.get("confidence_score"),
             }
         )
     return rows
 
 
-_ABSENT_RE = re.compile(r"[Nn]ot addressed:\s*([^.]+)\.")
+# Stripped from the basis prose because the same list is rendered as its own
+# line. Three wordings, one per generation of the mechanism summary.
+_ABSENT_RE = re.compile(
+    r"(?:[Nn]ot addressed|[Nn]ot established|Absent mechanisms include):\s*([^.]+)\."
+)
 
 
 def _absent_mechanisms(gap: dict[str, Any]) -> list[str]:
-    """Pull the named absent mechanisms out of the coverage reasoning.
+    """The mechanisms the dimension lacks, most widely expected first.
 
-    They are written there deterministically by MechanismCoverage.summary()
-    ("... Not addressed: carbon disclosure, e-waste / hardware lifecycle."),
-    so parsing them back is reading our own output, not interpreting the LLM's.
+    Read from the structured fields the analysis stores, not parsed back out
+    of prose. The prose parser matched "Not addressed:", which the mechanism
+    summary stopped writing when it moved to naming each gap with how many
+    reference instruments expect it — after which the brief showed absent
+    mechanisms for 20 of the 42 dimensions that had them. Japan's Privacy,
+    missing data minimisation, purpose limitation and data subject rights,
+    printed nothing.
+
+    Every absent mechanism is listed, because each is a fact about the
+    document. The count is attached only where the instruments broadly agree
+    (framework_salience.PRIORITY_FLOOR), for the reason given there: "expected
+    by 4 of 43" beside a real gap reads as an argument against fixing it.
     """
-    for field in ("risk_basis", "coverage_reasoning"):
-        m = _ABSENT_RE.search(str(gap.get(field) or ""))
-        if m:
-            return [x.strip() for x in m.group(1).split(",") if x.strip()]
-    return []
+    absent = list(gap.get("mechanisms_absent") or [])
+    if not absent:
+        for field in ("risk_basis", "coverage_reasoning"):
+            m = _ABSENT_RE.search(str(gap.get(field) or ""))
+            if m:
+                return [x.strip() for x in m.group(1).split(",") if x.strip()]
+        return []
+
+    # priority_gaps holds exactly the consensus mechanisms, already ranked and
+    # counted when the analysis ran, so the brief needs no corpus access of
+    # its own: those lead with their count, the rest follow as stored.
+    corpus = gap.get("framework_corpus_size") or 0
+    ranked = [
+        (r["mechanism"], r.get("expected_by", 0))
+        for r in gap.get("priority_gaps") or []
+        if r.get("mechanism") in absent
+    ]
+    counted = {name for name, _ in ranked}
+    out = [
+        f"{name} (expected by {n} of {corpus} reference instruments)" if corpus and n else name
+        for name, n in ranked
+    ]
+    return out + [name for name in absent if name not in counted]
 
 
 def build_implementation_roadmap(gaps: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -360,14 +409,42 @@ def build_implementation_roadmap(gaps: list[dict[str, Any]]) -> list[dict[str, A
     return out
 
 
-def build_evidence_base(gaps: list[dict[str, Any]]) -> dict[str, Any]:
+def _evidence_source(e: dict[str, Any]) -> str:
+    """ "<document>, p. N" for a quote, so a reader can find it."""
+    name = re.sub(r"\.pdf$", "", str(e.get("document_name") or ""), flags=re.IGNORECASE)
+    page = str(e.get("page_number") or "").strip()
+    return f"{name}, p. {page}" if name and page and page != "None" else name
+
+
+def format_evidence_quote(q: dict[str, str]) -> str:
+    """One evidence-base line, identical in every rendering of the brief."""
+    source = f" ({q['source']})" if q.get("source") else ""
+    return f"{q['dimension']} — \u201c{q['quote']}\u201d{source}"
+
+
+def build_evidence_base(
+    gaps: list[dict[str, Any]], documents: list[str] | None = None
+) -> dict[str, Any]:
     """What the assessment actually rests on.
 
     A brief that reports verdicts without showing the evidence asks to be
     taken on trust. These counts and quotes come from citations that already
     passed verification against their source chunk, so nothing here is a new
     claim — it is the existing evidence chain, surfaced.
+
+    Quotes are drawn from the assessed document(s) only, each with its page.
+    A dimension's evidence also holds the framework passages it was compared
+    against, and printing one of those unlabelled under a country's
+    dimension presented a UNESCO sentence as that country's own text.
     """
+    evaluated = set(documents or [])
+
+    def _from_document(e: dict[str, Any]) -> bool:
+        name = e.get("document_name") or ""
+        # Stored runs name each evaluated document; for a record without that
+        # list, a document chunk is the one whose source is its own file.
+        return bool(name) and (name in evaluated or name == e.get("source_framework"))
+
     total = verified = 0
     quotes: list[dict[str, str]] = []
     for g in gaps:
@@ -380,17 +457,21 @@ def build_evidence_base(gaps: list[dict[str, Any]]) -> dict[str, Any]:
         # substantive, and short fragments read as filler in a brief).
         if g.get("coverage") in ("Partial", "Missing") and not g.get("analysis_error"):
             candidates = [
-                (e.get("text") or e.get("quote") or "").strip()
+                e
                 for e in (g.get("evidence") or [])
                 if e.get("verified")
+                and _from_document(e)
+                and len((e.get("text") or e.get("quote") or "").strip()) > 80
             ]
-            candidates = [c for c in candidates if len(c) > 80]
             if candidates:
-                best = max(candidates, key=len)
+                best = max(candidates, key=lambda e: len(e.get("text") or e.get("quote") or ""))
                 quotes.append(
                     {
                         "dimension": g.get("dimension", ""),
-                        "quote": " ".join(best.split())[:320],
+                        "quote": " ".join((best.get("text") or best.get("quote") or "").split())[
+                            :320
+                        ],
+                        "source": _evidence_source(best),
                     }
                 )
     return {
@@ -437,6 +518,7 @@ def assemble_brief(
     synthesis: BriefSynthesis,
     decision_analytics: dict[str, Any] | None,
     generated_at: str | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compose the full structured brief from LLM narrative + deterministic
     sections. This exact dict is what gets persisted (reports.meta) and what
@@ -465,7 +547,7 @@ def assemble_brief(
     precedent = build_relevant_precedent(gaps)
     dimension_assessment = build_dimension_assessment(gaps)
     implementation_roadmap = build_implementation_roadmap(gaps)
-    evidence_base = build_evidence_base(gaps)
+    evidence_base = build_evidence_base(gaps, documents)
     scope_and_methodology = build_scope_and_methodology(
         scope_disclaimer=scope_disclaimer,
         frameworks_used=frameworks_used,
@@ -512,6 +594,9 @@ def assemble_brief(
         # Deterministic analytics for dashboards / research (same shape as
         # decision_analytics so downstream consumers can reuse it).
         "decision_analytics": decision_analytics or {},
+        # What produced the analysis this brief summarises, plus the model
+        # that wrote the brief's narrative. Rendered in both exports.
+        "provenance": provenance or {},
     }
 
 
@@ -526,6 +611,7 @@ def generate_brief(
     scope_disclaimer: str,
     gaps: list[dict[str, Any]],
     decision_analytics: dict[str, Any] | None = None,
+    analysis_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the ONE synthesis call and assemble the brief.
 
@@ -559,6 +645,7 @@ def generate_brief(
         gaps=gaps,
         synthesis=synthesis,
         decision_analytics=decision_analytics,
+        provenance={**(analysis_provenance or {}), "brief_llm_model": provider.model_name},
     )
 
     logger.info(
@@ -655,7 +742,7 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
             "were verified against their source passage."
         )
         for q in ev.get("representative_quotes") or []:
-            lines.append(f'- **{q["dimension"]}** — "{q["quote"]}"')
+            lines.append(f"- {format_evidence_quote(q)}")
 
     if s.get("relevant_precedent"):
         lines.append("")

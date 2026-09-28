@@ -109,7 +109,7 @@ class TestRegionalRouting:
         assert "AU" in resolve_regions("Cote d'Ivoire")
 
     def test_non_region_country_gets_no_regional_frameworks(self):
-        for country in ["India", "United States", "Brazil", "Japan", ""]:
+        for country in ["India", "United States", "Uruguay", "Japan", ""]:
             frameworks = resolve_frameworks("Transparency", country=country)
             assert "ASEAN Guide on AI Governance and Ethics" not in frameworks
             assert "African Union Continental AI Strategy" not in frameworks
@@ -136,7 +136,7 @@ class TestRegionalRouting:
         assert "ASEAN Guide on AI Governance and Ethics" in resolve_regional_frameworks("Singapore")
 
     def test_no_region_means_no_regional_frameworks(self):
-        for country in ["India", "United States", "Brazil", ""]:
+        for country in ["India", "United States", "Uruguay", ""]:
             assert resolve_regional_frameworks(country=country) == []
 
 

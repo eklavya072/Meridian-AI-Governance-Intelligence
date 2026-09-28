@@ -7,6 +7,7 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
@@ -15,10 +16,10 @@ from pydantic import BaseModel, Field
 
 from src import analysis_prompts
 from src.consistency import (
-    LADDER_RAISE_REVIEW_THRESHOLD,
+    GAP_ASSERTION_THRESHOLD,
     ConsistencyValidator,
     detect_covered_synthesis_drift,
-    detect_ladder_raise_contradiction,
+    detect_gap_assertions,
 )
 from src.deterministic import (
     NAMED_BODY_KEYWORDS,
@@ -26,14 +27,8 @@ from src.deterministic import (
     _has_keyword,
     _sentence_has_core_term,
     _split_sentences,
-    compute_implementation_depth,
     is_low_information_fragment,
-    plain_language_ladder_note,
     text_contains_mechanism,
-    validate_coverage_deterministic,
-)
-from src.deterministic import (
-    _split_sentences as _split_sentences_for_cache,
 )
 from src.evidence_agreement import analyze_evidence_agreement, compute_evidence_agreement_score
 from src.evidence_strength import (
@@ -59,6 +54,7 @@ from src.grading import (
 )
 from src.grading import build_provision_profile as build_provision_profile
 from src.llm_provider import LLMProvider
+from src.mechanism_adjudication import adjudicate_batch
 from src.models import (
     BestPractices,
     CalibratedConfidence,
@@ -78,7 +74,7 @@ from src.models import (
     RetrievedEvidence,
     RiskLevel,
 )
-from src.provider_router import generate_with_retry, get_provider, print_debug_summary
+from src.provider_router import generate_with_retry, get_provider, log_run_summary
 from src.retrieval import Module34RetrievalResult, ModuleRetrievalResult, RetrievalPipeline
 from src.utils import strip_chunk_id_citations
 from src.vectorstore import VectorStore
@@ -95,26 +91,44 @@ from src.verify import (
 # selection, so 8 workers spread across 4 keys use all the keys' headroom
 # (default 8 in flight, env-tunable) without ever exceeding one key's
 # free-tier ceiling.
-ANALYSIS_MAX_CONCURRENCY = int(os.getenv("ANALYSIS_MAX_CONCURRENCY", "8"))
+ANALYSIS_MAX_CONCURRENCY = int(os.getenv("ANALYSIS_MAX_CONCURRENCY", "3"))
 
-# Semantic dimension-relevance threshold for the deterministic ladder's
-# pluggable gate. A chunk admitted ONLY by semantic equivalence (embedding
-# similarity to the dimension's definition/aspects above this bar) still
-# needs commitment/obligation language inside it to fire R1/R2, so the bar
-# controls recall (terminology-miss recall) while the combined gate controls
-# precision (off-topic chunks stay inert). Model-dependent; env-tunable.
-DIMENSION_RELEVANCE_THRESHOLD = float(os.getenv("DIMENSION_RELEVANCE_THRESHOLD", "0.42"))
+#: One Module 3+4 request for every gapped dimension of a run instead of one
+#: each, after the workspace-wide mechanism check. Same prompts per dimension,
+#: same handling of every answer; see _analyze_pending_batched.
+BATCH_LLM_CALLS = os.getenv("BATCH_LLM_CALLS", "1").strip().lower() not in ("0", "false", "no")
+#: Module 1+2 in one shared request too. Off by default: measured on the first
+#: full batch (Rwanda, 26 Sep), a dimension sharing a reply cited about a third
+#: fewer passages than it does on its own — 4.0 / 3.0 / 3.0 per Covered /
+#: Partial / Missing cell against 5.6 / 5.2 / 4.0 — and an instruction to cite
+#: in full did not bring them back. On, a run costs 3 requests; off, about 10.
+BATCH_EVALUATION = os.getenv("BATCH_EVALUATION", "0").strip().lower() in ("1", "true", "yes")
 
-# Substantive-specificity threshold for the ladder's ANTI-FALSE-POSITIVE
-# gate. The relevance gate (0.42) admits any chunk whose meaning overlaps
-# the dimension — including PROCEEDURAL authority provisions ("the Minister
-# may approve/support AI data centres", "shall promote measures to
-# facilitate the production, collection, management, distribution,
-# utilization of learning data") that pass relevance but impose no
-# dimension-specific governance requirement. The substantive gate requires
-# the chunk's mechanism-bearing SENTENCES to be semantically close to the
-# dimension's profile above this higher bar, so procedural authority never
-# fires R1/R2 ("procedural authority ≠ substantive governance mechanism").
+
+def evaluation_mode() -> str:
+    """How Module 1+2 is asked on this run: in a shared reply or one per dimension.
+
+    Recorded with every cached dimension, because the two cite differently and a
+    resumed run must not stitch one kind of answer to the other.
+    """
+    return "shared" if BATCH_LLM_CALLS and BATCH_EVALUATION else "per_dimension"
+
+
+#: Output room for a batched reply: the 8,192 tokens a single call is given,
+#: once for each of eight dimensions. That is also the model's own ceiling
+#: (65,536), and anything lower would leave a dimension less room in a batch
+#: than it had on its own.
+BATCH_MAX_OUTPUT_TOKENS = int(os.getenv("BATCH_MAX_OUTPUT_TOKENS", "65536"))
+
+# Substantive-specificity threshold for auto-attached citations. Keyword
+# relevance admits PROCEDURAL authority provisions too ("the Minister may
+# approve/support AI data centres", "shall promote measures to facilitate the
+# production, collection, management, distribution, utilization of learning
+# data"), which touch a dimension without imposing anything on it. The gate
+# requires a chunk's mechanism-bearing SENTENCES to sit semantically close to
+# the dimension's profile above this bar before the chunk can be attached as a
+# requirement citation ("procedural authority ≠ substantive governance
+# mechanism").
 # Calibrated against BAAI/bge-small-en-v1.5 on the Korean AI Basic Act
 # passages: genuine dimension mechanisms score 0.64-0.80 against their
 # dimension's aspects, procedural provisions 0.48-0.59 — a clean split at
@@ -188,6 +202,67 @@ def _cosine_sim(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
+def _reply_was_malformed(exc: BaseException) -> bool:
+    """Whether the model answered but its reply did not fit the schema."""
+    from pydantic import ValidationError
+
+    seen: BaseException | None = exc
+    while seen is not None:
+        if isinstance(seen, ValidationError):
+            return True
+        seen = seen.__cause__
+    return False
+
+
+def _split_can_help(exc: BaseException) -> bool:
+    """Whether a smaller request could succeed where this batch failed.
+
+    Only when the reply itself was the trouble: malformed, cut short, or out
+    of time. An overloaded model, a spent quota or a dropped connection fails
+    a half exactly as it failed the whole, and the provider counts every
+    attempt against the day's allowance, answered or not — on 24 Sep an
+    outage spent all 100 of five keys' requests for 15 answers, splitting
+    503-refused batches into more 503-refused halves.
+    """
+    from pydantic import ValidationError
+
+    seen: BaseException | None = exc
+    while seen is not None:
+        if isinstance(seen, ValidationError):
+            return True
+        if "timeout" in type(seen).__name__.lower() or "timed out" in str(seen).lower():
+            return True
+        seen = seen.__cause__
+    return False
+
+
+@dataclass
+class _DimensionCall:
+    """One dimension's Module 1+2 request, and what its answer is read against."""
+
+    dimension: str
+    retrieval: Any
+    determined: dict[str, Any] | None
+    workspace_id: str
+    dimension_definition: str
+    system_prompt: str
+    prompt: str
+
+
+@dataclass
+class _Module34Call:
+    """One gapped dimension's Module 3+4 request, and the gap its answer fills."""
+
+    dimension: str
+    gap: Any
+    retrieval: Any
+    workspace_id: str
+    dimension_definition: str
+    dimension_verdict: str
+    system_prompt: str
+    prompt: str
+
+
 class _DimensionRunState:
     """Thread-shared mutable state for the bounded-parallel dimension loop.
 
@@ -203,6 +278,7 @@ class _DimensionRunState:
         self.all_retrieved: list[dict[str, Any]] = []
         self.doc_chunks_per_dimension: dict[str, int] = {}
         self.llm_call_count = 0
+        self.module34_call_count = 0
         self.total_llm_latency = 0.0
 
 
@@ -224,7 +300,6 @@ class _DimensionRunState:
 _MODULE2_AGENCY_SKIP = {
     "the",
     "and",
-    "india",
     "task",
     "phase",
     "step",
@@ -548,8 +623,6 @@ DIMENSION_CLUSTERS = [
     {"Human Autonomy", "Environmental Sustainability"},
 ]
 
-COVERAGE_RANK = {"Covered": 0, "Partial": 1, "Missing": 2}
-
 # Fully Covered tier: fixed opening line for the Best Practices block.
 # Code-emitted (deterministic), never LLM-written.
 BEST_PRACTICES_OPENING = (
@@ -558,8 +631,6 @@ BEST_PRACTICES_OPENING = (
     "strengthen future revisions, but no critical governance gaps were "
     "identified."
 )
-
-DOC_RETRIEVE_K = int(os.getenv("DOC_RETRIEVE_K", "15"))
 
 # Sentinel the combined prompt instructs the model to emit when no context
 # line supports a citation. It is an explicit "no citation" state — never a
@@ -585,7 +656,6 @@ class GapAnalysisResult(BaseModel):
     governance_gaps: list[GovernanceGap]
     summary: str
     total_retrieved: int
-    retrieval_frameworks: list[str]
     similarity_scores: list[float]
     llm_latency: float = 0.0
     total_processing_time: float = 0.0
@@ -672,35 +742,11 @@ DEPTH_STAGE_SCORE = {
 }
 
 
-# ── Implementation depth: stage, modulated by how much of the dimension it
-#    actually reaches ───────────────────────────────────────────────────────
-#
-# The stage above answers "how far has the STRONGEST thread of this dimension
-# been built out". That is not the same question as "how deeply is this
-# dimension implemented", and the index was reporting the first under the name
-# of the second.
-#
-# The gap is visible in the stored corpus rather than hypothetical. Japan's
-# Privacy scored Operationalized — 78 of 100 — while providing ONE of the seven
-# privacy mechanisms the reference frameworks expect. Kenya's Fairness likewise:
-# Operationalized on 1 of 5. Six of seven mechanisms entirely absent is not 78%
-# of an implemented dimension by any reading, and no averaging over dimensions
-# fixes it, because the error is inside the per-dimension number.
-#
-# So depth = stage_score * (FLOOR + (1 - FLOOR) * breadth), where breadth is the
-# share of the dimension's mechanisms the document addresses at all.
-#
-# Why a FLOOR rather than plain multiplication. Straight stage*breadth pays
-# Japan's Privacy 78 * 1/7 = 11.1, which asserts that a binding,
-# enforcement-backed privacy duty is worth almost nothing because it stands
-# alone. It is narrow, not absent, and the evidence for the stage is real.
-#
-# Why 0.5 specifically, and why this is not a fitted constant. Two things are
-# being combined: that the stage was genuinely reached (evidenced by binding
-# duties, an owner, machinery) and how much of the dimension that reaches.
-# Absent any evidence for preferring one over the other, equal weight is the
-# neutral split. 0.5 is that split, chosen before looking at what it does to
-# any country's score, and deliberately NOT tuned afterwards — tuning it
+# Depth and breadth are deliberately NOT combined into one number. A version
+# that scaled each stage score by the share of mechanisms addressed was
+# considered and not adopted; breadth is reported as its own index (see
+# compute_decision_analytics) so a narrow statute that binds hard and a broad
+# strategy that binds nobody stay distinguishable.
 # Reverse map: rank → stage label, for weakest-dimension staging.
 RANK_TO_LABEL = {rank: stage.value for stage, rank in DEPTH_RANK.items()}
 
@@ -801,21 +847,6 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
         )
         strongest_dimension = strongest.dimension
 
-    # ── Synthesis-drift review flags ───────────────────────────────────
-    # Dimensions auto-downgraded from Covered to Partial because their own
-    # framework_synthesis used gap-filling language. Consumers (frontend,
-    # executive summary, dashboards) should surface these as "review" states,
-    # not as ordinary Partial findings.
-    drift_downgraded = [g.dimension for g in gaps if g.synthesis_drift_downgraded]
-
-    # ── Ladder-raise review flags ─────────────────────────────────────
-    # Dimensions whose verdict was raised by the deterministic ladder
-    # (R1/R2) against the model's own coverage_reasoning (reasoning lists
-    # explicit gaps yet the raised verdict says Covered/Partial). Consumers
-    # should surface these as review states — the ladder's override is held
-    # to the same consistency discipline as LLM output.
-    ladder_raise_review = [g.dimension for g in gaps if g.ladder_raise_review_flag]
-
     avg_confidence = (
         round(sum(g.confidence_score for g in assessed) / len(assessed), 3) if assessed else 0.0
     )
@@ -837,10 +868,6 @@ def compute_decision_analytics(gaps: list[GovernanceGap]) -> dict[str, Any]:
         "average_confidence": avg_confidence,
         "highest_priority_dimensions": highest_priority_dimensions,
         "strongest_dimension": strongest_dimension,
-        "synthesis_drift_downgraded": drift_downgraded,
-        "synthesis_drift_downgraded_count": len(drift_downgraded),
-        "ladder_raise_review": ladder_raise_review,
-        "ladder_raise_review_count": len(ladder_raise_review),
     }
 
 
@@ -1010,7 +1037,7 @@ def compute_risk(
     original wording is kept, so the degenerate paths still read sensibly.
     """
     if coverage == CoverageLevel.INSUFFICIENT_EVIDENCE:
-        return RiskLevel.INSUFFICIENT_EVIDENCE, "Insufficient evidence from reference frameworks."
+        return RiskLevel.INSUFFICIENT_EVIDENCE, "Too little evidence to assess this dimension."
 
     is_core = dimension in CORE_DIMENSIONS
 
@@ -1200,43 +1227,6 @@ def estimate_phase_timelines(
     return out
 
 
-def build_framework_synthesis(
-    framework_positions: list[Any],
-    evidence_list: list[RetrievedEvidence],
-) -> str:
-    if not framework_positions:
-        return ""
-
-    seen_frameworks: set[str] = set()
-    valid_positions = []
-    for fp in framework_positions:
-        fw = fp.framework if not isinstance(fp, dict) else fp.get("framework", "")
-        chunk_id = fp.chunk_id if not isinstance(fp, dict) else fp.get("chunk_id", "")
-        pos = fp.position if not isinstance(fp, dict) else fp.get("position", "")
-        supporting = (
-            fp.supporting_text if not isinstance(fp, dict) else fp.get("supporting_text", "")
-        )
-        if fw in seen_frameworks:
-            continue
-        has_chunk = any(e.chunk_id == chunk_id for e in evidence_list)
-        if not has_chunk:
-            continue
-        seen_frameworks.add(fw)
-        valid_positions.append((fw, pos, supporting))
-
-    if not valid_positions:
-        return ""
-
-    parts: list[str] = []
-    for fw, pos, supporting in valid_positions:
-        part = f"{fw}: {pos}"
-        if supporting:
-            part += f' ("{supporting}")'
-        parts.append(part)
-
-    return " | ".join(parts)
-
-
 class GapAnalyzer:
     def __init__(
         self,
@@ -1257,6 +1247,11 @@ class GapAnalyzer:
             chunk_id: str
             quote: str
             page_number: int | None = None
+            # What this passage establishes for the dimension. The response is
+            # schema-constrained, so a field absent HERE is stripped however
+            # firmly the prompt asks for it — which is why `claim` came back
+            # empty on all 168 citations after the prompt was updated.
+            claim: str = ""
 
         class InternationalExampleSchema(BaseModel):
             practice: str
@@ -1264,6 +1259,10 @@ class GapAnalyzer:
             chunk_id: str
             quote: str
             page_number: int | None = None
+            # How the example relates to what THIS document already does. The
+            # prompt has asked for it all along; without the field the schema
+            # discarded every answer, the failure recorded for `claim` too.
+            alignment: str = ""
 
         class FrameworkSynthesisSchema(BaseModel):
             # Structured synthesis — Consensus / Differences / Overall
@@ -1348,7 +1347,7 @@ class GapAnalyzer:
 
         # Extract the practice metadata, then run the chunk/quote pairs
         # through the same verification path as every other citation.
-        pairs: list[tuple[str, str, dict[str, Any]]] = []
+        pairs: list[tuple[str, str, str, dict[str, Any]]] = []
         citation_dicts: list[dict[str, Any]] = []
         for ex in examples:
             if isinstance(ex, dict):
@@ -1357,12 +1356,14 @@ class GapAnalyzer:
                 chunk_id = ex.get("chunk_id", "") or ""
                 quote = ex.get("quote", "") or ""
                 page = ex.get("page_number")
+                alignment = ex.get("alignment", "") or ""
             else:
                 practice = getattr(ex, "practice", "") or ""
                 country = getattr(ex, "country_or_source", "") or ""
                 chunk_id = getattr(ex, "chunk_id", "") or ""
                 quote = getattr(ex, "quote", "") or ""
                 page = getattr(ex, "page_number", None)
+                alignment = getattr(ex, "alignment", "") or ""
 
             if not practice.strip():
                 continue
@@ -1373,12 +1374,17 @@ class GapAnalyzer:
             if label_map and chunk_id in label_map:
                 chunk_id = label_map[chunk_id]
             pairs.append(
-                (practice, country, {"chunk_id": chunk_id, "quote": quote, "page_number": page})
+                (
+                    practice,
+                    country,
+                    alignment,
+                    {"chunk_id": chunk_id, "quote": quote, "page_number": page},
+                )
             )
             citation_dicts.append({"chunk_id": chunk_id, "quote": quote, "page_number": page})
 
         citations = self._verify_module_citations(citation_dicts, source_type="framework")
-        for (practice, country, _raw), citation in zip(pairs, citations):
+        for (practice, country, alignment, _raw), citation in zip(pairs, citations, strict=True):
             # Drop sentinel / empty / nonexistent-chunk entries — the model
             # declined or fabricated; neither may surface as a real practice.
             # NOTE: _verify_module_citations keeps the chunk_id on missing
@@ -1392,6 +1398,7 @@ class GapAnalyzer:
                     practice=practice.strip(),
                     country_or_source=country.strip(),
                     reference=citation.source,
+                    alignment=alignment.strip(),
                     citation=citation,
                 )
             )
@@ -1448,7 +1455,10 @@ class GapAnalyzer:
                         source=default_source,
                         source_type=source_type,
                         verified=False,
-                        verification={"passed": False, "failure_reason": "No chunk_id provided."},
+                        verification={
+                            "passed": False,
+                            "failure_reason": "The analysis quoted this without saying where it came from.",
+                        },
                     )
                 )
                 continue
@@ -1464,7 +1474,7 @@ class GapAnalyzer:
                         verified=False,
                         verification={
                             "passed": False,
-                            "failure_reason": "Chunk does not exist in vector store.",
+                            "failure_reason": "The cited passage could not be found in the indexed documents.",
                         },
                     )
                 )
@@ -1527,7 +1537,7 @@ class GapAnalyzer:
           - source guard: a fallback chunk without a real framework name is
             skipped, so "Source: Unknown" can never appear on a citation.
           - dimension grounding: a fallback chunk must be topically about the
-            given dimension (shared ladder check), so a passage with broad
+            given dimension (shared keyword check), so a passage with broad
             generic embedding similarity can never become a requirement
             citation for an unrelated dimension.
           - definitional/glossary exclusion: a definitions section ("terms
@@ -1540,8 +1550,7 @@ class GapAnalyzer:
             boilerplate are not requirement evidence.
           - substantive grounding: when semantic signal is available, the
             chunk must also be substantively about the dimension's
-            operational content (same substantive-specificity gate as the
-            primary ladder path, SUBSTANTIVE_RELEVANCE_THRESHOLD).
+            operational content (SUBSTANTIVE_RELEVANCE_THRESHOLD).
         """
         # A no_citation entry is the model honestly declining to fabricate —
         # it should NOT satisfy the minimum-citation guarantee. Only real
@@ -1549,7 +1558,7 @@ class GapAnalyzer:
         # the placeholders with deterministic requirement citations instead.
         if any(not c.no_citation for c in citations):
             return citations
-        # Substantive gate (mirrors the ladder): built once per call, falls
+        # Substantive gate: built once per call, falls
         # back to keyword-only when no semantic machinery is available.
         subst_gate = None
         try:
@@ -1610,7 +1619,7 @@ class GapAnalyzer:
             # become a requirement citation for an unrelated dimension.
             if dimension and not _chunk_matches_dimension(full_text, dimension):
                 continue
-            # Substantive grounding (anti-false-positive, mirrors the ladder):
+            # Substantive grounding (anti-false-positive):
             # relevance is recall, substance is precision.
             if dimension and subst_gate is not None and not subst_gate(full_text, dimension):
                 logger.info(
@@ -1635,7 +1644,10 @@ class GapAnalyzer:
                     verification={
                         "passed": False,
                         "method": "deterministic_fallback",
-                        "failure_reason": "Auto-attached requirement citation — passage copied from the top retrieved chunk (not LLM-grounded).",
+                        "failure_reason": (
+                            "Added as the most relevant passage for this requirement; "
+                            "the analysis did not quote it itself."
+                        ),
                     },
                 )
             )
@@ -1704,7 +1716,7 @@ class GapAnalyzer:
             kept.append(c)
             real_kept += 1
 
-        # Substantive gate (mirrors the ladder): built once per call, falls
+        # Substantive gate: built once per call, falls
         # back to keyword-only when no semantic machinery is available.
         subst_gate = None
         try:
@@ -1762,7 +1774,7 @@ class GapAnalyzer:
             # dimension (checked on the full truncated text, not the quote).
             if dimension and not _chunk_matches_dimension(full_text, dimension):
                 continue
-            # Substantive grounding (same gate as the ladder): the chunk must
+            # Substantive grounding: the chunk must
             # be substantively about the dimension's operational content, not
             # merely keyword-topical.
             if dimension and subst_gate is not None and not subst_gate(full_text, dimension):
@@ -1796,8 +1808,8 @@ class GapAnalyzer:
                         "passed": False,
                         "method": "deterministic_fallback",
                         "failure_reason": (
-                            "Auto-attached dimension-grounded citation — passage "
-                            "from the top retrieved chunk (not LLM-grounded)."
+                            "Added as the document's most relevant passage for this "
+                            "dimension; the analysis did not quote it itself."
                         ),
                     },
                 )
@@ -1962,112 +1974,6 @@ class GapAnalyzer:
 
     # ── Single combined per-dimension analysis ──────────────────────────
 
-    def _batch_prewarm_sentence_cache(
-        self, chunk_texts: list[str], cache: dict[str, list[float]]
-    ) -> None:
-        """Pre-embed every sentence in `chunk_texts` in ONE batched call and
-        populate `cache` — so the R1/R2 ladder's per-sentence relevance/
-        substantive gates (which embed lazily, sentence-by-sentence, as the
-        ladder scans chunks) hit the cache instead of issuing dozens of
-        individual embed_query calls.
-
-        This is a pure performance fix: identical embeddings, computed in
-        one batch instead of many. Individual (non-batched) SentenceTransformer
-        calls each pay tokenization/dispatch overhead that a single batched
-        `.encode()` amortizes across all sentences — confirmed as the
-        dominant hidden cost in a large document (EU AI Act, ~1700 chunks):
-        the ladder's per-dimension embedding work, not the LLM call itself,
-        was responsible for most of a ~150s+ pipeline run.
-        """
-        embed = getattr(self.vector_store.embedding_service, "embed", None)
-        if embed is None:
-            return
-        seen: set[str] = set()
-        todo: list[str] = []
-        for text in chunk_texts:
-            for s in _split_sentences_for_cache(text):
-                if s not in cache and s not in seen:
-                    seen.add(s)
-                    todo.append(s)
-        if not todo:
-            return
-        try:
-            embs = embed(todo)
-            for s, e in zip(todo, embs):
-                cache[s] = e
-        except Exception as exc:
-            logger.warning("sentence_cache_prewarm_failed", error=str(exc), count=len(todo))
-
-    def _build_dimension_relevance_predicate(
-        self,
-        dimension: str,
-        shared_cache: dict[str, list[float]] | None = None,
-    ) -> Callable[[str, str], bool]:
-        """Semantic-or-keyword dimension gate for the deterministic ladder.
-
-        The default keyword gate (_chunk_matches_dimension) is a checklist:
-        a governance mechanism the policy expresses in its own terminology
-        (an "advance notification" duty for Transparency, a
-        "confidentiality" duty for Privacy, an "energy-efficient data
-        centre" provision for Environmental Sustainability) can carry none
-        of the dimension's framework vocabulary and be rejected — the exact
-        false-negative class this fixes. This predicate admits a chunk when
-        it matches the dimension by MEANING (embedding similarity to the
-        dimension's definition + aspects above DIMENSION_RELEVANCE_THRESHOLD)
-        OR by keyword. The frameworks are used to interpret and benchmark
-        the policy (the definition/aspects ARE the international-framework
-        interpretation of the dimension); they are not a keyword checklist.
-
-        R1/R2 still require commitment/obligation language inside the chunk
-        to fire, so a semantically close but inert passage can never raise a
-        verdict — semantic recall plus the existing mechanism/commitment bar
-        is the combined gate.
-        """
-        embed_fn = getattr(self.vector_store, "embed_query", None)
-        profile_texts: list[str] = []
-        try:
-            profiles = self.retrieval_pipeline.get_or_build_profiles()
-            profile = profiles.get(dimension)
-            if profile is not None:
-                profile_texts = [profile.definition] + list(profile.aspects)
-        except Exception:
-            profile_texts = []
-        profile_embs: list[list[float]] = []
-        if embed_fn is not None:
-            batch_embed = getattr(self.vector_store.embedding_service, "embed", None)
-            try:
-                profile_embs = (
-                    list(batch_embed(profile_texts))
-                    if batch_embed and profile_texts
-                    else [embed_fn(pt) for pt in profile_texts]
-                )
-            except Exception:
-                profile_embs = []
-        # shared_cache: pre-warmed by _batch_prewarm_sentence_cache with ONE
-        # batched embed call over every sentence this dimension's ladder
-        # evaluation will touch — and shared with the substantive predicate
-        # below, so a sentence both gates need is only ever embedded once.
-        # Falls back to a private, lazily-filled cache when no shared one is
-        # supplied (e.g. direct unit-test construction).
-        cache: dict[str, list[float]] = shared_cache if shared_cache is not None else {}
-
-        def match(text: str, dim: str) -> bool:
-            if _chunk_matches_dimension(text, dim):
-                return True
-            if not profile_embs or embed_fn is None:
-                return False
-            emb = cache.get(text)
-            if emb is None:
-                try:
-                    emb = embed_fn(text)
-                except Exception:
-                    return False
-                cache[text] = emb
-            best = max(_cosine_sim(emb, pe) for pe in profile_embs)
-            return best >= DIMENSION_RELEVANCE_THRESHOLD
-
-        return match
-
     def _build_dimension_substantive_predicate(
         self,
         dimension: str,
@@ -2076,21 +1982,19 @@ class GapAnalyzer:
         """Anti-false-positive gate: is the chunk SUBSTANTIVELY about the
         dimension's operational content, or merely topically related?
 
-        The relevance predicate (_build_dimension_relevance_predicate) is
-        the RECALL gate: keyword OR embedding similarity above 0.42 admits
-        any chunk whose meaning overlaps the dimension. That admits
-        PROCEEDURAL authority provisions too — "the Minister may
+        Keyword relevance (_chunk_matches_dimension) is the RECALL gate, and
+        it admits PROCEDURAL authority provisions too — "the Minister may
         approve/support AI data centres" is topically adjacent to
         Environmental Sustainability (data centres consume energy) but
-        imposes no environmental governance requirement, so it must not
-        fire R1/R2. This predicate is the PRECISION gate: a chunk is
+        imposes no environmental governance requirement, so it must not be
+        attached as evidence for it. This predicate is the PRECISION gate: a chunk is
         substantive only when its mechanism-bearing sentences are
         semantically close to the dimension's profile (definition +
         aspects) above SUBSTANTIVE_RELEVANCE_THRESHOLD. Procedural
         authority alone never crosses that bar.
 
         Returns None when no semantic signal is available (no embedder or
-        no profile), in which case callers fall back to the relevance gate
+        no profile), in which case callers fall back to keyword relevance
         (no stricter bar) rather than blocking on missing machinery.
         """
         embed_fn = getattr(self.vector_store, "embed_query", None)
@@ -2171,7 +2075,18 @@ class GapAnalyzer:
         return dimension_enforcement_backing(by_doc, regimes, dimension, country)
 
     def _workspace_documents(self, workspace_id: str) -> dict[str, list[str]]:
-        """Every chunk in the workspace, grouped by the document it came from."""
+        """Every chunk in the workspace, grouped by the document it came from.
+
+        Cached: the provision profile reads it once per dimension, and each
+        read was a full fetch of the workspace from the store — eight
+        identical fetches a run, over a thousand chunks each on the UK.
+        """
+        cache = getattr(self, "_workspace_documents_cache", None)
+        if cache is None:
+            cache = {}
+            self._workspace_documents_cache = cache
+        if workspace_id in cache:
+            return cache[workspace_id]
         by_doc: dict[str, list[str]] = {}
         try:
             pipeline = getattr(self, "retrieval_pipeline", None)
@@ -2187,6 +2102,8 @@ class GapAnalyzer:
                 by_doc.setdefault(name, []).append(text or "")
         except Exception as exc:
             logger.warning("workspace_documents_failed", workspace_id=workspace_id, error=str(exc))
+            return by_doc
+        cache[workspace_id] = by_doc
         return by_doc
 
     def _document_regimes(self, workspace_id: str) -> set[str]:
@@ -2341,31 +2258,29 @@ class GapAnalyzer:
         )
         return guarded
 
-    def _compute_deterministic_verdict(
-        self,
-        dimension: str,
-        workspace_id: str,
-        country: str,
-    ) -> dict[str, Any] | None:
-        """Coverage, depth and mechanism breakdown — BEFORE any LLM call.
+    def _dimension_profile(self, workspace_id: str, country: str, dimension: str) -> Any:
+        """The scored provision profile for one dimension, computed once.
 
-        This runs first so the verdict can be handed to the model as an INPUT
-        rather than being computed afterwards and overriding whatever the model
-        already wrote. That ordering is the fix for an entire class of
-        contradiction found in QA: the model used to form its own verdict,
-        write prose justifying it, and then have the verdict replaced —
-        leaving "the document does not establish X" sitting underneath a
-        Covered result, and recommendations aimed at a different conclusion
-        than the one reported.
+        Factored out of _compute_deterministic_verdict so the batched
+        mechanism adjudicator can prepare all eight dimensions before making a
+        single call, instead of each dimension asking for itself.
 
-        Needs no LLM itself (retrieval + pattern scoring only), so moving it
-        earlier costs nothing and keeps the verdict fully reproducible.
+        Core-term evidence is swept from the WHOLE workspace, not from the
+        ranked pool. The pool is capped at a fixed number of chunks, so the
+        share of a document the scorer sees falls as the document grows:
+        measured against every admissible binding provision in the corpus, the
+        pool carried 100% of China's and 17% of the United Kingdom's. That is
+        the document-length artifact retrieve_scoring_pool was written to
+        remove, surviving at a larger cap. Pattern scoring costs nothing per
+        chunk, so for this path there is no reason to rank.
         """
-        if not workspace_id or getattr(self, "retrieval_pipeline", None) is None:
-            return None
-        scoring_pool = self._scoring_pools(workspace_id).get(dimension) or []
-        if not scoring_pool:
-            return None
+        cache = getattr(self, "_dimension_profile_cache", None)
+        if cache is None:
+            cache = {}
+            self._dimension_profile_cache = cache
+        key = (workspace_id, country or "", dimension)
+        if key in cache:
+            return cache[key]
 
         voluntary = self._voluntary_documents(workspace_id)
         with_regime = self._document_regimes(workspace_id)
@@ -2375,14 +2290,6 @@ class GapAnalyzer:
                 return SOURCE_VOLUNTARY
             return "" if document in with_regime else SOURCE_UNENFORCED
 
-        # Core-term evidence is swept from the WHOLE workspace, not from the
-        # ranked pool. The pool is capped at a fixed number of chunks, so the
-        # share of a document the scorer sees falls as the document grows:
-        # measured against every admissible binding provision in the corpus,
-        # the pool carried 100% of China's and 17% of the United Kingdom's.
-        # That is the document-length artifact retrieve_scoring_pool was
-        # written to remove, surviving at a larger cap. Pattern scoring costs
-        # nothing per chunk, so for this path there is no reason to rank.
         sentences: list[str] = []
         source_force: dict[str, str] = {}
         for document, texts in self._workspace_documents(workspace_id).items():
@@ -2411,11 +2318,153 @@ class GapAnalyzer:
             own_jurisdiction=country or "",
             source_force=source_force,
         )
-        if profile.n_scored == 0:
-            return None
+        cache[key] = profile
+        return profile
 
+    def _adjudicated_mechanisms(self, workspace_id: str, country: str) -> dict[str, Any]:
+        """Every dimension's adjudicated mechanisms, from ONE model call.
+
+        Asking per dimension cost eight calls per country. Measured, that 50%
+        rise in request count took the daily ceiling from roughly five
+        countries to three and killed a run mid-batch — the free-tier quota
+        counts REQUESTS, so batching is the only lever that helps.
+
+        Cached per workspace: the first dimension to ask pays for all eight,
+        every other dimension reads the result.
+        """
+        # Dimensions run in a thread pool, so without a lock the first three
+        # workers all find an empty cache and each fire the batch call —
+        # turning the one-call saving back into three. Double-checked inside
+        # the lock so the winner pays and the rest read the result.
+        cache = getattr(self, "_adjudication_cache", None)
+        if cache is None:
+            cache = {}
+            self._adjudication_cache = cache
+        lock = getattr(self, "_adjudication_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._adjudication_lock = lock
+        if workspace_id in cache:
+            return cache[workspace_id]
+        with lock:
+            if workspace_id in cache:
+                return cache[workspace_id]
+
+            cue_results: dict[str, Any] = {}
+            requests: dict[str, tuple[Any, list[Any]]] = {}
+            for dim in GOVERNANCE_DIMENSIONS:
+                try:
+                    profile = self._dimension_profile(workspace_id, country, dim)
+                    if profile is None or profile.n_scored == 0:
+                        continue
+                    cue = detect_mechanisms(profile.sentences, dim)
+                    if cue is None:
+                        continue
+                    cue_results[dim] = cue
+                    # Only dimensions with something matched are worth asking
+                    # about; one with nothing present still needs to be returned,
+                    # because its absent list is what the gaps panel reads.
+                    if getattr(cue, "present", None):
+                        requests[dim] = (cue, profile.sentences)
+                except Exception as exc:
+                    logger.warning("adjudication_prepare_failed", dimension=dim, error=str(exc))
+            if requests:
+                cue_results.update(adjudicate_batch(requests, self.provider))
+                # A model call that feeds the verdict belongs in the run's call
+                # count and its provenance, whether it succeeded or not.
+                if any(getattr(c, "adjudication", "") for c in cue_results.values()):
+                    self._adjudication_calls = getattr(self, "_adjudication_calls", 0) + 1
+            cache[workspace_id] = cue_results
+            return cue_results
+
+    def _prepare_workspace(self, workspace_id: str, country: str) -> None:
+        """Everything the eight verdicts share, computed once, before any runs.
+
+        The shared preparation — scoring pools, structural candidates, the
+        eight provision profiles, the mechanism pass — is cached per
+        workspace, and each piece used to be filled by whichever dimension
+        asked first. Three worker threads started together, all found the
+        cache empty, and all built every piece in parallel: three copies of
+        regex-heavy work contending for the interpreter lock. Measured on one
+        thread the whole preparation takes 6-23 seconds a country; under that
+        contention it was a large share of runs lasting five to eleven
+        minutes. Same functions, same inputs, same caches — built once, in
+        order, so every verdict is unchanged.
+
+        Failures are left for the dimension that needs the piece, which
+        raises them where it always did.
+        """
+        if not workspace_id or getattr(self, "retrieval_pipeline", None) is None:
+            return
         try:
-            mechanisms = detect_mechanisms(profile.sentences, dimension)
+            self._scoring_pools(workspace_id)
+            self._structural_candidates(workspace_id)
+            for dimension in GOVERNANCE_DIMENSIONS:
+                self._dimension_profile(workspace_id, country, dimension)
+            self._adjudicated_mechanisms(workspace_id, country)
+        except Exception as exc:
+            logger.warning(
+                "workspace_preparation_failed", workspace_id=workspace_id, error=str(exc)
+            )
+
+    def _compute_deterministic_verdict(
+        self,
+        dimension: str,
+        workspace_id: str,
+        country: str,
+    ) -> dict[str, Any] | None:
+        """Coverage, depth and mechanism breakdown — BEFORE any LLM call.
+
+        This runs first so the verdict can be handed to the model as an INPUT
+        rather than being computed afterwards and overriding whatever the model
+        already wrote. That ordering is the fix for an entire class of
+        contradiction found in QA: the model used to form its own verdict,
+        write prose justifying it, and then have the verdict replaced —
+        leaving "the document does not establish X" sitting underneath a
+        Covered result, and recommendations aimed at a different conclusion
+        than the one reported.
+
+        NO LONGER LLM-FREE, and the name now overstates the case. Coverage,
+        depth, the tier ladder and every gate are still pure code on the
+        document's own text. But mechanism PRESENCE now passes through
+        `adjudicate_mechanisms`, which asks a model whether the provision a
+        cue matched actually establishes the mechanism — because the cue
+        selector was measured at 20% precision on the bound counts this gate
+        reads, and a mechanism wrongly marked present is a gap that never
+        reaches the reader.
+
+        What that costs: the verdict is reproducible rather than deterministic
+        by construction. The call is seeded, so the same document returns the
+        same answer, and any failure falls back to the cue result — but it is
+        a model in the path and the docs should not pretend otherwise.
+
+        What it does NOT cost: the model never sees or sets a tier, never
+        touches a threshold, and cannot move a verdict upward. The gate it
+        feeds is downgrade-only, so the worst a wrong adjudication can do is
+        withhold depth the cue pass would have granted on a bad match.
+        """
+        if not workspace_id or getattr(self, "retrieval_pipeline", None) is None:
+            return None
+        # The ranked pool only feeds structural admission and enforcement
+        # backing; an empty one is not a reason to stop.
+        scoring_pool = self._scoring_pools(workspace_id).get(dimension) or []
+
+        profile = self._dimension_profile(workspace_id, country, dimension)
+        if profile is None:
+            return None
+        # A profile that scored nothing is still a verdict: every sentence of
+        # every supplied document was read and none addresses the dimension,
+        # which coverage_from_profile and depth_from_profile report as Missing
+        # and Unaddressed. Returning None here used to hand the verdict to the
+        # model's own label instead.
+
+        # Mechanisms come from the workspace-wide pass, which holds the ONLY
+        # detect_mechanisms call site. Cues are generous on purpose, so 4 of
+        # every 5 matches point at a provision that merely contains the
+        # keyword; the pass adjudicates them and falls back to the raw cue
+        # result on any failure.
+        try:
+            mechanisms = self._adjudicated_mechanisms(workspace_id, country).get(dimension)
         except Exception:
             mechanisms = None
         # Mechanism breadth gates the Covered tier downward only — see
@@ -2457,6 +2506,25 @@ class GapAnalyzer:
         country: str = "",
         workspace_id: str = "",
     ) -> GovernanceGap:
+        call = self._prepare_dimension_combined(dimension, retrieval, country, workspace_id)
+        combined = generate_with_retry(
+            provider=self.provider,
+            prompt=call.prompt,
+            schema=self._get_combined_module_schema(),
+            system_prompt=call.system_prompt,
+            operation=f"module1_2_{dimension.lower().replace(' ', '_')}",
+            debug_ctx=debug_ctx,
+        )
+        return self._finish_dimension_combined(call, combined)
+
+    def _prepare_dimension_combined(
+        self,
+        dimension: str,
+        retrieval: ModuleRetrievalResult,
+        country: str = "",
+        workspace_id: str = "",
+    ) -> _DimensionCall:
+        """Everything before the Module 1+2 model call: the verdict and the prompt."""
         dimension_def = analysis_prompts.build_dimension_definition_block(dimension)
 
         # Decide the verdict FIRST, deterministically, then hand it to the
@@ -2465,25 +2533,31 @@ class GapAnalyzer:
         determined = self._compute_deterministic_verdict(
             dimension=dimension, workspace_id=workspace_id, country=country
         )
-        verdict_block: dict[str, Any] | None = None
-        if determined:
-            mech = determined.get("mechanisms")
-            prof = determined["profile"]
-            verdict_block = {
-                "coverage_label": determined["coverage_label"],
-                "depth_label": determined["depth_label"],
-                "basis": determined["coverage_note"],
-                "missing_mechanisms": list(mech.absent)[:6] if mech else [],
-                "present_mechanisms": list(mech.present)[:6] if mech else [],
-                # Instrument character, measured from the document itself.
-                # Without it the model narrated a self-declared voluntary
-                # instrument as if it imposed duties — "the document mandates
-                # that AI business actors deploy privacy protection
-                # mechanisms" for a soft-law guideline with zero
-                # enforcement-tier provisions, in 7 of 8 dimensions.
-                "binding_provisions": prof.n_binding,
-                "enforceable_provisions": prof.n_enforceable,
-            }
+        if determined is None:
+            # Not assessed rather than guessed: without the evidence profile
+            # there is no verdict to explain, and the model is never asked for
+            # one. Raised before the call, so no quota is spent on it.
+            raise RuntimeError(
+                f"The evidence profile for {dimension} could not be computed, so the "
+                "dimension was not scored."
+            )
+        mech = determined.get("mechanisms")
+        prof = determined["profile"]
+        verdict_block: dict[str, Any] = {
+            "coverage_label": determined["coverage_label"],
+            "depth_label": determined["depth_label"],
+            "basis": determined["coverage_note"],
+            "missing_mechanisms": list(mech.absent)[:6] if mech else [],
+            "present_mechanisms": list(mech.present)[:6] if mech else [],
+            # Instrument character, measured from the document itself.
+            # Without it the model narrated a self-declared voluntary
+            # instrument as if it imposed duties — "the document mandates
+            # that AI business actors deploy privacy protection
+            # mechanisms" for a soft-law guideline with zero
+            # enforcement-tier provisions, in 7 of 8 dimensions.
+            "binding_provisions": prof.n_binding,
+            "enforceable_provisions": prof.n_enforceable,
+        }
 
         # How THIS document numbers its own divisions, read off the document
         # rather than assumed. Detected from the scoring pool (the widest
@@ -2491,10 +2565,7 @@ class GapAnalyzer:
         # back to the prompt's document chunks.
         division_vocabulary: list[str] = []
         try:
-            # From `determined`, not the local `scoring_pool` — that name is
-            # only bound further down (after the LLM call), so reading it here
-            # raises UnboundLocalError and silently loses the vocabulary.
-            _pool = (determined or {}).get("scoring_pool") or retrieval.document_chunks or []
+            _pool = determined.get("scoring_pool") or retrieval.document_chunks or []
             _vocab_source = [(c.get("text") or "") for c in _pool if isinstance(c, dict)]
             division_vocabulary = detect_division_vocabulary(_vocab_source)
         except Exception as exc:
@@ -2510,23 +2581,37 @@ class GapAnalyzer:
             determined_verdict=verdict_block,
             division_vocabulary=division_vocabulary,
         )
-
-        combined = generate_with_retry(
-            provider=self.provider,
-            prompt=prompt,
-            schema=self._get_combined_module_schema(),
+        return _DimensionCall(
+            dimension=dimension,
+            retrieval=retrieval,
+            determined=determined,
+            workspace_id=workspace_id,
+            dimension_definition=dimension_def,
             system_prompt=sys_prompt,
-            operation=f"module1_2_{dimension.lower().replace(' ', '_')}",
-            debug_ctx=debug_ctx,
+            prompt=prompt,
         )
 
+    def _finish_dimension_combined(self, call: _DimensionCall, combined: Any) -> GovernanceGap:
+        """Everything after the Module 1+2 model call, for one dimension's answer.
+
+        Identical whether the answer came from a call of its own or from one
+        entry of the batched call, which is what keeps batching from changing
+        anything downstream of the model.
+        """
+        dimension = call.dimension
+        retrieval = call.retrieval
+        determined = call.determined
+        workspace_id = call.workspace_id
+
         # ── Normalize Module 1 fields ───────────────────────────────────
+        # The model's own label, kept only to log when it disagrees with the
+        # computed verdict it was asked to explain.
         coverage_str = (
             str(getattr(combined, "coverage", "Partial") or "Partial").strip().capitalize()
         )
         if coverage_str not in ("Covered", "Partial", "Missing"):
             coverage_str = "Partial"
-        coverage = CoverageLevel(coverage_str)
+        model_coverage = CoverageLevel(coverage_str)
 
         reason_flagged = str(getattr(combined, "reason_flagged", "") or "")
         verdict_challenge = str(getattr(combined, "verdict_challenge", "") or "").strip()
@@ -2549,313 +2634,71 @@ class GapAnalyzer:
         principle_ack = bool(getattr(combined, "principle_acknowledged", True))
         mechanisms = [m for m in (getattr(combined, "operational_mechanisms", []) or []) if m]
 
-        # ── Deterministic coverage validation (ladder enforcement) ─────
-        # The LLM's raw coverage label is graded against the document's own
-        # acknowledged signals (operational mechanisms and
-        # implementation-commitment language in the retrieved document
-        # chunks). This reinstates the ladder rules the old Stage 1-4
-        # plausibility validator provided but the merged single-call path
-        # dropped: a document with an explicit commitment or attempted
-        # mechanism is at least Partial (R1 floor, Level 1 → Partial; a bare
-        # risk acknowledgment with no proposed action is NOT enough), and a
-        # document with a concrete implementation commitment is Covered
-        # (R2 raise, Level 3 → Covered — Partial verdicts only).
-        # ── Comprehensive evidence pool (anti false-negative) ────────
-        # The prompt-budget document bucket is what the LLM sees; a
-        # governance mechanism expressed in the policy's own terminology can
-        # rank outside it, so the model honestly reports Missing for a
-        # dimension the document actually addresses. Before the verdict is
-        # final, sweep the workspace document broadly (semantic multi-query
-        # RRF, preamble/low-info filtered) and hand the surviving
-        # dimension-relevant chunks to the ladder as additional evidence — a
-        # mechanism the prompt never showed can still floor Missing ->
-        # Partial instead of being erased. The ladder's dimension gate is
-        # ALSO semantic (dimension_match_fn): a chunk matches by MEANING,
-        # not just by framework vocabulary.
-        # Which verdict path wins is decided HERE, before any of the ladder's
-        # machinery is built, because that machinery is expensive and is only
-        # ever consumed by the ladder. Per dimension it costs a multi-query RRF
-        # sweep of the whole document, one batched embedding call, and two
-        # semantic predicates that embed sentence-by-sentence — eight times per
-        # run. All of it was being built unconditionally and then discarded on
-        # every real document, since the evidence profile supersedes the ladder
-        # whenever it has scored provisions to reason from.
-        strength_profile = determined["profile"] if determined else None
-        scoring_pool = determined["scoring_pool"] if determined else []
-        use_profile_verdict = bool(
-            determined and strength_profile is not None and strength_profile.n_scored > 0
-        )
-
-        evidence_pool: list[dict[str, Any]] = []
-        if (
-            not use_profile_verdict
-            and workspace_id
-            and getattr(self, "retrieval_pipeline", None) is not None
-        ):
-            try:
-                evidence_pool = self.retrieval_pipeline.retrieve_document_evidence_pool(
-                    dimension=dimension,
-                    workspace_id=workspace_id,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "dimension_evidence_pool_failed",
-                    dimension=dimension,
-                    error=str(exc),
-                )
-        # NOTE: the scoring pool is NOT retrieved here. It is fetched once in
-        # _compute_deterministic_verdict before the LLM call and reused below,
-        # so the sweep runs a single time per dimension.
-        # Shared evidence basis for BOTH the coverage ladder and depth —
-        # scoring depth from a different pool than the one that justified
-        # Coverage let a ladder-raised Covered verdict (evidence from
-        # evidence_pool) score as "principle-only" (LLM self-report empty),
-        # which is internally inconsistent. See compute_implementation_depth.
-        # Computed BEFORE the predicate builders below so their sentence
-        # cache can be pre-warmed in one batched embed call instead of many
-        # individual ones (see _batch_prewarm_sentence_cache).
-        dimension_evidence_chunks = list(retrieval.document_chunks) + evidence_pool
-        sentence_embed_cache: dict[str, list[float]] = {}
-        dim_match = None
-        subst_match = None
-        if not use_profile_verdict:
-            try:
-                self._batch_prewarm_sentence_cache(
-                    [c.get("text", "") for c in dimension_evidence_chunks if isinstance(c, dict)],
-                    sentence_embed_cache,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "sentence_cache_prewarm_call_failed", dimension=dimension, error=str(exc)
-                )
-            try:
-                dim_match = self._build_dimension_relevance_predicate(
-                    dimension, shared_cache=sentence_embed_cache
-                )
-            except Exception:
-                dim_match = None
-            # Anti-false-positive substantive gate: a chunk may fire R1/R2 only
-            # when its mechanism-bearing sentences are substantively about the
-            # dimension (semantic closeness to the profile above
-            # SUBSTANTIVE_RELEVANCE_THRESHOLD) — procedural authority provisions
-            # ("Minister may approve/support AI data centres") stay inert.
-            try:
-                subst_match = self._build_dimension_substantive_predicate(
-                    dimension, shared_cache=sentence_embed_cache
-                )
-            except Exception:
-                subst_match = None
-
-        raw_coverage = coverage
-
-        # The ladder is the fallback for the degenerate case where the scoring
-        # sweep found nothing at all (empty workspace, retrieval failure). Its
-        # result is superseded whenever the evidence profile has provisions to
-        # reason from, so it is not run in that case at all — running it and
-        # discarding it was pure cost, and it left a second live verdict in
-        # scope for later code to accidentally read.
-        validated_coverage, coverage_rules = (coverage, [])
-        if not use_profile_verdict:
-            validated_coverage, coverage_rules = validate_coverage_deterministic(
-                coverage=coverage,
-                principle_acknowledged=principle_ack,
-                operational_mechanisms=mechanisms,
-                document_chunks=dimension_evidence_chunks,
-                # Dimension grounding: R1/R2 only fire on chunks actually about
-                # this dimension — by semantic equivalence OR keyword, so a UN
-                # advisory-body participation paragraph can never trigger
-                # Accountability (or an events calendar trigger Inclusivity),
-                # while an "advance notification" transparency duty expressed in
-                # the policy's own terminology still counts.
-                dimension=dimension,
-                dimension_match_fn=dim_match,
-                # Substantive grounding: relevance is recall, substance is
-                # precision — a chunk that is topically adjacent but only
-                # procedurally related (approval/support/administration powers)
-                # is not a governance mechanism for the dimension.
-                substantive_match_fn=subst_match,
-            )
-
-        # The evidence profile OVERRIDES the keyword ladder when it has real
-        # scored provisions to reason from. The ladder is retained only as a
-        # fallback for the degenerate case where the scoring sweep returned
-        # nothing at all (empty workspace, retrieval failure), so behaviour
-        # never silently depends on a single un-backstopped path.
-        profile_coverage_note = ""
-        # SINGLE SOURCE OF TRUTH for the verdict.
+        # ── The verdict: read back, never recomputed, never the model's ──
+        # Coverage, depth and mechanism breadth were computed once, in
+        # _compute_deterministic_verdict, BEFORE the model call, and the model
+        # was shown them as fixed inputs to explain. This block reads that
+        # result back; it does not recompute it (test_verdict_single_source).
         #
-        # Coverage, depth and mechanism breadth are all computed once, in
-        # _compute_deterministic_verdict, BEFORE the LLM call — and the result
-        # is what the model is shown. This block reads that result back; it
-        # does not recompute it.
-        #
-        # It used to recompute all three from the same profile, which meant two
-        # independent copies of the verdict existed per dimension, and every
-        # bug fix had to be applied to both. In practice one always got missed:
-        # the copy here ran coverage_from_profile WITHOUT mechanisms, so the
-        # breadth gate never touched the stored verdict, and a soft-law
-        # guideline shipped "Covered" for Privacy above "Provides 1 of 7
-        # governance mechanisms". The model had been told Partial. Two answers
-        # to one question is the defect; deleting the second answer is the fix.
-        if use_profile_verdict:
-            mech = determined.get("mechanisms")
-            _cov_label = determined["coverage_label"]
-            profile_coverage_note = determined["coverage_note"]
-            _profile_cov = {
-                "Covered": CoverageLevel.COVERED,
-                "Partial": CoverageLevel.PARTIAL,
-                "Missing": CoverageLevel.MISSING,
-            }[_cov_label]
-            if _profile_cov != validated_coverage:
-                logger.info(
-                    "coverage_from_evidence_strength",
-                    dimension=dimension,
-                    ladder_coverage=validated_coverage.value,
-                    profile_coverage=_cov_label,
-                    raw_llm_coverage=raw_coverage.value,
-                    scored=strength_profile.n_scored,
-                    binding=strength_profile.n_binding,
-                    enforceable=strength_profile.n_enforceable,
-                )
-            validated_coverage = _profile_cov
-            # The ladder's rule audit does not describe the verdict that won,
-            # so it is cleared. NOTE: several downstream blocks are gated on
-            # `coverage_rules` being non-empty and therefore do not run on this
-            # path — the reason_flagged reconciliation that used to live in one
-            # of them now runs unconditionally below, because a Covered verdict
-            # must never ship under "lacks..." prose regardless of which path
-            # produced it.
-            coverage_rules = []
-            coverage = validated_coverage
-            # Mechanism breakdown: WHICH of the governance mechanisms the
-            # reference frameworks expect for this dimension the document
-            # actually provides, and how many as a binding duty rather than
-            # a mention. This is where the ingested corpus informs the
-            # report — it names the specific gaps behind a verdict instead
-            # of leaving "Partial" unexplained.
-            if mech is not None:
-                mech_note = mech.summary()
-                if mech_note:
-                    profile_coverage_note = (
-                        profile_coverage_note + " " + mech_note
-                        if profile_coverage_note
-                        else mech_note
-                    )
-                    logger.info(
-                        "mechanism_coverage_computed",
-                        dimension=dimension,
-                        present=mech.met,
-                        total=mech.total,
-                        binding=mech.binding_met,
-                        coverage=_cov_label,
-                    )
-            # The profile's own rationale is written for a policy reader and
-            # states what the document actually contains ("imposes binding
-            # requirements… 3 backed by enforcement"), so it replaces the
-            # ladder's internal rule audit as the user-facing explanation.
-            if profile_coverage_note:
-                coverage_reasoning = (
-                    coverage_reasoning + " " if coverage_reasoning else ""
-                ) + profile_coverage_note
-
-        # ── Ladder-raise review flag (deterministic) ──────────────────
-        # The ladder can override the LLM's raw verdict (R1 floor, R2
-        # raise). Same review discipline as the synthesis-drift safeguard,
-        # applied to the ladder's OWN override: when a raise produces a
-        # final verdict that contradicts the model's own coverage_reasoning
-        # (the reasoning lists explicit gaps — "does not establish", "no
-        # provisions", "lacks" — yet the raised verdict says Covered), the
-        # mismatch is flagged for review rather than shipped silently.
-        ladder_raise_review_flag = False
-        if coverage_rules:
-            original_coverage_reasoning = coverage_reasoning
-            coverage = validated_coverage
-            # User-facing translation of the ladder's technical rule audit
-            # (coverage_rules carries "R1 explicit-commitment floor", "Level
-            # 1 (Governance Recognised) maps to Partial" — developer/test
-            # vocabulary that must never reach the report). See
-            # plain_language_ladder_note's docstring.
-            plain_note = plain_language_ladder_note(coverage_rules)
-            if plain_note:
-                coverage_reasoning = (
-                    coverage_reasoning + (" " if coverage_reasoning else "") + plain_note
-                )
-            if validated_coverage != raw_coverage and original_coverage_reasoning:
-                lr_score, lr_phrases = detect_ladder_raise_contradiction(
-                    original_coverage_reasoning
-                )
-                if lr_score >= LADDER_RAISE_REVIEW_THRESHOLD:
-                    ladder_raise_review_flag = True
-                    # Kept as an internal quality flag only. The "Note for
-                    # review: ...worth a second look before relying on this
-                    # verdict" sentence that used to be appended here is
-                    # internal QA vocabulary — it told a policy reader the
-                    # tool distrusted its own output without telling them
-                    # what to do about it. Same reasoning as the
-                    # synthesis-drift block below: surface findings, not the
-                    # tool's internal deliberation.
-                    logger.warning(
-                        "ladder_raise_review_flag",
-                        dimension=dimension,
-                        raw_coverage=raw_coverage.value,
-                        validated_coverage=coverage.value,
-                        gap_phrases=lr_phrases,
-                    )
-            # A raised-to-Covered dimension is no longer a gap — its
-            # reason_flagged (the model's "lacks X" text) would contradict
-            # the Covered verdict and the Best Practices framing, so clear it.
-            if coverage == CoverageLevel.COVERED:
-                reason_flagged = (
-                    "No critical gap — the document already assigns this to a "
-                    "named body and includes a reporting or enforcement "
-                    "mechanism for it."
-                )
+        # A second path used to live here for when no evidence profile existed:
+        # it took the MODEL's own coverage label and ran the old keyword ladder
+        # over it, and the ladder could raise the verdict — to Covered, on
+        # mechanisms the model itself had reported. No stored run ever took it,
+        # but while it existed "the model never decides" held only on the main
+        # path. A dimension whose profile scored nothing is now a deterministic
+        # Missing (see _compute_deterministic_verdict), and one whose profile
+        # could not be computed is not assessed at all.
+        if determined is None:
+            raise RuntimeError(f"No evidence profile for {dimension}; it cannot be scored.")
+        strength_profile = determined["profile"]
+        scoring_pool = determined["scoring_pool"]
+        mech = determined.get("mechanisms")
+        _cov_label = determined["coverage_label"]
+        coverage = {
+            "Covered": CoverageLevel.COVERED,
+            "Partial": CoverageLevel.PARTIAL,
+            "Missing": CoverageLevel.MISSING,
+        }[_cov_label]
+        if coverage != model_coverage:
+            # The model is told the verdict and asked not to re-judge it; a
+            # different label here is telemetry about the prompt, nothing more.
             logger.info(
-                "coverage_deterministic_adjusted",
+                "model_label_differs_from_verdict",
                 dimension=dimension,
-                raw_coverage=raw_coverage.value,
-                validated_coverage=coverage.value,
-                rules=coverage_rules,
+                verdict=_cov_label,
+                model_label=model_coverage.value,
+                scored=strength_profile.n_scored,
+                binding=strength_profile.n_binding,
+                enforceable=strength_profile.n_enforceable,
             )
-
-        # ── Comprehensive-evidence note (a mechanism is never erased) ─
-        # When the ladder overrode the verdict using evidence from the
-        # comprehensive pool (beyond the prompt budget), name the found
-        # mechanism passage in the reasoning. A mechanism that exists but
-        # lacks full operational detail is reflected in the gap
-        # reasoning/depth — it is not erased into a bare "Missing".
-        if coverage_rules and evidence_pool:
-            for pc in evidence_pool:
-                text = (pc.get("text") or "").strip()
-                if not text:
-                    continue
-                # Gate the note on the SUBSTANTIVE predicate when available
-                # (a procedural passage is not evidence of a governance
-                # mechanism), falling back to the relevance gate.
-                if subst_match is not None:
-                    gate_ok = subst_match(text, dimension)
-                elif dim_match is not None:
-                    gate_ok = dim_match(text, dimension)
-                else:
-                    gate_ok = _chunk_matches_dimension(text, dimension)
-                if not gate_ok:
-                    continue
-                if text_contains_mechanism(text):
-                    passage = " ".join(text.split())[:240]
-                    coverage_reasoning = (
-                        coverage_reasoning + " [Comprehensive evidence check] The uploaded "
-                        "document contains a dimension-relevant governance "
-                        f'mechanism (passage: "{passage}..."); the '
-                        "mechanism's operational detail is reflected in the "
-                        "depth assessment."
-                    )
-                    logger.info(
-                        "comprehensive_evidence_note_appended",
-                        dimension=dimension,
-                        coverage=coverage.value,
-                        passage=passage,
-                    )
-                    break
+        profile_coverage_note = determined["coverage_note"]
+        # Mechanism breakdown: WHICH of the governance mechanisms the
+        # reference frameworks expect for this dimension the document
+        # actually provides, and how many as a binding duty rather than a
+        # mention. This is where the ingested corpus informs the report — it
+        # names the specific gaps behind a verdict instead of leaving
+        # "Partial" unexplained.
+        if mech is not None:
+            mech_note = mech.summary()
+            if mech_note:
+                profile_coverage_note = (
+                    profile_coverage_note + " " + mech_note if profile_coverage_note else mech_note
+                )
+                logger.info(
+                    "mechanism_coverage_computed",
+                    dimension=dimension,
+                    present=mech.met,
+                    total=mech.total,
+                    binding=mech.binding_met,
+                    coverage=_cov_label,
+                )
+        # The profile's own rationale is written for a policy reader and states
+        # what the document actually contains ("imposes binding requirements…
+        # 3 backed by enforcement"), so it is the user-facing explanation.
+        if profile_coverage_note:
+            coverage_reasoning = (
+                coverage_reasoning + " " if coverage_reasoning else ""
+            ) + profile_coverage_note
 
         # ── Covered verdicts never ship under gap prose ──────────────
         # reason_flagged is the model's answer to "what is missing here?", and
@@ -2865,21 +2708,18 @@ class GapAnalyzer:
         # mechanisms for algorithmic bias testing, accessibility standards, or
         # demographic fairness monitoring".
         #
-        # A reconciliation for this existed, but it sat inside a block gated on
-        # `coverage_rules` being non-empty — and the evidence-profile path,
-        # which decides nearly every real verdict, clears coverage_rules before
-        # reaching it. So the guard was live only on the fallback path that
-        # almost never runs. It is unconditional now: the question "does this
-        # text contradict the verdict?" has nothing to do with which code path
-        # produced the verdict.
+        # A reconciliation for this existed, but it sat behind a flag the
+        # winning code path cleared, so it never ran on a real verdict. It is
+        # unconditional: the question "does this text contradict the verdict?"
+        # has nothing to do with how the verdict was produced.
         #
         # The specific mechanism gaps are NOT lost — coverage_reasoning still
         # carries "Provides N of M governance mechanisms ... Not addressed:
         # ...", which states them as a breadth measurement rather than as a
         # finding that contradicts the label.
         if coverage == CoverageLevel.COVERED and reason_flagged.strip():
-            _rf_score, _rf_phrases = detect_ladder_raise_contradiction(reason_flagged)
-            if _rf_score >= LADDER_RAISE_REVIEW_THRESHOLD:
+            _rf_score, _rf_phrases = detect_gap_assertions(reason_flagged)
+            if _rf_score >= GAP_ASSERTION_THRESHOLD:
                 logger.info(
                     "covered_reason_flagged_reconciled",
                     dimension=dimension,
@@ -2892,22 +2732,17 @@ class GapAnalyzer:
                     "gaps are described in the coverage reasoning."
                 )
 
-        # gap_detected follows the VALIDATED coverage, not the LLM's label
-        # (a dimension deterministically raised to Covered has no gap).
+        # gap_detected follows the computed coverage, not the LLM's label.
         gap_detected = coverage != CoverageLevel.COVERED
 
         # ── Covered-tier coverage_example backfill (deterministic) ────
-        # The prompt instructs the model to leave coverage_example empty
-        # unless it judged the dimension Covered. When the ladder raises a
-        # Partial verdict to Covered (R2), the model is never re-prompted, so
-        # a raised card would ship with a blank example — the exact blank
-        # tier the frontend had to fall back from. Backfill it
-        # deterministically from the document's own operational mechanisms
-        # (the evidence that justified the raise), mirroring the fallback
-        # chain in _build_covered_synthesis_fallback. Applies whenever the
-        # FINAL coverage is Covered with no example produced — a
-        # model-Covered card that missed the field gets the same treatment,
-        # and an example the model DID produce is always preserved.
+        # The model is asked for coverage_example only when it judges the
+        # dimension Covered, and it does not always agree with the computed
+        # verdict it was handed. A Covered card must not ship with a blank
+        # example, so one is built from the document's own operational
+        # mechanisms (the same fallback chain as
+        # _build_covered_synthesis_fallback). An example the model DID
+        # produce is always kept.
         if coverage == CoverageLevel.COVERED and not coverage_example.strip() and mechanisms:
             coverage_example = "The document establishes operational mechanisms: " + "; ".join(
                 mechanisms[:3]
@@ -2915,46 +2750,23 @@ class GapAnalyzer:
             logger.info(
                 "covered_coverage_example_backfilled",
                 dimension=dimension,
-                raised_by_ladder=bool(coverage_rules),
                 num_mechanisms=len(mechanisms),
             )
 
-        # ── Deterministic implementation depth (never free LLM judgment) ─
-        # evidence_texts = the same document-sourced, dimension-targeted
-        # chunks that fed the coverage ladder above, so depth can never
-        # score a mechanism as "absent" that actually justified Coverage.
-        # Implementation depth is computed from the SAME evidence profile as coverage but
-        # measures a DIFFERENT property — how far the governance has been
-        # built out (intent → institution → duty → enforcement) rather than
-        # whether the dimension is governed at all. Deriving depth FROM
-        # coverage (the previous behaviour) made the two labels redundant and
-        # meant every ladder-raised Covered verdict dragged depth up with
-        # it. Read independently, a document can be broadly Covered but only
-        # Emerging, or narrowly Partial yet Operationalized.
-        if use_profile_verdict:
-            # Read back, not recomputed — same single-source rule as coverage
-            # above. Implementation depth and coverage read the same counters through a
-            # shared force bar, so recomputing either one separately is how
-            # they drifted into reporting "Partial ... stands alone rather than
-            # forming a developed regime" alongside "Operationalized".
-            _mat_label = determined["depth_label"]
-            depth_reasoning = determined["depth_note"]
-            depth = {
-                "Institutionalized": ImplementationDepth.ESTABLISHED,
-                "Operationalized": ImplementationDepth.DEVELOPING,
-                "Delegated": ImplementationDepth.DELEGATED,
-                "Emerging": ImplementationDepth.EMERGING,
-                "Unaddressed": ImplementationDepth.UNADDRESSED,
-            }[_mat_label]
-        else:
-            depth, depth_reasoning = compute_implementation_depth(
-                coverage=coverage.value,
-                principle_acknowledged=principle_ack,
-                operational_mechanisms=mechanisms,
-                evidence_texts=[
-                    c.get("text", "") for c in dimension_evidence_chunks if isinstance(c, dict)
-                ],
-            )
+        # ── Implementation depth: read back, like coverage ──────────────
+        # Same profile, same force bar, a different question: how far the
+        # governance has been built out (intent → institution → duty →
+        # enforcement), not whether the dimension is governed at all. So a
+        # document can be broadly Covered yet only Emerging, or narrowly
+        # Partial yet Operationalized.
+        depth_reasoning = determined["depth_note"]
+        depth = {
+            "Institutionalized": ImplementationDepth.ESTABLISHED,
+            "Operationalized": ImplementationDepth.DEVELOPING,
+            "Delegated": ImplementationDepth.DELEGATED,
+            "Emerging": ImplementationDepth.EMERGING,
+            "Unaddressed": ImplementationDepth.UNADDRESSED,
+        }[determined["depth_label"]]
 
         # Validate the article/recital/section NUMBERS written into the
         # narrative against the source text actually retrieved. Chunk-level
@@ -3073,11 +2885,10 @@ class GapAnalyzer:
         if coverage == CoverageLevel.COVERED:
             recommendations: list[str] = []
             priority: Priority | None = None
-            # Ladder-raised Covered dimensions (R2 raised Partial -> Covered)
-            # never receive the Branch A prompt — the LLM already committed
-            # to Branch B's JSON shape, which correctly returns [] for this
-            # field. Backfill from the Branch B recommendations the LLM DID
-            # write instead of shipping an empty section: they are already
+            # When the model answered in the Partial/Missing shape (Branch B)
+            # although the computed verdict is Covered, this field comes back
+            # empty. Backfill from the recommendations it DID write instead
+            # of shipping an empty section: they are already
             # document-grounded (name the same real mechanism/institution
             # per the prompt's rules), just phrased as a fix rather than a
             # refinement — a light touch-up reframes the verb, nothing else
@@ -3116,7 +2927,6 @@ class GapAnalyzer:
         # auto-downgrade to Partial for review instead of shipping a
         # self-contradictory report section. Weak signals are logged and
         # reported by the consistency validator as flags.
-        synthesis_drift_downgraded = False
         # Drift detection scans ONLY the overall_assessment part of a Covered
         # synthesis (the compliance justification) — the Consensus / Differences
         # sections describe the external frameworks, where words like "lacks"
@@ -3162,7 +2972,6 @@ class GapAnalyzer:
                     drift_phrases=drift_phrases,
                     note="narrative/verdict mismatch; verdict from document evidence retained",
                 )
-                synthesis_drift_downgraded = False
 
         # ── Covered-tier synthesis completeness guard (deterministic) ───
         # A Covered verdict must never ship without the 'why this is
@@ -3231,7 +3040,7 @@ class GapAnalyzer:
         # Missing / Partial findings must still carry a framework requirement
         # citation (spec), but the deterministic fallback must NEVER attach an
         # off-topic or un-sourced chunk: the fallback chunk must be
-        # dimension-grounded (shared ladder check) and carry a real framework
+        # dimension-grounded (shared keyword check) and carry a real framework
         # name — "Source: Unknown" must never reach a user.
         if coverage != CoverageLevel.COVERED:
             fw_citations = self._ensure_minimum_citations(
@@ -3294,13 +3103,12 @@ class GapAnalyzer:
         # verdict, so it can never disagree with it.
         risk_basis = ""
         gap_consequence = ""
-        if use_profile_verdict:
-            try:
-                risk_basis, gap_consequence = describe_risk_basis(
-                    coverage.value, strength_profile, determined.get("mechanisms")
-                )
-            except Exception as exc:
-                logger.warning("risk_basis_failed", dimension=dimension, error=str(exc))
+        try:
+            risk_basis, gap_consequence = describe_risk_basis(
+                coverage.value, strength_profile, determined.get("mechanisms")
+            )
+        except Exception as exc:
+            logger.warning("risk_basis_failed", dimension=dimension, error=str(exc))
         risk, risk_reason = compute_risk(coverage, dimension, basis=risk_basis or None)
 
         # Persist mechanism breadth alongside the force verdict. Until now the
@@ -3345,39 +3153,11 @@ class GapAnalyzer:
             framework_corpus_size=framework_count(),
             evidence_confidence=_confidence_band,
             evidence_confidence_reason=_confidence_reason,
-            gap_analysis="\n\n".join(
-                p
-                for p in [
-                    f"Coverage: {coverage.value}",
-                    f"Reason flagged: {reason_flagged}" if reason_flagged else "",
-                    f"Implementation Depth: {depth.value}",
-                    coverage_reasoning,
-                    (f"Coverage examples: {coverage_example}" if coverage_example else ""),
-                    (f"Best practices:\n{best_practices.opening}" if best_practices else ""),
-                    (
-                        "Future strengthening opportunities:\n"
-                        + "\n".join(
-                            f"- {e}" for e in best_practices.future_strengthening_opportunities
-                        )
-                        if best_practices and best_practices.future_strengthening_opportunities
-                        else ""
-                    ),
-                    (
-                        f"Recommendations ({priority.value} priority):\n"
-                        + "\n".join(f"- {r}" for r in recommendations)
-                        if recommendations and priority
-                        else ""
-                    ),
-                    f"Framework synthesis: {framework_synthesis}" if framework_synthesis else "",
-                ]
-                if p
-            ),
+            mechanism_adjudication=getattr(_mech, "adjudication", "") or "",
             implementation_depth=depth,
             depth_reasoning=depth_reasoning,
             module_1=module1,
             module_2=module2,
-            synthesis_drift_downgraded=synthesis_drift_downgraded,
-            ladder_raise_review_flag=ladder_raise_review_flag,
             unverifiable_citations=_unverifiable_citations,
             fabricated_citations=_fabricated_citations,
         )
@@ -3398,7 +3178,6 @@ class GapAnalyzer:
             num_international_examples=len(best_practices.international_examples)
             if best_practices
             else 0,
-            synthesis_drift_downgraded=synthesis_drift_downgraded,
             verified=sum(1 for c in doc_citations + fw_citations + std_citations if c.verified),
             total=len(doc_citations) + len(fw_citations) + len(std_citations),
         )
@@ -3428,6 +3207,9 @@ class GapAnalyzer:
         class IncidentSchema(BaseModel):
             incident_name: str
             source: str = ""
+            # The incident's concrete facts. Without it the panel named a case
+            # and then described it only in the abstract.
+            what_happened: str = ""
             dimension_relevance: str = ""
             potential_consequence: str = ""
             lessons_learned: str = ""
@@ -3493,7 +3275,10 @@ class GapAnalyzer:
           - document_named: the agency name must appear (whole-word) in a
             dimension-topical document chunk AND match a named-body keyword.
           - document_implied: at least one dimension-topical document chunk
-            must exist (something in the doc implies an institutional owner).
+            must exist, and the name must be a generic description of an
+            institution, never a proper name the document does not use.
+          A decorated form of a body the document does name ("European AI
+          Office" for "AI Office") is corrected to the document's own name.
           - none_identified: stays as the explicit honest state; the name must
             contain the 'Not specified by policy' phrasing.
         Any claim that fails its bar is downgraded to the honest state rather
@@ -3513,6 +3298,7 @@ class GapAnalyzer:
                     "should be assigned by the adopting government.",
                     "none_identified",
                 )
+
             # OCR-tolerant containment, not a literal substring test. PDF
             # extraction splits words apart throughout these documents — the
             # EU AI Act yields "Off ice", "Ar ticle", "surveillance" broken
@@ -3523,34 +3309,48 @@ class GapAnalyzer:
             # allowed. The rest of the pipeline already matches this way; this
             # gate was the last place still comparing raw strings, and it was
             # rejecting real agencies as unverifiable.
-            name_pattern = _ocr_tolerant_phrase(name)
             # The corroborating "this text is about an institution" check has
             # to tolerate OCR too, or it just reintroduces the same failure a
             # layer down: the chunk naming the AI Office spells it "Off ice",
             # so a whole-word search for "office" finds nothing.
-            found = False
-            for t in topical:
-                if not name_pattern.search(t):
-                    continue
-                if _has_named_body_keyword_ocr(t) or _has_named_body_keyword_ocr(name):
-                    found = True
-                    break
-            if not found:
-                # document_implied: the document implies an institutional
-                # owner without naming it. The anti-fabrication bar still
-                # applies — the name must be a generic role/institution type
-                # (ministry/council/office/authority/board...), never a
-                # specific invented agency. Requiring a named-body keyword in
-                # the NAME itself is what stops the LLM claiming "implied"
-                # for a plausible-sounding fabricated institution.
-                if grounding_norm == "document_implied" and _has_keyword(name, NAMED_BODY_KEYWORDS):
-                    return name, "document_implied"
-                return (
-                    "Not specified by policy — implementation responsibility "
-                    "should be assigned by the adopting government.",
-                    "none_identified",
+            def _in_document(candidate: str) -> bool:
+                pattern = _ocr_tolerant_phrase(candidate)
+                return any(
+                    pattern.search(t)
+                    and (_has_named_body_keyword_ocr(t) or _has_named_body_keyword_ocr(candidate))
+                    for t in topical
                 )
-            return name, grounding_norm
+
+            if _in_document(name):
+                return name, grounding_norm
+            # The model often decorates a real body: "European AI Office" for
+            # a statute that only ever says "AI Office". The shortest tail
+            # that still names an institution and does appear is the
+            # document's own name for it, so that is what is reported.
+            words = name.split()
+            for start in range(1, len(words) - 1):
+                tail = " ".join(words[start:])
+                if _has_keyword(tail, NAMED_BODY_KEYWORDS) and _in_document(tail):
+                    return tail, "document_named"
+            # document_implied: the document implies an institutional owner
+            # without naming it. Only a GENERIC description of one is
+            # accepted ("the national data protection authority"): it must
+            # contain a named-body keyword, and nothing after its first word
+            # may be capitalised or an acronym. A proper name the document
+            # never uses — the stored case was "European AI Office" — is a
+            # fabrication however institutional it sounds.
+            generic = not any(w[:1].isupper() for w in words[1:])
+            if (
+                grounding_norm == "document_implied"
+                and generic
+                and _has_keyword(name, NAMED_BODY_KEYWORDS)
+            ):
+                return name, "document_implied"
+            return (
+                "Not specified by policy — implementation responsibility "
+                "should be assigned by the adopting government.",
+                "none_identified",
+            )
 
         # none_identified — enforce the explicit honest phrasing. The model
         # must write the "Not specified by policy" state verbatim — no
@@ -3630,6 +3430,26 @@ class GapAnalyzer:
         Mutates `gap` in place: sets gap.module_3 always, and gap.module_4 only
         when a genuinely relevant, dimension-grounded incident match exists.
         """
+        call = self._prepare_module34(dimension, gap, retrieval, country, workspace_id)
+        combined = generate_with_retry(
+            provider=self.provider,
+            prompt=call.prompt,
+            schema=self._get_module34_schema(),
+            system_prompt=call.system_prompt,
+            operation=f"module3_4_{dimension.lower().replace(' ', '_')}",
+            debug_ctx=debug_ctx,
+        )
+        self._finish_module34(call, combined)
+
+    def _prepare_module34(
+        self,
+        dimension: str,
+        gap: GovernanceGap,
+        retrieval: Module34RetrievalResult,
+        country: str = "",
+        workspace_id: str = "",
+    ) -> _Module34Call:
+        """Everything before the Module 3+4 model call: the carried-forward verdict and the prompt."""
         dimension_def = analysis_prompts.build_dimension_definition_block(dimension)
         verdict_text = self._build_dimension_verdict_text(gap)
         # Bodies the document itself names in this dimension's passages. The
@@ -3664,15 +3484,23 @@ class GapAnalyzer:
             country=country,
             candidate_bodies=candidate_bodies,
         )
-
-        combined = generate_with_retry(
-            provider=self.provider,
-            prompt=prompt,
-            schema=self._get_module34_schema(),
+        return _Module34Call(
+            dimension=dimension,
+            gap=gap,
+            retrieval=retrieval,
+            workspace_id=workspace_id,
+            dimension_definition=dimension_def,
+            dimension_verdict=verdict_text,
             system_prompt=sys_prompt,
-            operation=f"module3_4_{dimension.lower().replace(' ', '_')}",
-            debug_ctx=debug_ctx,
+            prompt=prompt,
         )
+
+    def _finish_module34(self, call: _Module34Call, combined: Any) -> None:
+        """Everything after the Module 3+4 model call; sets the roadmap and cases on the gap."""
+        dimension = call.dimension
+        gap = call.gap
+        retrieval = call.retrieval
+        workspace_id = call.workspace_id
 
         # ── Label map: IMPL-n / INC-n / DOC-n → real chunk ids ────────
         label_to_id: dict[str, str] = {}
@@ -3806,7 +3634,7 @@ class GapAnalyzer:
         # The matching step is retrieval-only + grounded: each incident the
         # model references must resolve to a REAL module_4_incident chunk that
         # ALSO passes the shared dimension-grounding check (the same
-        # _chunk_matches_dimension used by Module 1+2's ladder). A loosely-
+        # _chunk_matches_dimension used everywhere else). A loosely-
         # related incident that ranks on raw similarity but is not topically
         # about this dimension is dropped, never force-included. Only the
         # write-up fields come from the LLM, around the grounded incident.
@@ -3819,6 +3647,7 @@ class GapAnalyzer:
                 page = inc.get("page_number")
                 name = inc.get("incident_name", "") or ""
                 src = inc.get("source", "") or ""
+                happened = inc.get("what_happened", "") or ""
                 rel = inc.get("dimension_relevance", "") or ""
                 cons = inc.get("potential_consequence", "") or ""
                 less = inc.get("lessons_learned", "") or ""
@@ -3829,6 +3658,7 @@ class GapAnalyzer:
                 page = getattr(inc, "page_number", None)
                 name = getattr(inc, "incident_name", "") or ""
                 src = getattr(inc, "source", "") or ""
+                happened = getattr(inc, "what_happened", "") or ""
                 rel = getattr(inc, "dimension_relevance", "") or ""
                 cons = getattr(inc, "potential_consequence", "") or ""
                 less = getattr(inc, "lessons_learned", "") or ""
@@ -3860,6 +3690,7 @@ class GapAnalyzer:
                 IncidentMatch(
                     incident_name=name,
                     source=src or md.get("framework", "") or "",
+                    what_happened=happened,
                     dimension_relevance=rel,
                     potential_consequence=cons,
                     lessons_learned=less,
@@ -3921,7 +3752,7 @@ class GapAnalyzer:
         """
         if state.callback is not None:
             try:
-                state.callback(dimension, gap, provider_info)
+                state.callback(dimension, gap, {**provider_info, "evaluation": evaluation_mode()})
             except Exception:
                 pass
 
@@ -4045,6 +3876,7 @@ class GapAnalyzer:
                     )
                     with state.lock:
                         state.llm_call_count += 1
+                        state.module34_call_count += 1
                         state.total_llm_latency += time.time() - m34_start
                 except Exception as exc:
                     # A Module 3+4 failure must NOT degrade the Module 1+2
@@ -4089,6 +3921,295 @@ class GapAnalyzer:
             )
             return error_gap
 
+    @staticmethod
+    def _batched_schema(item: type[BaseModel]) -> type[BaseModel]:
+        class BatchedReply(BaseModel):
+            dimensions: list[item]  # type: ignore[valid-type]
+
+        return BatchedReply
+
+    def _ask_batched(
+        self,
+        calls: list[Any],
+        build: Callable[[list[Any], str], tuple[str, str]],
+        item_schema: type[BaseModel],
+        operation: str,
+        country: str,
+        state: _DimensionRunState,
+        split_on_failure: bool = True,
+        errors: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Send several dimensions as one request; return each dimension's answer.
+
+        A batch whose reply came back malformed, cut short or out of time is
+        tried once more as two halves, at most two extra requests — not the
+        eight a per-dimension fallback would cost. Any other failure is final
+        for this run: see _split_can_help for why splitting an outage is
+        worse than useless. A dimension missing from the
+        reply is simply absent from the result; one lost with a failed half is
+        also entered in `errors`, with the reason it failed.
+        """
+        if not calls:
+            return {}
+        start = time.time()
+        try:
+            system, prompt = build(calls, country)
+            reply = generate_with_retry(
+                provider=self.provider,
+                prompt=prompt,
+                schema=self._batched_schema(item_schema),
+                system_prompt=system,
+                operation=operation,
+                debug_ctx={"num_chunks": len(calls)},
+                max_output_tokens=BATCH_MAX_OUTPUT_TOKENS,
+            )
+            answers = list(getattr(reply, "dimensions", None) or [])
+        except Exception as exc:
+            with state.lock:
+                state.total_llm_latency += time.time() - start
+            logger.warning(
+                "batched_call_failed",
+                operation=operation,
+                dimensions=[c.dimension for c in calls],
+                error=str(exc)[:300],
+            )
+            if len(calls) == 1 or not split_on_failure or not _split_can_help(exc):
+                raise
+            half = len(calls) // 2
+            out: dict[str, Any] = {}
+            for part in (calls[:half], calls[half:]):
+                try:
+                    out.update(
+                        self._ask_batched(
+                            part, build, item_schema, f"{operation}_part", country, state, False
+                        )
+                    )
+                except Exception as part_exc:
+                    if errors is not None:
+                        errors.update({c.dimension: str(part_exc) for c in part})
+            return out
+        with state.lock:
+            state.llm_call_count += 1
+            state.total_llm_latency += time.time() - start
+
+        def norm(name: Any) -> str:
+            return " ".join(str(name or "").split()).lower()
+
+        by_name = {norm(getattr(a, "dimension", "")): a for a in answers}
+        matched: dict[str, Any] = {}
+        for i, call in enumerate(calls):
+            answer = by_name.get(norm(call.dimension))
+            # The model is told to echo each section's name exactly; if it
+            # abbreviated one, a reply of the right length in the right order
+            # still identifies it by position.
+            if answer is None and len(answers) == len(calls):
+                candidate = answers[i]
+                if norm(getattr(candidate, "dimension", "")) not in {
+                    norm(c.dimension) for c in calls
+                }:
+                    answer = candidate
+            if answer is not None:
+                matched[call.dimension] = answer
+        return matched
+
+    def _ask_each(
+        self,
+        calls: list[_DimensionCall],
+        num_frameworks: int,
+        state: _DimensionRunState,
+        errors: dict[str, str],
+    ) -> dict[str, Any]:
+        """Module 1+2 as one request per dimension, run concurrently.
+
+        Each dimension is sent the exact prompt the per-dimension path sends and
+        gets a reply of its own. A failure is entered in `errors` and costs only
+        that dimension — unless the provider refused it (503, 504, quota): then
+        the dimensions not yet sent are failed with the same reason instead of
+        spending three attempts each on a model that is turning work away. On
+        27 Sep one outage cost 25 requests this way before the change. A re-run
+        picks up only what failed.
+        """
+        refused: list[str] = []
+        refused_lock = threading.Lock()
+
+        def ask(call: _DimensionCall) -> tuple[str, Any, str]:
+            if refused:
+                return call.dimension, None, refused[0]
+            start = time.time()
+            try:
+                answer = generate_with_retry(
+                    provider=self.provider,
+                    prompt=call.prompt,
+                    schema=self._get_combined_module_schema(),
+                    system_prompt=call.system_prompt,
+                    operation=f"module1_2_{call.dimension.lower().replace(' ', '_')}",
+                    debug_ctx={
+                        "num_chunks": call.retrieval.total_chunks,
+                        "num_frameworks": num_frameworks,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "dimension_evaluation_failed", dimension=call.dimension, error=str(exc)[:300]
+                )
+                if not _reply_was_malformed(exc):
+                    with refused_lock:
+                        refused.append(str(exc))
+                return call.dimension, None, str(exc)
+            finally:
+                with state.lock:
+                    state.total_llm_latency += time.time() - start
+            with state.lock:
+                state.llm_call_count += 1
+            return call.dimension, answer, ""
+
+        answers: dict[str, Any] = {}
+        if not calls:
+            return answers
+        with ThreadPoolExecutor(
+            max_workers=max(1, min(ANALYSIS_MAX_CONCURRENCY, len(calls)))
+        ) as pool:
+            for dimension, answer, error in pool.map(ask, calls):
+                if answer is None:
+                    errors[dimension] = error
+                else:
+                    answers[dimension] = answer
+        return answers
+
+    def _analyze_pending_batched(
+        self,
+        pending: list[str],
+        workspace_id: str,
+        num_frameworks: int,
+        country: str | None,
+        state: _DimensionRunState,
+    ) -> dict[str, GovernanceGap]:
+        """Every pending dimension, with the Module 3+4 requests shared.
+
+        The per-dimension work before and after each request is unchanged —
+        routing, retrieval, the precomputed verdict, and every line of the
+        answer handling are the same methods the per-dimension path calls. Only
+        the transport differs: the Module 3+4 answers for the gapped dimensions
+        arrive in one reply, and with BATCH_EVALUATION so do the Module 1+2
+        answers; otherwise each dimension's evaluation is its own request.
+        """
+        country = country or ""
+        results: dict[str, GovernanceGap] = {}
+        calls: list[_DimensionCall] = []
+        for dimension in pending:
+            try:
+                routed_frameworks = resolve_frameworks(dimension, country=country)
+                retrieval = self.retrieval_pipeline.retrieve_module_chunks(
+                    dimension=dimension,
+                    workspace_id=workspace_id,
+                    module1_frameworks=routed_frameworks,
+                    module1_regional_frameworks=resolve_regional_frameworks(country=country),
+                    module2_dimension_frameworks=resolve_dimension_frameworks(
+                        dimension, roles=["module_2_practical"]
+                    ),
+                )
+                with state.lock:
+                    state.doc_chunks_per_dimension[dimension] = len(retrieval.document_chunks)
+                    state.all_retrieved.extend(retrieval.all_chunks_labeled())
+                if retrieval.total_chunks == 0:
+                    results[dimension] = self._build_insufficient_gap(dimension)
+                    continue
+                calls.append(
+                    self._prepare_dimension_combined(dimension, retrieval, country, workspace_id)
+                )
+            except Exception as exc:
+                logger.error("dimension_analysis_failed", dimension=dimension, error=str(exc))
+                results[dimension] = self._build_error_gap(dimension, str(exc))
+
+        part_errors: dict[str, str] = {}
+        batch_error = "The analysis reply did not include this dimension."
+        if not BATCH_EVALUATION:
+            answers = self._ask_each(calls, num_frameworks, state, part_errors)
+        else:
+            try:
+                answers = self._ask_batched(
+                    calls,
+                    analysis_prompts.build_module1_2_batched_prompt,
+                    self._get_combined_module_schema(),
+                    "module1_2_batch",
+                    country,
+                    state,
+                    errors=part_errors,
+                )
+            except Exception as exc:
+                answers = {}
+                batch_error = str(exc)
+        for call in calls:
+            answer = answers.get(call.dimension)
+            if answer is None:
+                results[call.dimension] = self._build_error_gap(
+                    call.dimension, part_errors.get(call.dimension, batch_error)
+                )
+                continue
+            try:
+                results[call.dimension] = self._finish_dimension_combined(call, answer)
+            except Exception as exc:
+                logger.error("dimension_analysis_failed", dimension=call.dimension, error=str(exc))
+                results[call.dimension] = self._build_error_gap(call.dimension, str(exc))
+
+        # Module 3+4 for the gapped dimensions, in one request. A failure here
+        # leaves the verdicts standing and the roadmap absent, as it always did.
+        m34_calls: list[_Module34Call] = []
+        for dimension in pending:
+            gap = results.get(dimension)
+            if gap is None or gap.analysis_error:
+                continue
+            if gap.coverage not in (CoverageLevel.PARTIAL, CoverageLevel.MISSING):
+                continue
+            try:
+                m34_retrieval = self.retrieval_pipeline.retrieve_module34_chunks(
+                    dimension=dimension,
+                    workspace_id=workspace_id,
+                    module3_dimension_frameworks=resolve_dimension_frameworks(
+                        dimension, roles=["module_3_implementation"]
+                    ),
+                )
+                m34_calls.append(
+                    self._prepare_module34(dimension, gap, m34_retrieval, country, workspace_id)
+                )
+            except Exception as exc:
+                logger.warning("module_3_4_analysis_failed", dimension=dimension, error=str(exc))
+        if m34_calls:
+            calls_before = state.llm_call_count
+            try:
+                m34_answers = self._ask_batched(
+                    m34_calls,
+                    analysis_prompts.build_module3_4_batched_prompt,
+                    self._get_module34_schema(),
+                    "module3_4_batch",
+                    country,
+                    state,
+                )
+            except Exception as exc:
+                logger.warning("module_3_4_analysis_failed", error=str(exc))
+                m34_answers = {}
+            with state.lock:
+                state.module34_call_count += state.llm_call_count - calls_before
+            for call in m34_calls:
+                answer = m34_answers.get(call.dimension)
+                if answer is None:
+                    logger.warning("module_3_4_analysis_failed", dimension=call.dimension)
+                    continue
+                try:
+                    self._finish_module34(call, answer)
+                except Exception as exc:
+                    logger.warning(
+                        "module_3_4_analysis_failed", dimension=call.dimension, error=str(exc)
+                    )
+
+        for dimension in pending:
+            gap = results[dimension]
+            info = {"provider": self.provider.model_name, "tier": self.provider.tier}
+            if gap.analysis_error:
+                info["error"] = gap.analysis_error
+            self._emit_dimension(state, dimension, gap, info)
+        return results
+
     def analyze(
         self,
         document_text: str,
@@ -4117,7 +4238,7 @@ class GapAnalyzer:
         # ── Bounded-parallel dimension loop ────────────────────────────
         # Dimensions used to run strictly sequentially (8 + up to 8 = up to
         # 16 LLM calls back to back). Now they run concurrently in a small
-        # worker pool (ANALYSIS_MAX_CONCURRENCY, default 3 in flight), paced
+        # worker pool (ANALYSIS_MAX_CONCURRENCY; the free-tier setup runs 3), paced
         # underneath by the shared RPM throttle + jittered backoff in
         # provider_router — the free-tier request rate is never exceeded,
         # only wall-clock time improves. Results are re-assembled in
@@ -4133,8 +4254,15 @@ class GapAnalyzer:
                 pending.append(dimension)
 
         if pending:
+            self._prepare_workspace(workspace_id, country or "")
             max_workers = max(1, ANALYSIS_MAX_CONCURRENCY)
-            if max_workers > 1 and len(pending) > 1:
+            if BATCH_LLM_CALLS:
+                dimension_results.update(
+                    self._analyze_pending_batched(
+                        pending, workspace_id, num_frameworks, country, state
+                    )
+                )
+            elif max_workers > 1 and len(pending) > 1:
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
                         pool.submit(
@@ -4171,7 +4299,7 @@ class GapAnalyzer:
         complete_results = [dimension_results[d] for d in GOVERNANCE_DIMENSIONS]
         all_retrieved = state.all_retrieved
         doc_chunks_per_dimension = state.doc_chunks_per_dimension
-        llm_call_count = state.llm_call_count
+        llm_call_count = state.llm_call_count + getattr(self, "_adjudication_calls", 0)
         total_llm_latency = state.total_llm_latency
 
         for g in complete_results:
@@ -4249,7 +4377,6 @@ class GapAnalyzer:
             governance_gaps=complete_results,
             summary=self._generate_summary(complete_results),
             total_retrieved=len(all_retrieved),
-            retrieval_frameworks=frameworks,
             similarity_scores=total_similarity_scores,
             total_processing_time=time.time() - start_time,
             llm_latency=total_llm_latency,
@@ -4273,13 +4400,14 @@ class GapAnalyzer:
             provider=self.provider.model_name,
             tier=self.provider.tier,
             llm_call_count=llm_call_count,
-            module34_calls=llm_call_count - len(complete_results),
+            module34_calls=state.module34_call_count,
+            adjudication_calls=getattr(self, "_adjudication_calls", 0),
             consistency_passed=consistency_report.passed,
             consistency_score=consistency_report.score,
             decision_analytics=decision_analytics,
         )
 
-        print_debug_summary()
+        log_run_summary()
 
         return result
 
@@ -4305,8 +4433,11 @@ class GapAnalyzer:
             dimension=dimension,
             coverage=CoverageLevel.INSUFFICIENT_EVIDENCE,
             gap_found=False,
-            reason_flagged=f"Analysis failed: {error}",
-            recommendation="Dimension could not be assessed — re-run the analysis when the LLM provider is available.",
+            # The provider's own error stays in analysis_error for whoever
+            # debugs the run. A policy reader gets the fact and the remedy —
+            # "All Gemini API keys exhausted for 'module1_2_...'" is neither.
+            reason_flagged="This dimension could not be assessed on this run.",
+            recommendation="Re-run the analysis to assess this dimension.",
             risk_level=RiskLevel.INSUFFICIENT_EVIDENCE,
             risk_reason="Analysis Error",
             confidence_score=0.0,
@@ -4337,10 +4468,9 @@ class GapAnalyzer:
         if high_risk > 0 or medium_risk > 0:
             parts.append(f"Risk levels: {high_risk} high-risk, {medium_risk} medium-risk.")
         if errored:
-            first_err = (errored[0].analysis_error or "")[:120]
             parts.append(
-                f"{len(errored)} dimension(s) could not be analysed "
-                f"({', '.join(g.dimension for g in errored)}): {first_err}."
+                f"{len(errored)} dimension(s) could not be assessed on this run "
+                f"({', '.join(g.dimension for g in errored)})."
             )
         if insufficient > 0:
             parts.append(f"{insufficient} dimensions had insufficient evidence.")

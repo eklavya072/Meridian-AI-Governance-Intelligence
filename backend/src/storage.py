@@ -96,14 +96,22 @@ class FilesystemStorage(Storage):
     """
 
     def __init__(self, root: Path | str) -> None:
-        self.root = Path(root)
+        # Resolved once, here. The default root is "./data/uploads", and a
+        # relative root made put() hand back "data/uploads/<file>" — which
+        # _resolve then joined to the root again, so a file saved a second
+        # earlier read as missing and the run dropped it.
+        self.root = Path(root).resolve()
 
     def _resolve(self, ref: str) -> Path:
         path = Path(ref)
         return path if path.is_absolute() else self.root / ref
 
     def put(self, key: str, data: bytes) -> str:
-        path = self.root / key
+        path = (self.root / key).resolve()
+        # The key carries a client-chosen file name. Callers reduce it to a bare
+        # name first; this is the backstop that keeps every write inside root.
+        if not path.is_relative_to(self.root):
+            raise StorageError(f"Refusing to store outside {self.root}: {key!r}")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return str(path)
@@ -253,7 +261,7 @@ def build_storage() -> Storage:
 
     backend = os.getenv("STORAGE_BACKEND", "filesystem").strip().lower()
     if backend in ("", "filesystem", "local", "disk"):
-        logger.info("storage_backend_selected", backend="filesystem", root=str(upload_dir))
+        logger.info("storage_backend_selected", backend="filesystem", root=str(filesystem.root))
         return filesystem
 
     if backend in ("azure", "azure_blob", "azureblob"):

@@ -46,6 +46,18 @@ GAPS = [
                 "text": "High-risk AI systems shall be designed and developed with resource "
                 "and energy efficiency in mind throughout their lifecycle.",
                 "verified": True,
+                "document_name": "EU AI Act.pdf",
+                "source_framework": "EU AI Act.pdf",
+                "page_number": "12",
+            },
+            {
+                "text": "Member States should assess the direct and indirect environmental "
+                "impact throughout the AI system life cycle, including its carbon footprint "
+                "and energy consumption.",
+                "verified": True,
+                "document_name": "UNESCO_Recommendation_on_the_Ethics_of_AI.pdf",
+                "source_framework": "UNESCO Recommendation on the Ethics of AI",
+                "page_number": "30",
             },
             {"text": "short", "verified": True},
             {
@@ -131,8 +143,8 @@ class TestImplementationRoadmap:
 class TestEvidenceBase:
     def test_counts_cover_every_citation(self):
         ev = build_evidence_base(GAPS)
-        assert ev["citations_total"] == 4
-        assert ev["citations_verified"] == 3
+        assert ev["citations_total"] == 5
+        assert ev["citations_verified"] == 4
 
     def test_unverified_passages_are_never_quoted(self):
         ev = build_evidence_base(GAPS)
@@ -145,6 +157,19 @@ class TestEvidenceBase:
             "Environmental Sustainability"
         ]
 
+    def test_a_framework_passage_is_never_quoted_as_the_countrys_text(self):
+        # The UNESCO passage is longer, so "longest verified" alone chose it
+        # and printed it under the EU's dimension as if the Act said it.
+        ev = build_evidence_base(GAPS, documents=["EU AI Act.pdf"])
+        assert [q["source"] for q in ev["representative_quotes"]] == ["EU AI Act, p. 12"]
+        assert "resource and energy efficiency" in ev["representative_quotes"][0]["quote"]
+
+    def test_every_rendering_names_the_source(self):
+        from src.brief_synthesis import format_evidence_quote
+
+        q = build_evidence_base(GAPS)["representative_quotes"][0]
+        assert format_evidence_quote(q).endswith("(EU AI Act, p. 12)")
+
     def test_trivially_short_fragments_are_skipped(self):
         ev = build_evidence_base(GAPS)
         assert all(len(q["quote"]) > 80 for q in ev["representative_quotes"])
@@ -153,3 +178,35 @@ class TestEvidenceBase:
         ev = build_evidence_base([{"dimension": "X", "coverage": "Partial"}])
         assert ev["citations_total"] == 0
         assert ev["representative_quotes"] == []
+
+
+class TestAbsentMechanismsInTheBrief:
+    """The brief read absent mechanisms back out of prose by matching "Not
+    addressed:", which the mechanism summary stopped writing — so 22 of the 42
+    dimensions with gaps printed none. Japan's Privacy was one of them."""
+
+    def test_they_come_from_the_stored_fields_not_the_prose(self):
+        from src.brief_synthesis import _absent_mechanisms
+
+        gap = {
+            "dimension": "Privacy",
+            "mechanisms_absent": ["data minimisation", "purpose limitation"],
+            "risk_basis": "The document imposes 105 binding requirement(s) here.",
+        }
+
+        assert _absent_mechanisms(gap) == ["data minimisation", "purpose limitation"]
+
+    def test_only_consensus_gaps_carry_a_count_and_they_lead(self):
+        from src.brief_synthesis import _absent_mechanisms
+
+        gap = {
+            "dimension": "Safety",
+            "mechanisms_absent": ["human failsafe / shutdown", "post-market monitoring"],
+            "priority_gaps": [{"mechanism": "post-market monitoring", "expected_by": 24}],
+            "framework_corpus_size": 43,
+        }
+
+        assert _absent_mechanisms(gap) == [
+            "post-market monitoring (expected by 24 of 43 reference instruments)",
+            "human failsafe / shutdown",
+        ]

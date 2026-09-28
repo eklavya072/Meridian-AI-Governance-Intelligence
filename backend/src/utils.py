@@ -4,7 +4,10 @@ import re
 from typing import Any
 
 import numpy as np
+import structlog
 from numpy.linalg import norm
+
+logger = structlog.get_logger()
 
 
 def l2_normalize(vec: list[float]) -> list[float]:
@@ -51,10 +54,6 @@ def ocr_flexible_fragment(term: str, min_len_for_flex: int = 5) -> str:
     if len(compact) < min_len_for_flex:
         return re.escape(term)
     return r"\s?".join(re.escape(ch) for ch in compact)
-
-
-def rrf_score(rank: int, k: int = 60) -> float:
-    return 1.0 / (k + rank)
 
 
 def reciprocal_rank_fusion(
@@ -118,8 +117,17 @@ def batch_fetch_chunk_metadata(vectorstore: Any, chunk_ids: list[str]) -> dict[s
                     "document_name": md.get("document_name", ""),
                     "is_document": md.get("is_document", not bool(md.get("framework", ""))),
                 }
-    except Exception:
-        pass
+    except Exception as exc:
+        # Every citation shown to a reader gets its page number and section
+        # title from here. Returning {} quietly turns a store failure into a
+        # brief full of unlocated quotes, which reads like the documents
+        # simply had no page numbers.
+        logger.warning(
+            "chunk_metadata_fetch_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            requested=len(chunk_ids),
+        )
     return result
 
 

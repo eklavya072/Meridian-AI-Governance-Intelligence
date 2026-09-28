@@ -67,17 +67,19 @@ def mechanism_salience() -> dict[str, int]:
     from src.evidence_strength import DIMENSION_MECHANISMS
     from src.mechanism_matching import _cue_pattern
 
-    by_framework: dict[str, list[str]] = {}
+    by_framework: dict[str, set[str]] = {}
     try:
-        from src.vectorstore import VectorStore
+        from src.vectorstore import iter_library_chunks, open_collection
 
-        store = VectorStore()
-        raw = store.collection.get(include=["documents", "metadatas"], limit=60000)
-        for text, md in zip(raw.get("documents") or [], raw.get("metadatas") or []):
+        for text, md in iter_library_chunks(open_collection()):
             md = md or {}
-            if md.get("workspace_id"):
-                continue  # a country document is the thing being assessed, not a reference
-            name = md.get("framework_name") or md.get("document_name")
+            # `framework` is the key RETRIEVAL filters on and the only one
+            # that matches config for all 43 instruments — the other two hold
+            # filenames for 32 of them. Counting by filename happens to give
+            # the right total today because each instrument is one file, but
+            # an instrument split across two PDFs would be counted twice and
+            # its salience halved.
+            name = md.get("framework") or md.get("framework_name") or md.get("document_name")
             if not name:
                 # 90 chunks carry neither name. Bucketing them under "?" made
                 # them a 44th instrument that does not exist, so a mechanism
@@ -85,7 +87,10 @@ def mechanism_salience() -> dict[str, int]:
                 # and the count then exceeded the denominator this module's own
                 # framework_count() reports.
                 continue
-            by_framework.setdefault(name, []).append(text or "")
+            # A set: a framework serving two roles is indexed once per role,
+            # and counting both copies let a single passing mention clear
+            # MIN_CHUNKS_PER_FRAMEWORK on its own.
+            by_framework.setdefault(name, set()).add(text or "")
     except Exception as exc:
         logger.warning("framework_salience_unavailable", error=str(exc))
         return {}
@@ -117,15 +122,15 @@ def framework_count() -> int:
     itself a measurement.
     """
     try:
-        from src.vectorstore import VectorStore
+        from src.vectorstore import iter_library_chunks, open_collection
 
-        raw = VectorStore().collection.get(include=["metadatas"], limit=60000)
         names = {
-            (md or {}).get("framework_name") or (md or {}).get("document_name")
-            for md in (raw.get("metadatas") or [])
-            if not (md or {}).get("workspace_id")
+            (md or {}).get("framework")
+            or (md or {}).get("framework_name")
+            or (md or {}).get("document_name")
+            for _, md in iter_library_chunks(open_collection())
         }
-        return len(names - {None})
+        return len(names - {None, ""})
     except Exception as exc:
         logger.warning("framework_count_unavailable", error=str(exc))
         return 0

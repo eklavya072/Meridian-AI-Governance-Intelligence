@@ -31,9 +31,11 @@ import os
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -41,11 +43,34 @@ from src.provider_errors import FailureKind
 
 logger = structlog.get_logger()
 
+#: The provider's day. Gemini's free-tier allowance resets at midnight Pacific,
+#: not at the server's midnight: kept on local time, a key spent in the Indian
+#: morning stayed "exhausted" until Indian midnight, twelve hours after fresh
+#: quota had arrived, and a key spent in the evening was retried at midnight
+#: while still spent. (tzdata is a dependency because slim images ship none.)
+QUOTA_TIMEZONE = ZoneInfo(os.getenv("QUOTA_TIMEZONE", "America/Los_Angeles"))
+
+
+def quota_day() -> str:
+    """The date of the provider's current quota day."""
+    return datetime.now(QUOTA_TIMEZONE).strftime("%Y-%m-%d")
+
+
 # Consecutive non-terminal failures before a credential is dropped from
 # rotation. One 429 is ordinary on a free tier; three in a row is a pattern.
 BREAKER_FAILURE_THRESHOLD = int(os.getenv("PROVIDER_BREAKER_THRESHOLD", "3"))
 # How long a credential stays out before a single probe is allowed through.
 BREAKER_COOLDOWN_SECONDS = float(os.getenv("PROVIDER_BREAKER_COOLDOWN", "60"))
+
+#: How long a half-open probe may be outstanding before another is allowed.
+#: HALF_OPEN is left only by recording the probe's outcome, so a probe that
+#: never reports one — the run gave up after its last retry, the task was
+#: killed, an error escaped before the record — strands the credential there,
+#: and is_available refuses it for the life of the process. Five credentials
+#: stranded that way read as "0 healthy" while the daily allowance was
+#: untouched, and every dimension of the next two runs failed against a
+#: provider that was working. The longest single call measured here is ~27s.
+HALF_OPEN_PROBE_TIMEOUT_SECONDS = float(os.getenv("PROVIDER_HALF_OPEN_TIMEOUT", "120"))
 
 # How long a replica may trust its own copy of the shared ledger. Short enough
 # that a credential spent on one replica stops being used on the others within
@@ -81,6 +106,9 @@ class KeyHealth:
     consecutive_failures: int = 0
     state: CircuitState = CircuitState.CLOSED
     opened_at: float | None = None
+    #: When the single half-open probe was handed out, so a probe that never
+    #: reports back does not hold the credential out of rotation forever.
+    half_opened_at: float | None = None
     last_error: str | None = None
     # Set from a provider's own Retry-After, so the cooldown reflects what it
     # actually asked for rather than our default guess.
@@ -151,7 +179,7 @@ class KeyHealthRegistry:
     # ── persistence ─────────────────────────────────────────────────────
     @staticmethod
     def _today() -> str:
-        return time.strftime("%Y-%m-%d")
+        return quota_day()
 
     def _read_payload(self) -> dict | None:
         """Today's state from wherever it lives. None when there is none."""
@@ -290,6 +318,7 @@ class KeyHealthRegistry:
             # One success closes the circuit — that is the point of the probe.
             health.state = CircuitState.CLOSED
             health.opened_at = None
+            health.half_opened_at = None
             health.retry_after_until = None
             # A served request is proof the allowance is not spent, whatever we
             # recorded earlier (the window can roll over mid-run).
@@ -340,6 +369,7 @@ class KeyHealthRegistry:
                     )
                 health.state = CircuitState.OPEN
                 health.opened_at = time.time()
+                health.half_opened_at = None
             self._persist_locked()
 
     # ── rotation ────────────────────────────────────────────────────────
@@ -356,10 +386,21 @@ class KeyHealthRegistry:
             if health.state is CircuitState.CLOSED:
                 return True
             if health.state is CircuitState.HALF_OPEN:
-                # A probe is already in flight; do not send a second.
-                return False
+                # A probe is already in flight; do not send a second — unless
+                # the first one is never coming back.
+                outstanding = time.time() - (health.half_opened_at or 0.0)
+                if outstanding < HALF_OPEN_PROBE_TIMEOUT_SECONDS:
+                    return False
+                health.half_opened_at = time.time()
+                logger.info(
+                    "provider_circuit_probe_abandoned",
+                    key_id=key_id,
+                    outstanding_seconds=round(outstanding, 1),
+                )
+                return True
             if health.seconds_until_probe() <= 0:
                 health.state = CircuitState.HALF_OPEN
+                health.half_opened_at = time.time()
                 logger.info("provider_circuit_half_open", key_id=key_id)
                 return True
             return False
@@ -367,20 +408,6 @@ class KeyHealthRegistry:
     def available_keys(self, key_ids: list[str]) -> list[str]:
         self.refresh_if_stale()
         return [k for k in key_ids if self.is_available(k)]
-
-    def next_available(self, key_ids: list[str], start: int = 0) -> str | None:
-        """Round-robin over healthy credentials only, starting at `start`."""
-        if not key_ids:
-            return None
-        # Before handing out a credential, find out whether another replica
-        # has already been refused on it.
-        self.refresh_if_stale()
-        with self._lock:
-            for offset in range(len(key_ids)):
-                candidate = key_ids[(start + offset) % len(key_ids)]
-                if self.is_available(candidate):
-                    return candidate
-        return None
 
     def seconds_until_any_available(self, key_ids: list[str]) -> float:
         """How long until something can serve — for an honest error message."""

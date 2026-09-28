@@ -10,8 +10,8 @@
  *
  * Distinct from the app's other effects: BlurText blurs letters in from
  * above, SplitText rises letters, InkReveal wipes words up + sweeps light,
- * WarpText warps a canvas, ScrollFloat floats lines on scroll. This one is a
- * masked word-rise with a focus resolve — movement that serves the text
+ * WarpText warps a canvas. This one is a masked word-rise with a focus
+ * resolve — movement that serves the text
  * rather than performing it.
  *
  * Motion rules: transform/filter/opacity only, on-mount, one-shot. The mask

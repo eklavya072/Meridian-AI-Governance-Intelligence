@@ -4,16 +4,12 @@ Architecture:
   - IntentClassifier: Determines user intent from message + session context
   - ResponseGenerator: Generates structured responses per intent
   - SessionContext: Tracks active dimension, history, and conversation state
-  - PluginRegistry: Extensible handler for future capabilities (comparisons,
-    benchmarks, compliance reports, etc.) — new plugins register without
-    modifying classification logic.
 """
 
 from __future__ import annotations
 
 import re
 import time
-from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any
 
@@ -21,6 +17,7 @@ import structlog
 
 from src.analysis_prompts import DIMENSION_DEFINITIONS
 from src.gap_analyzer import GOVERNANCE_DIMENSIONS
+from src.guardrails import GREETING_PATTERNS
 
 logger = structlog.get_logger()
 
@@ -198,11 +195,9 @@ _EDUCATIONAL_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_GREETING_PATTERNS = re.compile(
-    r"^(hello|hi|hey|good morning|good afternoon|good evening|"
-    r"thanks|thank you|how are you|what'?s up)",
-    re.IGNORECASE,
-)
+# One definition of a greeting, shared with the guardrails (see there for why
+# it must match the whole message).
+_GREETING_PATTERNS = GREETING_PATTERNS
 
 _FOLLOW_UP_PATTERNS = re.compile(
     r"^(why\s+is\s+this|how\s+(can|does)|explain\s+(this|that|it)|"
@@ -655,7 +650,7 @@ def _build_educational_response(
     normalized = _normalize(message)
 
     # Check for common comparison patterns
-    comparisons: dict[str, tuple[str, str]] = {}
+    comparisons: dict[str, str] = {}
 
     if "responsible" in normalized and "ethical" in normalized:
         comparisons["Responsible AI vs Ethical AI"] = (
@@ -754,61 +749,6 @@ def build_educational_response(message: str, dimension: str | None) -> str:
     return _build_educational_response(message, dimension)
 
 
-# ── Plugin Interface ─────────────────────────────────────────────────────
-
-
-class AdvisorPlugin(ABC):
-    """Base class for future capabilities that plug into the advisor without
-    modifying the intent classification logic."""
-
-    @property
-    @abstractmethod
-    def name(self) -> str: ...
-
-    @abstractmethod
-    def can_handle(self, intent: Intent, dimension: str | None, message: str) -> bool:
-        """Return True if this plugin should handle the request."""
-        ...
-
-    @abstractmethod
-    def handle(
-        self,
-        message: str,
-        intent: Intent,
-        dimension: str | None,
-        session: SessionContext,
-        retrieval_context: str | None = None,
-    ) -> str | None:
-        """Handle the request and return a response, or None to fall through."""
-        ...
-
-
-class PluginRegistry:
-    """Maintains a list of plugins and dispatches requests to matching ones."""
-
-    def __init__(self) -> None:
-        self._plugins: list[AdvisorPlugin] = []
-
-    def register(self, plugin: AdvisorPlugin) -> None:
-        self._plugins.append(plugin)
-        logger.info("advisor_plugin_registered", plugin=plugin.name)
-
-    def get_handler(
-        self,
-        intent: Intent,
-        dimension: str | None,
-        message: str,
-    ) -> AdvisorPlugin | None:
-        for plugin in self._plugins:
-            if plugin.can_handle(intent, dimension, message):
-                return plugin
-        return None
-
-
-# Global registry
-_registry = PluginRegistry()
-
-
 # ── Main Entry Point ─────────────────────────────────────────────────────
 
 
@@ -836,62 +776,49 @@ def generate_response(
         session.set_finding_context(finding_context)
 
     intent, dimension = classify_intent(message, session)
-    reply: str | None = None
     provider: str = "template"
 
-    # Try plugin handlers first
-    plugin = _registry.get_handler(intent, dimension, message)
-    if plugin:
-        try:
-            reply = plugin.handle(message, intent, dimension, session)
-            if reply:
-                provider = f"plugin:{plugin.name}"
-        except Exception as exc:
-            logger.error("advisor_plugin_failed", plugin=plugin.name, error=str(exc))
-
-    # Fall back to built-in generators
-    if reply is None:
-        try:
-            if intent == Intent.GREETING:
-                reply = _build_greeting_response()
-            elif intent == Intent.CONCEPT_EXPLANATION and dimension:
+    try:
+        if intent == Intent.GREETING:
+            reply = _build_greeting_response()
+        elif intent == Intent.CONCEPT_EXPLANATION and dimension:
+            reply = _build_concept_response(
+                dimension,
+                _get_dimension_definition(dimension),
+                _get_dimension_aspects(dimension),
+            )
+        elif intent == Intent.ANALYSIS_EXPLANATION and dimension:
+            reply = _build_analysis_explanation(
+                dimension,
+                finding_context or session.finding_context,
+                analysis_results,
+            )
+        elif intent == Intent.RECOMMENDATION_EXPLANATION and dimension:
+            reply = _build_recommendation_response(
+                dimension,
+                finding_context or session.finding_context,
+                analysis_results,
+            )
+        elif intent == Intent.EDUCATIONAL:
+            reply = _build_educational_response(message, dimension)
+        elif intent == Intent.GENERAL:
+            # Try to find a dimension in the message even if not classified
+            dim = dimension or _extract_dimension(message)
+            if dim:
                 reply = _build_concept_response(
-                    dimension,
-                    _get_dimension_definition(dimension),
-                    _get_dimension_aspects(dimension),
+                    dim,
+                    _get_dimension_definition(dim),
+                    _get_dimension_aspects(dim),
                 )
-            elif intent == Intent.ANALYSIS_EXPLANATION and dimension:
-                reply = _build_analysis_explanation(
-                    dimension,
-                    finding_context or session.finding_context,
-                    analysis_results,
-                )
-            elif intent == Intent.RECOMMENDATION_EXPLANATION and dimension:
-                reply = _build_recommendation_response(
-                    dimension,
-                    finding_context or session.finding_context,
-                    analysis_results,
-                )
-            elif intent == Intent.EDUCATIONAL:
-                reply = _build_educational_response(message, dimension)
-            elif intent == Intent.GENERAL:
-                # Try to find a dimension in the message even if not classified
-                dim = dimension or _extract_dimension(message)
-                if dim:
-                    reply = _build_concept_response(
-                        dim,
-                        _get_dimension_definition(dim),
-                        _get_dimension_aspects(dim),
-                    )
-                    intent = Intent.CONCEPT_EXPLANATION
-                    dimension = dim
-                else:
-                    reply = _build_unknown_response()
+                intent = Intent.CONCEPT_EXPLANATION
+                dimension = dim
             else:
                 reply = _build_unknown_response()
-        except Exception as exc:
-            logger.error("advisor_fallback_failed", intent=intent.value, error=str(exc))
+        else:
             reply = _build_unknown_response()
+    except Exception as exc:
+        logger.error("advisor_fallback_failed", intent=intent.value, error=str(exc))
+        reply = _build_unknown_response()
 
     # Update session
     session.update(message, reply, intent, dimension)

@@ -49,9 +49,6 @@ class FakeVectorStore:
     def get_all_frameworks(self):
         return ["EU AI Act"]
 
-    def get_all_document_names(self):
-        return ["policy.pdf"]
-
     def get_workspace_documents(self, workspace_id):
         return ["policy.pdf"]
 

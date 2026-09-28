@@ -103,3 +103,20 @@ class TestNoRetrievalResults:
         result = g.check_query("What is the meaning of life?")
         assert not result.passed
         assert "similar" in (result.reason or "")
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Highlight the main obligations on providers",
+        "History of the EU AI Act?",
+        "Supervisory authorities: what powers do they have?",
+        "Your scoring: why five depth stages?",
+        "How are you deciding what counts as binding?",
+        "Hi, what does NIST say about bias?",
+    ],
+)
+def test_a_question_that_starts_like_a_greeting_is_not_one(question):
+    """Prefix matching with no word boundary answered these with a hello."""
+    result = Guardrails(MockVectorStore()).check_query(question, strict=False)
+    assert result.passed

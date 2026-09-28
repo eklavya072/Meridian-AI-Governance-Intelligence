@@ -72,10 +72,14 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import structlog
 
 from src.utils import ocr_flexible_fragment
+
+if TYPE_CHECKING:
+    from src.mechanism_matching import MechanismMatch
 
 logger = structlog.get_logger()
 
@@ -858,10 +862,15 @@ def meets_force_bar(profile: EvidenceProfile) -> bool:
     return profile.n_binding >= 2 or (profile.n_binding >= 1 and profile.n_enforceable >= 1)
 
 
+#: Below this share of a dimension's mechanisms, a force-bar pass is held at
+#: Partial. See the MECHANISM BREADTH GATE comment in coverage_from_profile.
+MECHANISM_FLOOR = 1 / 3
+
+
 def coverage_from_profile(
     profile: EvidenceProfile,
-    mechanisms: MechanismCoverage | None = None,
-    mechanism_floor: float = 1 / 3,
+    mechanisms: MechanismMatch | None = None,
+    mechanism_floor: float = MECHANISM_FLOOR,
 ) -> tuple[str, str]:
     """Map an evidence profile to a Coverage level. Returns (level, rationale).
 
@@ -900,7 +909,19 @@ def coverage_from_profile(
     # must still supply its own binding provisions, so mechanism vocabulary
     # can never substitute for governing force. (The inverse case is real too
     # — a document with 6/6 mechanisms but no binding force stays Partial.)
-    if force_bar and mechanisms is not None and mechanisms.total:
+    # ZERO DETECTIONS IS NOT EVIDENCE OF ABSENCE.
+    #
+    # The floor used to fire hardest where the evidence was weakest: on cells
+    # where the detector found NOTHING. Measured, it fired on 12 of 55 cells
+    # and four of those were China at 0 of 5 or 0 of 6 — a jurisdiction with
+    # six binding provisions in both Safety and Human Autonomy, held at
+    # Partial because mechanism matching returned nothing.
+    #
+    # Mechanism matching was measured at 20% precision on the cue selector
+    # (see mechanism_adjudication), so a zero count cannot distinguish "this
+    # document has no mechanisms" from "the detector did not find them".
+    # Demote on a measured shortfall, never on a silent one.
+    if force_bar and mechanisms is not None and mechanisms.total and mechanisms.met:
         if (mechanisms.met / mechanisms.total) < mechanism_floor:
             # Named, not counted. "3 of 6 mechanisms" tells a reader nothing
             # they can act on, because they have no way to know what the six
@@ -960,6 +981,7 @@ def coverage_from_profile(
             "The document imposes a binding requirement for this dimension, but "
             "it stands alone rather than forming a developed regime."
         )
+
     if profile.n_institutional >= 1 or profile.n_commitment >= 1:
         return "Partial", (
             "The document commits to acting on this dimension"
@@ -983,7 +1005,7 @@ def coverage_from_profile(
 def describe_risk_basis(
     coverage: str,
     profile: EvidenceProfile,
-    mechanisms: MechanismCoverage | None = None,
+    mechanisms: MechanismMatch | None = None,
 ) -> tuple[str, str]:
     """Say WHY this dimension carries risk, and what follows if it is not fixed.
 
@@ -1430,46 +1452,10 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 
-@dataclass
-class MechanismCoverage:
-    """Which framework-required mechanisms the document actually provides."""
-
-    dimension: str = ""
-    present: dict[str, int] = field(default_factory=dict)  # mechanism -> best tier
-    absent: list[str] = field(default_factory=list)
-
-    @property
-    def total(self) -> int:
-        return len(self.present) + len(self.absent)
-
-    @property
-    def met(self) -> int:
-        return len(self.present)
-
-    @property
-    def binding_met(self) -> int:
-        """Mechanisms provided as an actual duty, not merely mentioned."""
-        return sum(1 for t in self.present.values() if t >= TIER_OBLIGATORY)
-
-    def summary(self) -> str:
-        if not self.total:
-            return ""
-        parts = [
-            f"Provides {self.met} of {self.total} governance mechanisms the "
-            f"reference frameworks expect for this dimension"
-        ]
-        if self.binding_met:
-            parts.append(f"{self.binding_met} of them as a binding requirement")
-        tail = "; ".join(parts)
-        if self.absent:
-            tail += f". Not addressed: {', '.join(self.absent[:4])}"
-        return tail + "."
-
-
 def detect_mechanisms(
     scored_sentences: list[ScoredSentence],
     dimension: str,
-) -> MechanismCoverage:
+) -> MechanismMatch:
     """Which required mechanisms the document provides, and how strongly.
 
     Kept as the name every caller already uses; the implementation lives in

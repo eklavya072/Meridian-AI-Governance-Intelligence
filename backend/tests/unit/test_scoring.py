@@ -8,20 +8,12 @@ import pytest
 
 from src.evidence_strength import TIER_ENFORCEABLE, TIER_OBLIGATORY
 from src.grading import (
-    DEPTH_STAGE_SCORE_V2,
-    _build_profile_base,
     _classify_base,
-    aggregate_depth,
     build_provision_profile,
     classify_provision,
-    corpus_completeness,
-    depth_report,
     detect_enforcement_regime,
     dimension_enforcement_backing,
     evidence_is_sufficient,
-    geometric_index,
-    penalised_index,
-    referenced_instruments,
     strip_policing,
 )
 
@@ -99,95 +91,14 @@ class TestEnforcementBackingIsScopedToTheDocument:
         assert dimension_enforcement_backing(by_doc, set(), "Transparency") is False
 
 
-class TestAggregationPenalisesImbalance:
-    """OECD/JRC Handbook; UNDP switched the HDI to a geometric mean in 2010."""
-
-    # Every dimension governed, none of them brilliantly.
-    BALANCED = dict.fromkeys(["Transparency", "Accountability", "Privacy", "Safety"], "Delegated")
-    # Three dimensions governed superbly and one not governed at all — the
-    # profile the arithmetic mean cannot distinguish from real strength.
-    HOLED = {
-        "Transparency": "Institutionalized",
-        "Accountability": "Institutionalized",
-        "Privacy": "Institutionalized",
-        "Safety": "Unaddressed",
-    }
-
-    def test_arithmetic_prefers_the_holed_regime_and_geometric_does_not(self):
-        bal, holed = aggregate_depth(self.BALANCED), aggregate_depth(self.HOLED)
-        assert holed.arithmetic > bal.arithmetic, "arithmetic rewards the hole"
-        assert holed.geometric < bal.geometric, "geometric penalises it"
-        assert holed.imbalance > bal.imbalance
-
-    def test_a_zero_dimension_does_not_annihilate_the_index(self):
-        """Without a goalpost a single Unaddressed dimension would zero it."""
-        assert geometric_index([0.0, 100.0, 100.0, 100.0]) > 0.0
-
-    def test_the_penalised_index_agrees_with_geometric_without_a_floor(self):
-        """A check that the geometric result is not an artefact of the floor."""
-        scores = [100.0, 100.0, 100.0, 0.0]
-        assert abs(geometric_index(scores) - penalised_index(scores)) < 20.0
-
-    def test_perfect_balance_is_unpenalised(self):
-        agg = aggregate_depth(dict.fromkeys(["a", "b", "c"], "Institutionalized"))
-        assert agg.arithmetic == agg.geometric == agg.penalised == 100.0
-        assert agg.imbalance == 0.0
-
-    def test_stage_scores_are_unchanged_from_v1(self):
-        """v2 changes aggregation, never the ladder."""
-        from src.gap_analyzer import DEPTH_STAGE_SCORE
-
-        for stage, score in DEPTH_STAGE_SCORE_V2.items():
-            assert DEPTH_STAGE_SCORE[stage] == score
-
-    def test_no_assessed_dimensions_is_zero_not_a_crash(self):
-        assert aggregate_depth({}).headline == 0.0
-
-    def test_serialised_output_carries_all_three_aggregations(self):
-        """The Handbook asks for robustness to the aggregation choice, which
-        means publishing all three rather than only the headline."""
-        out = aggregate_depth(self.HOLED).as_dict()
-        assert out["implementation_depth_index"] == out["depth_geometric"]
-        for key in ("depth_arithmetic", "depth_geometric", "depth_penalised", "depth_imbalance"):
-            assert isinstance(out[key], float), key
-
-
-class TestCorpusCompleteness:
-    """The India failure: distributed governance the corpus cannot see."""
-
-    def test_named_instruments_are_extracted(self):
-        found = referenced_instruments(
-            "Processing is governed by the Digital Personal Data Protection Act, 2023 "
-            "and overseen by sectoral regulators."
-        )
-        assert any("Digital Personal Data Protection Act" in f for f in found)
-        assert any("sectoral regulator" in f.lower() for f in found)
-
-    def test_a_document_pointing_at_absent_instruments_is_flagged(self):
-        report = corpus_completeness(
-            {
-                "guidelines.pdf": (
-                    "Refer to the Personal Data Protection Law and the Consumer "
-                    "Protection Act, 2019, enforced by sectoral regulators and the "
-                    "Data Protection Board."
-                )
-            }
-        )
-        assert report["corpus_likely_incomplete"] is True
-        assert report["referenced_not_supplied_count"] >= 3
-
-    def test_completeness_never_changes_a_score(self):
-        """It qualifies the number; it cannot grade an unread instrument."""
-        report = corpus_completeness({"a.pdf": "The Foo Act, 2020 applies."})
-        assert "implementation_depth_index" not in report
-
-
 class TestEvidenceSufficiencyGate:
     """v3. The threshold is derived from the corpus, not chosen.
 
     Binding sentences are 18.2% of scored sentences in cells that carry a
-    duty, so 0.818^8 = 0.19 — below eight sentences, "no duty found" is worth
-    less than 80% confidence and is not a publishable verdict.
+    duty, so 0.818^8 = 0.19 — below that, "no duty found" in a SAMPLE is worth
+    less than 80% confidence. The profile is now a census of the whole
+    document, so the threshold grades how much text a verdict describes rather
+    than withholding it.
     """
 
     def test_the_threshold_matches_its_stated_derivation(self):
@@ -202,9 +113,21 @@ class TestEvidenceSufficiencyGate:
         one_fewer = (1 - EVIDENCE_BASE_RATE) ** (MIN_SCORED_FOR_ABSENCE - 1)
         assert one_fewer > 1 - EVIDENCE_CONFIDENCE, "threshold must be the SMALLEST that qualifies"
 
-    def test_a_thin_negative_verdict_is_withheld(self):
+    def test_a_thin_negative_verdict_is_flagged_as_thin(self):
         """India's Environmental read Unaddressed on two sentences."""
         assert evidence_is_sufficient(n_scored=2, n_binding=0) is False
+
+    def test_thin_means_the_document_barely_addresses_it_not_that_it_was_unread(self):
+        """Every sentence of the supplied documents is swept, so two provisions
+        is what the text contains. Saying the absence is "not publishable"
+        beside a published verdict told the reader the tool distrusted itself."""
+        from src.grading import verdict_confidence
+
+        band, why = verdict_confidence(n_scored=2, n_binding=0, n_enforceable=0)
+
+        assert band == "thin"
+        assert "barely addresses" in why
+        assert "publishable" not in why
 
     def test_a_thorough_negative_verdict_stands(self):
         """The EU's Environmental read Unaddressed on seventeen."""
@@ -213,38 +136,6 @@ class TestEvidenceSufficiencyGate:
     def test_a_positive_finding_is_never_withheld(self):
         """Finding a duty is a finding, however little else was read."""
         assert evidence_is_sufficient(n_scored=1, n_binding=1) is True
-
-    def test_excluded_dimensions_are_reported_not_hidden(self):
-        stages = {"Transparency": "Institutionalized", "Safety": "Unaddressed"}
-        rep = depth_report(stages, {"Transparency": True, "Safety": False})
-        assert rep["dimensions_assessed"] == 1
-        assert rep["dimensions_insufficient_evidence"] == ["Safety"]
-
-    def test_an_excluded_dimension_is_not_scored_zero(self):
-        """Excluding is not the same as scoring absent, which is the whole point."""
-        stages = {"Transparency": "Institutionalized", "Safety": "Unaddressed"}
-        withheld = depth_report(stages, {"Transparency": True, "Safety": False})
-        counted = depth_report(stages, {"Transparency": True, "Safety": True})
-        assert withheld["depth_geometric"] > counted["depth_geometric"]
-
-    def test_a_corpus_too_thin_to_assess_is_flagged(self):
-        stages = dict.fromkeys(["a", "b", "c", "d"], "Unaddressed")
-        thin = depth_report(stages, dict.fromkeys(["a", "b", "c"], False) | {"d": True})
-        assert thin["assessment_evidence_limited"] is True
-        ok = depth_report(stages, {"a": False, "b": True, "c": True, "d": True})
-        assert ok["assessment_evidence_limited"] is False
-
-    def test_the_gate_is_what_makes_geometric_safe(self):
-        """A false Unaddressed costs far less once it is withheld.
-
-        Our measurement error is one-sided: a vocabulary gap yields a false
-        Unaddressed, never a false Institutionalized. So the geometric mean's
-        sensitivity to the low tail is exactly where our errors live.
-        """
-        stages = dict.fromkeys(["a", "b", "c"], "Institutionalized") | {"d": "Unaddressed"}
-        amplified = depth_report(stages, dict.fromkeys("abcd", True))
-        gated = depth_report(stages, {"a": True, "b": True, "c": True, "d": False})
-        assert gated["depth_geometric"] - amplified["depth_geometric"] > 30
 
 
 class TestDuplicateProvisions:
@@ -275,19 +166,6 @@ class TestDuplicateProvisions:
         from src.grading import dedupe_sentences
 
         assert dedupe_sentences(["b bbbb", "a aaaa", "b  bbbb"]) == ["b bbbb", "a aaaa"]
-
-    def test_counters_no_longer_double_count(self):
-        """One duty repeated four times must not clear a bar needing two."""
-        duty = "A provider of a high-risk system must maintain an audit trail."
-        repeated = [
-            duty,
-            duty.replace("a high-risk", "a  high-risk"),
-            duty.replace("must ", "must  "),
-            duty,
-        ]
-        p = _build_profile_base(repeated, dimension="Transparency", own_jurisdiction="Testland")
-        assert p.n_scored == 1, "four copies of one provision are one provision"
-        assert p.n_binding == 1
 
 
 class TestSentenceFunctionGate:
@@ -337,12 +215,6 @@ class TestSentenceFunctionGate:
         }
         for expected, text in cases.items():
             assert sentence_function(text) == expected, text
-
-    def test_a_real_duty_survives_every_filter(self):
-        from src.grading import is_operative
-
-        assert is_operative("Providers of high-risk AI systems shall maintain an audit trail.")
-        assert is_operative("High-risk AI systems shall be accompanied by instructions for use.")
 
 
 class TestStructuralRelevance:
@@ -529,7 +401,7 @@ class TestArtifactBorneDuties:
 
 
 class TestMechanismGateCascades:
-    """Found on Brazil: the demotions must chain, not stop at the first."""
+    """A statute with no bound mechanism: demotions must chain, not stop at the first."""
 
     def test_top_stage_with_no_bound_mechanism_falls_all_the_way(self):
         from src.grading import apply_mechanism_gate
@@ -576,20 +448,6 @@ class TestConsultationDocuments:
             "and liable for complying with the principles."
         )
         assert sentence_function(s) == "consultative"
-
-    def test_real_duties_are_untouched(self):
-        from src.grading import is_operative
-
-        assert is_operative("Providers of high-risk AI systems shall maintain an audit trail.")
-        assert is_operative("A Data Fiduciary shall be liable to a penalty for breach.")
-
-    def test_a_statement_that_merely_contains_a_question_mark_mid_sentence_survives(self):
-        """Only a TRAILING question mark marks an interrogative."""
-        from src.grading import is_operative
-
-        assert is_operative(
-            "The provider shall answer the question 'who is accountable?' in its documentation."
-        )
 
 
 class TestAgentlessEnforcement:
@@ -1038,14 +896,55 @@ class TestFrameworkSalience:
 
         assert fs.rank_absent("Safety", ["risk assessment", "pre-deployment testing"]) == []
 
-    def test_a_country_document_is_never_counted_as_a_reference(self):
-        """The corpus side of the count must exclude what is being assessed."""
-        import inspect
-
+    @staticmethod
+    def _salience_over(monkeypatch, rows):
+        """mechanism_salience over a fake collection holding `rows`."""
         from src import framework_salience as fs
+        from src import vectorstore
 
-        src = inspect.getsource(fs.mechanism_salience)
-        assert 'md.get("workspace_id")' in src and "continue" in src
+        class _Collection:
+            def get(self, where, include, limit, offset):
+                hits = [r for r in rows if r[1]["workspace_id"] == where["workspace_id"]]
+                page = hits[offset : offset + limit]
+                return {"documents": [t for t, _ in page], "metadatas": [m for _, m in page]}
+
+        monkeypatch.setattr(vectorstore, "open_collection", lambda *a, **k: _Collection())
+        fs.mechanism_salience.cache_clear()
+        try:
+            return fs.mechanism_salience()
+        finally:
+            fs.mechanism_salience.cache_clear()
+
+    @staticmethod
+    def _a_mechanism():
+        from src.evidence_strength import DIMENSION_MECHANISMS
+
+        dimension, table = next(iter(DIMENSION_MECHANISMS.items()))
+        mechanism, cues = next(iter(table.items()))
+        return f"{dimension}|{mechanism}", f"The instrument sets out {cues[0]} in full."
+
+    def test_a_country_document_is_never_counted_as_a_reference(self, monkeypatch):
+        """The corpus side of the count must exclude what is being assessed."""
+        key, text = self._a_mechanism()
+        rows = [
+            (text, {"workspace_id": "", "framework": "Library A"}),
+            (text + " Again.", {"workspace_id": "", "framework": "Library A"}),
+            (text, {"workspace_id": "ws-1", "document_name": "Country Act.pdf"}),
+            (text + " Again.", {"workspace_id": "ws-1", "document_name": "Country Act.pdf"}),
+        ]
+
+        assert self._salience_over(monkeypatch, rows)[key] == 1
+
+    def test_a_framework_indexed_once_per_role_is_not_counted_twice(self, monkeypatch):
+        # A two-role framework is stored as two copies of every chunk, so one
+        # passing mention used to clear the two-chunk bar on its own.
+        key, text = self._a_mechanism()
+        rows = [
+            (text, {"workspace_id": "", "framework": "Two Roles", "roles": "module_1_normative"}),
+            (text, {"workspace_id": "", "framework": "Two Roles", "roles": "module_2_practical"}),
+        ]
+
+        assert self._salience_over(monkeypatch, rows)[key] == 0
 
 
 class TestPriorityFloor:
@@ -1121,3 +1020,80 @@ class TestDimensionAwareStructuralAdmission:
 
         src = inspect.getsource(GapAnalyzer._structural_candidates)
         assert "_sentence_has_core_term(sent, other)" in src
+
+
+class TestBreadthFloorNeedsEvidence:
+    """The breadth floor fired hardest where the evidence was weakest.
+
+    Measured across the corpus it demoted 12 of 55 cells, four of them China
+    at 0 of 5 or 0 of 6 — a jurisdiction carrying six binding provisions in
+    both Safety and Human Autonomy, held at Partial because mechanism matching
+    returned nothing. The cue selector was measured at 20% precision, so a
+    zero count cannot tell "no mechanisms exist" apart from "none were found".
+    """
+
+    def _profile_and_mechs(self, met, total):
+        from src.grading import build_provision_profile
+        from src.mechanism_matching import MechanismMatch
+
+        binding = [
+            "A data fiduciary shall implement appropriate technical and organisational measures.",
+            "The controller must notify the supervisory authority of a personal data breach.",
+            "Providers shall ensure high-risk systems comply before placing them on the market.",
+        ]
+        profile = build_provision_profile(binding, dimension="Privacy")
+        names = [f"mech{i}" for i in range(met)]
+        absent = [f"absent{i}" for i in range(total - met)]
+        return profile, MechanismMatch(
+            dimension="Privacy", present=dict.fromkeys(names, 3), absent=absent
+        )
+
+    def test_zero_detections_do_not_demote(self):
+        from src.evidence_strength import coverage_from_profile
+
+        profile, mechs = self._profile_and_mechs(met=0, total=6)
+        label, _ = coverage_from_profile(profile, mechanisms=mechs)
+
+        assert label == "Covered", "an absence nothing measured must not hold a verdict down"
+
+    def test_a_measured_shortfall_still_demotes(self):
+        """The guard must not disable the floor — one of six is a real, counted
+        shortfall and still reads Partial."""
+        from src.evidence_strength import coverage_from_profile
+
+        profile, mechs = self._profile_and_mechs(met=1, total=6)
+        label, _ = coverage_from_profile(profile, mechanisms=mechs)
+
+        assert label == "Partial"
+
+
+class TestExcludedSentencesAreNotScored:
+    """A passage about another jurisdiction's law is not this document's provision."""
+
+    def test_a_third_party_description_is_excluded_from_the_counts(self):
+        from src.grading import build_provision_profile
+
+        profile = build_provision_profile(
+            [
+                "In Singapore, the Model AI Governance Framework encourages organisations "
+                "to disclose AI use.",
+                "Every provider shall register the system with the Commission.",
+            ],
+            dimension="Transparency",
+            own_jurisdiction="Kenya",
+        )
+
+        assert profile.n_scored == 1
+        assert profile.n_excluded_foreign == 1
+
+
+class TestEnforcementBackingUsesTheScoringClassifier:
+    def test_an_artifact_borne_duty_earns_backing(self):
+        # "The AI system shall..." binds through the artifact. The base ladder
+        # the backing check used could not see it, while the profile could.
+        from src.grading import TIER_OBLIGATORY, classify_provision, dimension_enforcement_backing
+
+        duty = "High-risk AI systems shall be designed to allow effective human oversight."
+        assert classify_provision(duty).tier >= TIER_OBLIGATORY
+
+        assert dimension_enforcement_backing({"Act.pdf": [duty]}, {"Act.pdf"}) is True

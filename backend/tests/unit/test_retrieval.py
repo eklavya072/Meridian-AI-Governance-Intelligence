@@ -3,14 +3,6 @@ import pytest
 from src.retrieval import RetrievalPipeline
 
 
-def test_rrf_score():
-    from src.utils import rrf_score
-
-    assert rrf_score(0) > rrf_score(1)
-    assert rrf_score(0, 60) == 1.0 / 60.0
-    assert rrf_score(1, 60) == 1.0 / 61.0
-
-
 def test_reciprocal_rank_fusion():
     from src.utils import reciprocal_rank_fusion
 
@@ -70,18 +62,6 @@ def test_keyword_overlap():
 
     assert compute_keyword_overlap("a b c", "x y z") == 0.0
     assert compute_keyword_overlap("", "") == 0.0
-
-
-def test_search_vectorstore_empty():
-    retrieval = RetrievalPipeline.__new__(RetrievalPipeline)
-    retrieval.vectorstore = None
-    retrieval._reranker = None
-    from unittest.mock import MagicMock
-
-    retrieval.vectorstore = MagicMock()
-    retrieval.vectorstore.search.return_value = []
-    result = retrieval._search_vectorstore("test", top_k=5)
-    assert result == []
 
 
 class _FakePoolCollection:

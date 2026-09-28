@@ -31,7 +31,7 @@ export type ModuleStackItem = {
  * The card chrome is untouched — header band (counter + title + meta) and
  * the content area are exactly the deck cards that were already there.
  * Only the display animation changed. (The title no longer animates on
- * scroll — static text, no ScrollFloat.)
+ * scroll — it is static text.)
  *
  * Cards size to their OWN content: a short module shows a short card, a long
  * one grows. The deck container height is measured from the active card and
@@ -132,6 +132,19 @@ export default function ModuleStack({
       <div
         className="relative w-full overflow-hidden transition-[height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
         style={{ height: viewportH || undefined }}
+        // overflow:hidden stops a user scrolling this box; it does NOT stop
+        // the browser scrolling it. Anything that brings a descendant into
+        // view — scrollIntoView, or the focus ring landing inside the slide
+        // peeking at the right edge — scrolls every scrollable ancestor,
+        // and this is one. The deck then sits permanently offset by the
+        // slide gap with no way back, because nothing here ever sets it.
+        // Slides carry `inert` so focus should not reach them, but that is
+        // one guard on a box that only ever has a correct scroll position
+        // of zero, so pin it.
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          if (el.scrollLeft !== 0) el.scrollLeft = 0;
+        }}
       >
         {items.map((item, i) => {
           const pos = positionOf(i);

@@ -32,11 +32,8 @@ class FakeVectorStore:
     def count_chunks(self, framework_filter=None):
         return len(self.chunks)
 
-    def get_all_document_names(self):
-        return sorted({c.get("document_name", "") for c in self.chunks if c.get("document_name")})
-
     def get_workspace_documents(self, workspace_id):
-        return self.get_all_document_names()
+        return sorted({c.get("document_name", "") for c in self.chunks if c.get("document_name")})
 
     @property
     def embedding_service(self):
@@ -340,8 +337,9 @@ class TestProfiles:
         second = pipeline.get_or_build_profiles()
 
         # Rebuilding on every dimension would re-embed the aspect list 8
-        # times per run.
-        assert first == second
+        # times per run. Identity, not equality: two freshly built dicts are
+        # equal too, which is how this passed while the cache never filled.
+        assert first is second
 
     def test_every_profile_carries_aspects(self, pipeline):
         for profile in pipeline.get_or_build_profiles().values():

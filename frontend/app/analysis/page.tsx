@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import Link from "next/link";
@@ -17,7 +18,6 @@ import {
   ModuleCitation,
   Module2Recommendation,
   DecisionAnalytics,
-  IncidentMatch,
   Framework,
 } from "@/lib/api";
 import CitationCard from "@/components/CitationCard";
@@ -27,7 +27,12 @@ import DepthBadge from "@/components/DepthBadge";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import ModuleStack, { type ModuleStackItem } from "@/components/ModuleStack";
 import SpecularButton from "@/components/SpecularButton";
-import { CoverageDonut, DepthGauge, StageHistogram } from "@/components/DashboardCharts";
+import {
+  BreadthPanel,
+  CoverageDonut,
+  DepthGauge,
+  StageHistogram,
+} from "@/components/DashboardCharts";
 import { RunComparisonHeatmap } from "@/components/Heatmaps";
 import ProvisionChecklist from "@/components/ProvisionChecklist";
 import {
@@ -41,6 +46,7 @@ import {
 import { useChat } from "@/components/ChatProvider";
 import CitationAccordion from "@/components/CitationAccordion";
 import { resolveFrameworkLinks } from "@/lib/frameworkLinks";
+import { localTime } from "@/lib/utils";
 import {
   EASE,
   DUR,
@@ -116,6 +122,54 @@ function RadarRingLegend({ label, color }: { label: string; color: string }) {
     </span>
   );
 }
+
+// WHAT THE WORD MEANS, AND WHY THIS CELL EARNED IT.
+//
+// "Covered" and "Operationalized" are terms of art in this instrument and
+// they do not mean what a reader assumes. Covered is a statement about legal
+// FORCE — it says the provisions clear a duty bar — while a reader hearing
+// "fully covered" naturally hears "this topic is well handled", which is a
+// claim about breadth the verdict never made. A ministry quoting the word
+// without the definition quotes something we did not say.
+//
+// Two lines, not a paragraph: the rule that produced the verdict, then the
+// counts from THIS dimension that satisfied it. The second line is what
+// makes it an explanation rather than a glossary — the same sentence under
+// every cell would be documentation, not evidence.
+const COVERAGE_GLOSS: Record<string, string> = {
+  Covered:
+    "The provisions for this dimension clear the binding-force bar: two or more impose a duty, " +
+    "or one duty is backed by enforcement. This is a finding about legal force, not about how " +
+    "much the document says on the subject.",
+  Partial:
+    "Provisions for this dimension exist and were read, but they fall short of a governed " +
+    "regime — commitments are stated without a duty, a single duty stands alone, or the duties " +
+    "reach too few of the mechanisms this dimension calls for. The subject is addressed; it is " +
+    "not yet fully obliged.",
+  Missing:
+    "Every provision of the supplied documents was read, and this dimension appears only in " +
+    "passing: no duty, no named owner, no commitment to act. It describes the supplied text, " +
+    "not the country's wider governance, which may sit in instruments not provided.",
+  "Insufficient Evidence":
+    "Nothing relevant to this dimension could be retrieved from the supplied documents or the " +
+    "reference frameworks, so no verdict was formed. It is withheld rather than guessed.",
+};
+
+const DEPTH_GLOSS: Record<string, string> = {
+  Unaddressed: "No provision for this dimension was scored, so there is no regime to describe.",
+  Emerging:
+    "Intent is on the record — the document states what it wants for this dimension — but " +
+    "nothing yet assigns the work or requires it of anyone.",
+  Delegated:
+    "Responsibility has landed somewhere: an owner is named or a duty is stated, but the " +
+    "machinery that would make it operate is not yet in the text.",
+  Operationalized:
+    "Binding requirements exist and carry mechanisms this dimension expects, but without the " +
+    "audit, enforcement or redress machinery that would make the regime self-sustaining.",
+  Institutionalized:
+    "Binding requirements are paired with the enforcement, oversight or redress machinery that " +
+    "makes them answerable — the highest stage this instrument recognises.",
+};
 
 function CoverageIndicator({ coverage }: { coverage: string }) {
   return (
@@ -239,8 +293,20 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
 
   return (
     <div className="border rounded-lg p-3 space-y-1.5 bg-gray-50/70">
+      {/* The claim first, then the passage under it. A quote alone makes the
+          reader reverse-engineer what it was offered to prove; naming the
+          finding turns the card into an argument they can disagree with.
+          line-clamp was 3 — a clause — which cut the operative passage off
+          before the duty-bearer or the consequence. Provisions carry their
+          force at the end, so the clamp is now generous enough to show one
+          whole provision and only bites on a genuinely long extract. */}
+      {citation.claim && (
+        <p className="text-[13px] font-medium leading-snug text-navy-950">
+          {citation.claim}
+        </p>
+      )}
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-navy-900 line-clamp-3 flex-1">
+        <p className="text-sm text-navy-900 line-clamp-[8] flex-1 italic">
           “{citation.quote}”
         </p>
         {verified ? (
@@ -253,10 +319,6 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
         )}
       </div>
       <div className="flex flex-wrap gap-3 text-xs font-medium text-navy-900">
-        {citation.chunk_id && (
-          <span className="font-mono">Chunk: {citation.chunk_id.slice(0, 8)}...</span>
-        )}
-        {citation.page_number && <span>Page: {citation.page_number}</span>}
         {citation.document_name ? (
           <span className="text-navy-950 underline underline-offset-2">
             Document: {citation.document_name}
@@ -264,6 +326,7 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
         ) : (
           citation.source && <span>Source: {citation.source}</span>
         )}
+        {citation.page_number && <span>Page {citation.page_number}</span>}
       </div>
       {citation.verification && !verified && (
         <p className="text-xs font-medium text-navy-900 italic">
@@ -291,6 +354,21 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
   const realDoc = docCards.filter((c) => Boolean(c.chunk_id));
   const realFw = fwCards.filter((c) => Boolean(c.chunk_id));
   const totalSources = realDoc.length + realFw.length;
+  // The sentence above states the rule; this states what THIS dimension
+  // brought to it. Mechanisms carry the tier they were found at, so a count
+  // of those at Obligatory or above is the number actually carried by a duty
+  // — the quantity the bar is about, and the one a reader would otherwise
+  // have to reconstruct from the mechanism list further down the page.
+  const mechanismTally = (() => {
+    const present = gap.mechanisms_present || {};
+    const names = Object.keys(present);
+    if (!names.length) return "";
+    const total = names.length + (gap.mechanisms_absent?.length || 0);
+    const bound = names.filter((k) => Number(present[k]) >= 3).length;
+    return `Here, ${names.length} of ${total} expected mechanisms appear and ${bound} ${
+      bound === 1 ? "is" : "are"
+    } carried by a duty.`;
+  })();
   const verifiedCount = [...realDoc, ...realFw].filter((c) => c.verified).length;
 
   return (
@@ -301,10 +379,21 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
         <div>
           <p className="module-label mb-1.5">Coverage</p>
           <CoverageIndicator coverage={gap.coverage} />
+          {COVERAGE_GLOSS[gap.coverage] && (
+            <p className="text-[11px] leading-[1.5] text-navy-600 mt-1.5">
+              {COVERAGE_GLOSS[gap.coverage]}
+              {mechanismTally && ` ${mechanismTally}`}
+            </p>
+          )}
         </div>
         <div>
           <p className="module-label font-bold mb-1.5">Implementation Depth</p>
           <DepthBadge level={depth} />
+          {depth && DEPTH_GLOSS[depth] && (
+            <p className="text-[11px] leading-[1.5] text-navy-600 mt-1.5">
+              {DEPTH_GLOSS[depth]}
+            </p>
+          )}
         </div>
         {/* How much this particular cell is worth. Per-dimension external
             validation reaches 38% of cells; for the rest the only honest
@@ -488,6 +577,12 @@ function BestPracticesPanel({ gap }: { gap: GovernanceGap }) {
             {best.international_examples.map((ex, i) => (
               <div key={i} className="border rounded-lg p-3.5 bg-white/70 space-y-2">
                 <p className="module-body"><HighlightedText text={ex.practice} /></p>
+                {ex.alignment && (
+                  <p className="module-body text-navy-800">
+                    <span className="font-semibold">Relation to this policy: </span>
+                    {ex.alignment}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-3 module-meta">
                   {ex.country_or_source && <span>{ex.country_or_source}</span>}
                   {ex.reference && <span>Source: {ex.reference}</span>}
@@ -568,6 +663,17 @@ function Module2Panel({ gap }: { gap: GovernanceGap }) {
 
       <div>
         <p className="module-heading mb-2">Recommendations</p>
+        {/* Each recommendation is constrained twice — it must extend a
+            mechanism that already exists in this document, and it must name
+            the instrument that expects it. Saying so converts the list from
+            advice a reader has to trust into advice they can check. */}
+        {recommendations.length > 0 && (
+          <p className="text-[11px] leading-[1.5] text-navy-600 mb-2">
+            Each action extends something already in this document rather than proposing a new
+            regime, and names the international instrument that expects it — so both ends of the
+            recommendation can be checked against a source.
+          </p>
+        )}
         {recommendations.length ? (
           <ul className="module-list">
             {recommendations.map((r, i) => (
@@ -654,6 +760,17 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
 
   return (
     <div className="space-y-5">
+      {/* The timelines are the part a reader is most likely to distrust, and
+          the part with the best answer: they are computed, not written. The
+          note says where they come from so the "why 0-10 months" question is
+          answered before it is asked. */}
+      {m3.phases.length > 0 && (
+        <p className="text-[11px] leading-[1.5] text-navy-600">
+          Phase timelines are calculated from this dimension&apos;s own profile — its coverage
+          tier, depth stage, how many mechanisms the document already operates, and whether it
+          names a responsible agency. Each phase carries the reasoning that produced its range.
+        </p>
+      )}
       {m3.phases.length > 0 && (
         <div className="space-y-3">
           {m3.phases.map((ph, i) => (
@@ -770,6 +887,16 @@ function Module4Panel({ gap }: { gap: GovernanceGap }) {
 
   return (
     <div className="space-y-5">
+        {/* A curated incident is shown to make a gap concrete, not to predict
+            one. The lead-in says so, because a documented failure printed
+            under a dimension implies a forecast unless something states the
+            opposite — and this instrument reads documents, not futures. */}
+        <p className="text-[11px] leading-[1.5] text-navy-600">
+          These are documented incidents from the curated case library that turned on the
+          governance this dimension is missing. They are shown to make the gap concrete — what
+          has already gone wrong elsewhere when this control was absent — not as a prediction
+          about this jurisdiction.
+        </p>
         {m4.incident_matches.map((inc, i) => {
           // Source citation — collapsed "Show Sources" toggle (same pattern
           // as Module 2) when the incident has a real chunk-backed citation;
@@ -794,6 +921,15 @@ function Module4Panel({ gap }: { gap: GovernanceGap }) {
                   <span className="module-meta">{inc.source}</span>
                 )}
               </div>
+              {/* Facts first. The panel used to name a case and then jump
+                  straight to why it is relevant, which asks the reader to
+                  take the incident on trust. */}
+              {inc.what_happened && (
+                <p className="module-body">
+                  <span className="font-semibold">What happened: </span>
+                  <HighlightedText text={inc.what_happened} />
+                </p>
+              )}
               {inc.dimension_relevance && (
                 <p className="module-body">
                   <span className="font-semibold">Relevance: </span>
@@ -854,11 +990,12 @@ function AnalysisFailedPanel({ gap }: { gap: GovernanceGap }) {
         </span>
       </div>
       <p className="text-sm font-medium text-navy-950">
-        {gap.analysis_error || gap.reason_flagged}
+        The analysis service did not return a result for this dimension on
+        this run, so nothing here is a finding about the document.
       </p>
       <p className="text-xs font-medium text-navy-900 italic">
-        Re-run the analysis when the LLM provider is available (e.g. after the
-        daily quota resets) to get a real result for this dimension.
+        Use Re-run above to assess it. Dimensions that completed are kept, so
+        only this one is redone.
       </p>
     </div>
   );
@@ -988,11 +1125,11 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
               <CoverageIndicator coverage={gap.coverage} />
             </motion.span>
           )}
-          {/* An un-assessed dimension has no depth — showing 'Unaddressed' or
-              'Insufficient Evidence' tags next to 'Analysis failed' would be
-              misleading. Risk labels (Low/Medium/High) were removed from the
+          {/* An un-assessed dimension has no depth — a stage badge beside
+              'Analysis failed' or 'Insufficient Evidence' would describe a
+              regime nobody assessed. Risk labels (Low/Medium/High) were removed from the
               UI; risk_level stays in the data for backend priority logic. */}
-          {!failed && (
+          {!failed && gap.coverage !== "Insufficient Evidence" && (
             <motion.span
               initial={{ scale: 0.7, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1042,19 +1179,10 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
               )}
             </motion.div>
 
-            <motion.div
-              variants={staggerChild}
-              className="flex items-center justify-between pt-1"
-            >
-                <div className="flex items-center gap-2 text-xs font-medium text-navy-900">
-                  <span>Confidence: {(gap.confidence_score * 100).toFixed(0)}%</span>
-                </div>
-              </motion.div>
-
               {gap.evidence.length > 0 && (
                 <motion.details variants={staggerChild} className="border-t pt-3">
                   <summary className="text-sm font-semibold text-navy-950 cursor-pointer hover:opacity-70 transition-opacity">
-                    Raw evidence chunks ({gap.evidence.length})
+                    Retrieved passages ({gap.evidence.length})
                   </summary>
                   <div className="mt-3 space-y-3">
                     {gap.evidence.map((ev) => (
@@ -1232,6 +1360,15 @@ function DecisionAnalyticsCard({
           <StageHistogram analytics={analytics} />
         </motion.div>
       </div>
+      {analytics.mechanisms_total ? (
+        <motion.div
+          variants={staggerChild}
+          className="rounded-xl border border-[color:var(--border)] bg-white p-4 mt-4"
+        >
+          <p className="eyebrow mb-3">Mechanism Breadth</p>
+          <BreadthPanel analytics={analytics} />
+        </motion.div>
+      ) : null}
 
       {/* Row 2: the dimension radar — every dimension at a glance, each
           vertex on the ring of its coverage tier, sitting right below the
@@ -1343,14 +1480,14 @@ function DecisionAnalyticsCard({
                 <span
                   className="h-1.5 rounded-full shrink-0"
                   style={{
-                    width: `${Math.max(8, (g.expected_by / (corpusSize || 44)) * 84)}px`,
+                    width: `${Math.max(8, (g.expected_by / (corpusSize || 43)) * 84)}px`,
                     background: "#A8483F",
                   }}
                 />
                 <span className="font-medium text-navy-950">{g.mechanism}</span>
                 <span className="text-navy-600 text-[11px]">{g.dimension}</span>
                 <span className="ml-auto text-[11px] text-navy-600 tabular-nums">
-                  expected by {g.expected_by} of {corpusSize || 44}
+                  expected by {g.expected_by} of {corpusSize || 43}
                 </span>
               </li>
             ))}
@@ -1392,6 +1529,14 @@ export default function AnalysisPage() {
   // analyses[0].
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string>("");
+  // Read through refs, not the render's closure. The run poller holds the
+  // loadAnalysisFor of the render that started it, so its view of the chosen
+  // run went stale and every tick snapped a user's choice back; and a slow
+  // response for the previously chosen country could land after the new one
+  // and paint the wrong country's analysis under the new name.
+  const selectedRunRef = useRef("");
+  selectedRunRef.current = selectedAnalysisId;
+  const loadSeq = useRef(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Live status of the currently-selected workspace's pipeline (independent
@@ -1409,18 +1554,22 @@ export default function AnalysisPage() {
   // from the Workspace page's "View Analysis" button.
   async function loadAnalysisFor(wsId: string) {
     if (!wsId) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     try {
       const data = await api.getAnalysis(wsId);
+      if (seq !== loadSeq.current) return; // a newer request has the floor
       setWsStatus(data.status);
       setWsStatusDetail(data.status_detail);
       if (data.analyses.length > 0) {
         setAnalyses(data.analyses);
-        // Keep the currently-selected run if it still exists; otherwise show
-        // the newest run.
+        // Keep the currently-selected run if it still exists; otherwise open
+        // on the newest COMPLETE run. The newest run outright could be one
+        // that lost dimensions to the provider, and it hid a finished result.
         const selected =
-          data.analyses.find((a) => a.analysis_id === selectedAnalysisId) ||
+          data.analyses.find((a) => a.analysis_id === selectedRunRef.current) ||
+          data.analyses.find((a) => a.analysis_id === data.preferred_analysis_id) ||
           data.analyses[0];
         setSelectedAnalysisId(selected.analysis_id);
         setAnalysis(selected);
@@ -1438,9 +1587,9 @@ export default function AnalysisPage() {
         setError("No analysis results yet.");
       }
     } catch (e) {
-      setError("Failed to load analysis");
+      if (seq === loadSeq.current) setError("Failed to load analysis");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }
 
@@ -1458,12 +1607,49 @@ export default function AnalysisPage() {
   const isRunActive =
     wsStatus === "processing" || wsStatus === "generating_report";
 
+  //
+  // Only the workspace's status is polled. Re-fetching every run's full
+  // results each tick cost about 1.5 MB per poll for Kenya; the results are
+  // fetched once, when the run ends.
+  const selectedWsRef = useRef("");
+  selectedWsRef.current = selectedWs;
+
   useEffect(() => {
     if (!isRunActive || !selectedWs) return;
-    const id = setInterval(() => loadAnalysisFor(selectedWs), 5000);
+    const ws = selectedWs;
+    const id = setInterval(async () => {
+      try {
+        const w = await api.getWorkspace(ws);
+        if (selectedWsRef.current !== ws) return;
+        setWsStatusDetail(w.status_detail);
+        if (w.status !== "processing" && w.status !== "generating_report") {
+          loadAnalysisFor(ws);
+        }
+      } catch {
+        // A missed tick is retried on the next one.
+      }
+    }, 5000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunActive, selectedWs]);
+
+  const [rerunError, setRerunError] = useState<string | null>(null);
+  const [rerunStarting, setRerunStarting] = useState(false);
+
+  async function rerun() {
+    if (!selectedWs) return;
+    setRerunStarting(true);
+    setRerunError(null);
+    try {
+      await api.runAnalysis(selectedWs);
+      setWsStatus("processing");
+      setWsStatusDetail("Starting analysis.");
+    } catch (e) {
+      setRerunError(e instanceof Error ? e.message : "Could not start the analysis");
+    } finally {
+      setRerunStarting(false);
+    }
+  }
 
   // Keep the Rapporteur pointed at the run on screen. Done here rather than
   // in the selector's click handler so the deep-link and reload paths — which
@@ -1530,16 +1716,6 @@ export default function AnalysisPage() {
   function loadAnalysis() {
     loadAnalysisFor(selectedWs);
   }
-
-  const covered = analysis
-    ? analysis.governance_gaps.filter((g) => g.coverage === "Covered").length
-    : 0;
-  const partial = analysis
-    ? analysis.governance_gaps.filter((g) => g.coverage === "Partial").length
-    : 0;
-  const missing = analysis
-    ? analysis.governance_gaps.filter((g) => g.coverage === "Missing").length
-    : 0;
 
   return (
     <FrameworkLibraryContext.Provider value={frameworks}>
@@ -1639,12 +1815,42 @@ export default function AnalysisPage() {
             // AI Governance Guidelines added) reads far more clearly as
             // "DPDPA" / "DPDPA, AI Governance Guidelines" than as
             // "Run 1" / "Latest run" with a timestamp.
+            //
+            // That only distinguishes runs whose document set CHANGED.
+            // Re-scoring a country produces runs over the same files, and
+            // the UK showed three identical chips whose only difference was
+            // a tooltip. Where the label would repeat, the date is appended
+            // — on those runs it is the thing that actually differs.
             const docs = a.evaluated_documents?.length
               ? a.evaluated_documents
               : a.document_name
               ? [a.document_name]
               : [];
-            const label = docs.length > 0 ? docs.join(" + ") : "Untitled run";
+            const base = docs.length > 0 ? docs.join(" + ") : "Untitled run";
+            const repeated =
+              analyses.filter((other) => {
+                const d = other.evaluated_documents?.length
+                  ? other.evaluated_documents
+                  : other.document_name
+                  ? [other.document_name]
+                  : [];
+                return (d.length > 0 ? d.join(" + ") : "Untitled run") === base;
+              }).length > 1;
+            // Minute resolution, not just the date: re-scoring twice in one
+            // day is the normal case, and two chips reading "· 2026-09-18"
+            // are no more distinguishable than two reading neither.
+            const when =
+              repeated && a.created_at
+                ? `${base} · ${localTime(a.created_at)}`
+                : base;
+            // Kept selectable, never hidden — but a reader comparing runs has
+            // to know which of them is missing dimensions.
+            const failedCount = a.failed_dimensions?.length ?? 0;
+            const label = failedCount
+              ? `${when} · ${failedCount} of ${a.governance_gaps.length} not assessed`
+              : a.provisional
+              ? `${when} · provisional`
+              : when;
             return (
               <button
                 key={a.analysis_id}
@@ -1652,7 +1858,7 @@ export default function AnalysisPage() {
                   setSelectedAnalysisId(a.analysis_id);
                   setAnalysis(a);
                 }}
-                title={a.created_at ? a.created_at.slice(0, 16).replace("T", " ") : undefined}
+                title={a.created_at ? localTime(a.created_at) : undefined}
                 className={`pressable px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                   a.analysis_id === selectedAnalysisId
                     ? "bg-undp-blue text-white border-undp-blue"
@@ -1666,9 +1872,34 @@ export default function AnalysisPage() {
         </div>
       )}
 
-      {(wsStatus === "processing" ||
-        wsStatus === "queued" ||
-        wsStatus === "generating_report") && (
+      {(() => {
+        // A run that lost dimensions, or whose depth is provisional, says
+        // "re-run" — so the button to do it belongs next to the words.
+        const ws = workspaces.find((w) => w.id === selectedWs);
+        if (!analysis || !ws || ws.locked || isRunActive) return null;
+        const failedCount = analysis.failed_dimensions?.length ?? 0;
+        const queued = wsStatus === "queued";
+        if (!failedCount && !analysis.provisional && !queued) return null;
+        const message = queued
+          ? "New documents are attached to this workspace and have not been analysed yet."
+          : failedCount
+          ? `${failedCount} of ${analysis.governance_gaps.length} dimensions were not assessed on this run. Re-running redoes only those.`
+          : "Mechanism evidence could not be checked on this run, so implementation depth is provisional.";
+        return (
+          <div className="bg-[#F7F0E2] border border-[#E4D5B5] text-[#7A5B1E] px-4 py-3 rounded-lg text-sm flex flex-wrap items-center gap-3">
+            <span className="flex-1 min-w-[240px]">{rerunError || message}</span>
+            <button
+              onClick={rerun}
+              disabled={rerunStarting}
+              className="pressable text-sm px-4 py-1.5 rounded-lg bg-undp-blue text-white hover:bg-undp-blue-light disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              {rerunStarting ? "Starting..." : queued ? "Run analysis" : "Re-run"}
+            </button>
+          </div>
+        );
+      })()}
+
+      {isRunActive && (
         <div className="bg-navy-100 border border-navy-200 text-navy-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2.5">
           <span className="w-2 h-2 rounded-full bg-navy-500 status-dot shrink-0" />
           <span>
@@ -1689,6 +1920,17 @@ export default function AnalysisPage() {
       {analysis && (
         <div className="space-y-6">
           <ProviderBadge generated_by={analysis.generated_by} />
+
+          {/* What every verdict below is a statement about. Stored with each
+              run and printed in the exported brief, but never shown here —
+              so "Missing" read as a claim about the country rather than
+              about the documents supplied, and the EU's Privacy verdict,
+              read from the AI Act without the GDPR, carried no caveat. */}
+          {analysis.scope_disclaimer && (
+            <p className="text-[13px] leading-relaxed text-navy-800 border-l-2 border-navy-300 pl-3">
+              {analysis.scope_disclaimer}
+            </p>
+          )}
 
           {analysis.decision_analytics && (
             <DecisionAnalyticsCard

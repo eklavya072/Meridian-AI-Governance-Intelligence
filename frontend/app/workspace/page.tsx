@@ -8,12 +8,16 @@ import TiltCard from "@/components/TiltCard";
 import SpecularButton from "@/components/SpecularButton";
 import EditorialReveal from "@/components/EditorialReveal";
 import SmoothInput from "@/components/SmoothInput";
+import { parseServerTime } from "@/lib/utils";
 
 export default function WorkspacePage() {
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Accepted-but-partly-unreadable uploads: not an error, but the reader has
+  // to know the verdicts will rest on less of the document than it seems.
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [country, setCountry] = useState("");
   const [policyTitle, setPolicyTitle] = useState("");
@@ -83,23 +87,52 @@ export default function WorkspacePage() {
     return () => clearInterval(id);
   }, [hasActiveRun]);
 
-  // Based on real pipeline runs this session: an 8-dimension analysis
-  // typically lands in the 90s-3min range, with larger documents or provider
-  // slowness pushing past that — so the estimate is a range, not a false
-  // promise of an exact number.
-  const ESTIMATED_LOW_S = 90;
+  // Past this, the "estimated time" line says the run is taking longer than
+  // usual — nearly always provider load rather than a stuck pipeline.
   const ESTIMATED_HIGH_S = 240;
 
   // A workspace accepts documents (and can be started) whenever it is not
   // mid-run. "error" is included so a failed run can be retried without
-  // creating a new workspace.
+  // creating a new workspace, and "complete" so a run with failed dimensions
+  // can be finished, a statute added to a strategy, or a provisional result
+  // confirmed. A locked workspace is a read-only example on the public demo.
   function canAttach(ws: Workspace): boolean {
-    return ws.status === "queued" || ws.status === "error";
+    if (ws.locked) return false;
+    return ws.status === "queued" || ws.status === "error" || ws.status === "complete";
+  }
+
+  function uploadLabel(ws: Workspace) {
+    return (
+      <label
+        className={`text-sm px-4 py-2 rounded-lg cursor-pointer transition-colors ${
+          canAttach(ws)
+            ? "border border-undp-blue text-undp-blue hover:bg-undp-blue/5"
+            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+        }`}
+      >
+        {uploadingId === ws.id
+          ? "Uploading..."
+          : ws.pending_documents?.length
+            ? "Add another PDF"
+            : "Upload PDF"}
+        <input
+          type="file"
+          accept=".pdf,application/pdf"
+          className="hidden"
+          disabled={!canAttach(ws)}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) handleUpload(ws.id, file);
+          }}
+        />
+      </label>
+    );
   }
 
   function estimateLine(ws: Workspace): string {
     const started =
-      runStartedAt[ws.id] ?? Date.parse(ws.updated_at || ws.created_at);
+      runStartedAt[ws.id] ?? parseServerTime(ws.updated_at || ws.created_at);
     if (!started || Number.isNaN(started)) return "Estimated time: ~2-4 minutes.";
     const elapsedS = Math.max(0, Math.floor((nowTick - started) / 1000));
     const mm = Math.floor(elapsedS / 60);
@@ -159,8 +192,10 @@ export default function WorkspacePage() {
   async function handleUpload(workspaceId: string, file: File) {
     setUploadingId(workspaceId);
     setError(null);
+    setNotice(null);
     try {
-      await api.uploadPolicy(workspaceId, file);
+      const uploaded = await api.uploadPolicy(workspaceId, file);
+      if (uploaded.notice) setNotice(`${uploaded.file_name}: ${uploaded.notice}`);
       await loadWorkspaces();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Upload failed");
@@ -209,6 +244,11 @@ export default function WorkspacePage() {
       {error && (
         <div className="bg-[#F6ECEB] border border-[#E4C9C6] text-[#A8483F] px-4 py-3 rounded-lg text-sm">
           {error}
+        </div>
+      )}
+      {notice && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg text-sm">
+          {notice}
         </div>
       )}
 
@@ -346,53 +386,46 @@ export default function WorkspacePage() {
                 </div>
                 <div className="shrink-0 flex gap-2 flex-wrap">
                   {/* Completed analysis → View Analysis takes you straight
-                      to the analysis page with this workspace preselected.
+                      to the analysis page with this workspace preselected,
+                      with Add PDF and Re-run beside it (see canAttach).
                       Otherwise the card offers Upload PDF, and Run Analysis
-                      once at least one document is attached. Upload stays
-                      available next to Run Analysis on purpose: adding a
+                      once at least one document is attached. Adding a
                       second document (a strategy plus its implementation
                       plan) and starting are separate decisions, and the
                       user makes both in their own order. */}
-                  {ws.status === "complete" ? (
+                  {ws.status === "complete" && (
                     <button
                       onClick={() => router.push(`/analysis?workspace=${ws.id}`)}
                       className="pressable text-sm px-4 py-2 rounded-lg transition-colors bg-undp-blue text-white hover:bg-undp-blue-light"
                     >
                       View Analysis
                     </button>
+                  )}
+                  {ws.locked ? (
+                    <span
+                      className="self-center text-xs text-gray-500"
+                      title="A finished example. Create a workspace of your own to upload and run."
+                    >
+                      Example · read-only
+                    </span>
                   ) : (
                     <>
-                      <label
-                        className={`text-sm px-4 py-2 rounded-lg cursor-pointer transition-colors ${
-                          canAttach(ws)
-                            ? "border border-undp-blue text-undp-blue hover:bg-undp-blue/5"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        }`}
-                      >
-                        {uploadingId === ws.id
-                          ? "Uploading..."
-                          : ws.pending_documents?.length
-                            ? "Add another PDF"
-                            : "Upload PDF"}
-                        <input
-                          type="file"
-                          accept=".pdf,application/pdf"
-                          className="hidden"
-                          disabled={!canAttach(ws)}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            e.target.value = "";
-                            if (file) handleUpload(ws.id, file);
-                          }}
-                        />
-                      </label>
+                      {uploadLabel(ws)}
                       {canAttach(ws) && (ws.pending_documents?.length ?? 0) > 0 && (
                         <button
                           onClick={() => handleRunAnalysis(ws.id)}
                           disabled={startingId === ws.id || uploadingId === ws.id}
-                          className="pressable text-sm px-4 py-2 rounded-lg transition-colors bg-undp-blue text-white hover:bg-undp-blue-light disabled:bg-gray-100 disabled:text-gray-400"
+                          className={`pressable text-sm px-4 py-2 rounded-lg transition-colors disabled:bg-gray-100 disabled:text-gray-400 ${
+                            ws.status === "complete"
+                              ? "border border-undp-blue text-undp-blue hover:bg-undp-blue/5"
+                              : "bg-undp-blue text-white hover:bg-undp-blue-light"
+                          }`}
                         >
-                          {startingId === ws.id ? "Starting..." : "Run Analysis"}
+                          {startingId === ws.id
+                            ? "Starting..."
+                            : ws.status === "complete"
+                              ? "Re-run"
+                              : "Run Analysis"}
                         </button>
                       )}
                     </>

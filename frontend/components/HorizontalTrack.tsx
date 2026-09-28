@@ -34,10 +34,8 @@ const GATES = [
 
 export default function HorizontalTrack({
   panels,
-  rail,
 }: {
   panels: { key: string; node: ReactNode }[];
-  rail?: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
@@ -52,7 +50,6 @@ export default function HorizontalTrack({
     const panelCount = panels.length;
     let horizontal: boolean | null = null;
     let lastX = -1;
-    let lastP = -1;
 
     const write = () => {
       if (!horizontal) return;
@@ -142,14 +139,6 @@ export default function HorizontalTrack({
           el.style.transform = `translate3d(0,${dip}px,0) rotate(${tip}deg) scale(${sc})`;
         }
       }
-      const pr = Math.round(p * 200) / 200;
-      if (pr !== lastP) {
-        lastP = pr;
-        /* 2πr for r = 27, the arc's own circumference: the indicator is a
-           circle drawing itself once across the track rather than a bar
-           filling up. */
-        const C = 169.646;
-      }
     };
 
     const clear = () => {
@@ -158,7 +147,6 @@ export default function HorizontalTrack({
         (rail.children[n] as HTMLElement).style.transform = "";
       }
       lastX = -1;
-      lastP = -1;
     };
 
     const mqls = GATES.map((q) => window.matchMedia(q));
@@ -201,12 +189,6 @@ export default function HorizontalTrack({
             </div>
           ))}
         </div>
-        {/* The rail lives INSIDE the sticky window, so it holds the foot of
-            the stage for the whole sideways travel rather than arriving as
-            a fourth panel and leaving with it. The figures are the constant
-            the three panels are argued against — a footer to the section,
-            not a station on it. */}
-        {rail ? <div className="l-track-rail-fixed">{rail}</div> : null}
       </div>
     </div>
   );

@@ -26,15 +26,19 @@ type Stat = {
 
 const STATS: Stat[] = [
   { value: 8, label: "governance dimensions", source: "per strategy" },
-  { value: 44, label: "frameworks indexed", source: "config/frameworks.yaml" },
+  { value: 43, label: "frameworks indexed", source: "config/frameworks.yaml" },
+  // 318 of 330 evidence citations confirmed across the eight countries'
+  // showcase runs, recounted 28 Sep 2026. Not the 88.7% in MEASUREMENTS.md,
+  // which is the verifier's acceptance rate on known-verbatim excerpts (a
+  // calibration of the checker, not of the tool's citations).
   {
-    value: 88.7,
+    value: 96.4,
     decimals: 1,
     suffix: "%",
-    label: "of citations verified verbatim",
-    source: "measured run",
+    label: "of citations confirmed at source",
+    source: "showcase runs, 8 countries",
   },
-  { value: 1269, label: "tests passing", source: "CI, 78.1% coverage" },
+  { value: 1320, label: "tests passing", source: "CI, 80% coverage" },
 ];
 
 function useCount(target: number, active: boolean, decimals: number) {

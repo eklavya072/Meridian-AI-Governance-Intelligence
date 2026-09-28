@@ -277,3 +277,26 @@ class TestChunkModel:
 
     def test_page_number_is_optional(self):
         assert Chunk(chunk_id="c1", text="t", metadata={}).page_number is None
+
+
+def test_nul_characters_never_reach_the_chunks(tmp_path, monkeypatch):
+    """Postgres jsonb refuses NUL; a quoted provision carrying one failed the
+    dimension cache write."""
+    import src.ingestion as ing
+
+    class _Page:
+        def extract_text(self):
+            return "The controller\x00 shall notify the Authority."
+
+    class _Reader:
+        def __init__(self, *a, **k):
+            self.pages = [_Page()]
+
+    monkeypatch.setattr("pypdf.PdfReader", _Reader)
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stub")
+
+    pages = ing.parse_pdf(pdf)
+
+    assert "\x00" not in pages[0]["text"]
+    assert "shall notify" in pages[0]["text"]

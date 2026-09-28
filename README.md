@@ -30,14 +30,15 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 
 | | |
 |---|---|
-| Tests | **1,269 passed, 18 skipped** |
-| Coverage (`src`) | **78.1%** — CI gate 76%, set from measurement |
+| Tests | **1,329 passed, 20 skipped** |
+| Coverage (`src`) | **80%** — CI gate 76%, set from measurement |
 | Production image | **1,889 MB** (down from 5,683 MB) |
 | Vulnerabilities | **161 → 131** after remediation (3 fixable HIGH → 0) |
 | Fixable HIGH/CRITICAL | **3 → 0**, all fixed at source; `.trivyignore` is empty |
 | SBOM | 238 packages, SPDX 2.3, attached to every release |
 | Release pipeline | **~4 min** (was ~22 min under QEMU) |
-| Citation check accepts | **88.7%** of excerpts that appear verbatim in the chunk they cite |
+| Citations confirmed at source | **318 of 330 (96.4%)** across the eight showcase runs |
+| Showcase verdicts reproduced from the index | **64 of 64** cells recomputed with no model call, 0 moved |
 | Capacity-exhaustion detection | **9 failed calls**, all credentials open ([INCIDENT-001](docs/INCIDENT-001.md)) |
 | End-to-end latency (replay) | **p50 4.9 s · p95 6.9 s**, 0 server errors |
 | Backpressure under load | 45 admitted, **36 refused with 429** — never queued |
@@ -46,7 +47,7 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 **Observability:** `make observability` brings up Prometheus and Grafana with
 the dashboard provisioned from
 [a committed JSON file](observability/grafana/dashboards/meridian.json) —
-citation pass rate, coverage-ladder verdict distribution, per-stage latency,
+citation pass rate, coverage verdict distribution, per-stage latency,
 and provider failover events.
 
 **Operations:** [RUNBOOK.md](docs/RUNBOOK.md) — SLOs with targets and measured
@@ -77,17 +78,18 @@ Policy PDF
   → Structure-aware chunking (headers/clauses first, then recursive split)
   → Embeddings (BAAI/bge-small-en-v1.5) → ChromaDB (persistent vector store)
   → Per-dimension retrieval (document chunks + routed frameworks)
-  → Combined evaluation + recommendations LLM call (per dimension, bounded-parallel)
-  → Deterministic coverage ladder + maturity + priority (code, not LLM)
+  → Evaluation + recommendations: one LLM call per dimension, bounded-parallel
+  → Normative-force scoring → coverage + implementation depth + priority (code, not LLM)
+  → Mechanism check: does each matched provision establish the mechanism? (can only remove)
   → Citation verification (chunk exists · page matches · text supports claim)
-  → Conditional roadmap + case-intelligence calls (Partial/Missing dimensions)
+  → Roadmap + case intelligence: one call for every Partial/Missing dimension
   → Decision analytics → Executive brief (cached) → PDF/DOCX export
 ```
 
 ### The 8 governance dimensions
 
 Defined once in `backend/src/gap_analyzer.py` (`GOVERNANCE_DIMENSIONS`) and used
-by every pipeline stage — evaluation, recommendations, maturity, consistency, and chat:
+by every pipeline stage — evaluation, recommendations, implementation depth, consistency, and chat:
 
 | Dimension | Focus |
 |---|---|
@@ -104,16 +106,20 @@ by every pipeline stage — evaluation, recommendations, maturity, consistency, 
 
 | Section | Content | When it runs |
 |---|---|---|
-| **Evaluation** (governance dimension evaluation) | Coverage verdict (`Covered` / `Partial` / `Missing`), reasoning, governance maturity (Institutionalization Scale), document + framework evidence | Always |
+| **Evaluation** (governance dimension evaluation) | Coverage verdict (`Covered` / `Partial` / `Missing`), reasoning, implementation depth stage, the evidence it rests on, document + framework evidence | Always |
 | **Recommendations & Alignment** | Recommendations, deterministic priority, international standard reference, structured framework synthesis (consensus / differences / overall); for Fully Covered dimensions: best practices + international examples instead | Always |
 | **Implementation Roadmap** | Phased roadmap with deterministic timeline estimates, responsible agency (code-grounded, never fabricated), documentation requirements, monitoring checklist | Only for `Partial` / `Missing` dimensions |
 | **Case Intelligence** | Matched real incidents (AI Incident Database, Robodebt Royal Commission, Allegheny AFST, and other curated records) with lessons learned | Only when a genuinely relevant incident match exists |
 
-A full analysis makes **8 evaluation calls** (one per dimension, each combining
-evaluation + recommendations, run concurrently with bounded parallelism) **plus
-up to 8 conditional roadmap + case-intelligence calls** for `Partial` / `Missing`
-dimensions — so between 8 and 16 LLM calls total. Fully Covered dimensions cost
-exactly one call.
+A full analysis makes **about ten LLM calls**: one mechanism check for the whole
+workspace, one evaluation + recommendations call per dimension, and one roadmap +
+case-intelligence call carrying every `Partial` / `Missing` dimension (skipped
+when there are none). Evaluation stays per dimension on purpose: sharing one
+reply across all eight was measured to cut citations per dimension by about a
+third. `BATCH_EVALUATION=1` shares it anyway, for three calls a run, when quota
+matters more than citation depth; `BATCH_LLM_CALLS=0` sends every roadmap
+separately too (9–17 calls). A shared reply that comes back malformed is
+retried once as two halves.
 
 ### Deterministic framework selection
 
@@ -134,59 +140,45 @@ Which frameworks are searched is decided **in code, never by the LLM**
 Meridian's design principle is that **the LLM never decides verdicts, priorities,
 timelines, or institutions** — those are derived from evidence in code.
 
-### Coverage is a deterministic ladder
+### Verdicts are computed from the document, then explained
 
-After the model returns its raw verdict for a dimension, a deterministic ladder
-(`backend/src/deterministic.py`) enforces rules in code, keyed off the document's
-own retrieved chunks and the model's mechanism report — never a hard-coded
-country/verdict expectation.
+The verdict for each dimension is decided **before** the model is called, from
+the document's own provisions, and handed to the model as a fixed input to
+explain. The model writes the reasoning; it never sets the verdict.
 
-- **Six maturity levels (0–5)** — from "No Governance Intent" to "Continuous
-  Monitoring & Enforcement", mapped to `Missing` / `Partial` / `Covered`.
-- **Rule R1 (the "explicit commitment" floor)** — a raw `Missing` verdict is
-  raised to `Partial` only when the document shows an *actual attempted
-  mechanism or explicit commitment* (a named body, a `will establish` /
-  `roadmap` / `programme` commitment). A bare risk acknowledgment does **not**
-  qualify.
-- **Rule R2 (the implementation-commitment raise)** — `Partial` is raised to
-  `Covered` only on a concrete implementation commitment (operational
-  mechanism, named programme, or corroborated commitment phrases).
-- **Substantive specificity gate (anti-false-positive)** — before the broad
-  evidence pool can fire R1/R2, the chunk's mechanism-bearing sentences must be
-  semantically close to the dimension's profile above
-  `SUBSTANTIVE_RELEVANCE_THRESHOLD` (default `0.62`). This is the
-  "procedural authority ≠ substantive governance mechanism" rule: a provision
-  that merely assigns a minister/body a power to approve, support, or
-  administer something (e.g. "the Minister may approve/support AI data
-  centres")  passes the loose relevance gate but is not a governance mechanism
-  for the dimension, so it never raises a verdict. Genuine mechanisms scored
-  0.64–0.80 against their dimension's aspects during calibration; procedural
-  provisions scored 0.48–0.59.
-- **Sentence-level evidence discipline (R1/R2 chunk paths)** — the gates are
-  evaluated on the *sentence* that carries the commitment/obligation phrase
-  (and, for R2, the named responsible body in the same sentence), never on
-  the whole chunk. A long chunk can contain a genuine dimension mechanism in
-  one sentence and an unrelated strong obligation phrase / named body in
-  another (e.g. a mixed Article 32/33 safety chunk promoting Fairness on a
-  safety provision); co-located evidence elsewhere in the chunk never
-  satisfies the requirement.
-- **Ladder-raise review safeguard** — when a deterministic raise produces a
-  final verdict that contradicts the model's own coverage reasoning (gap
-  assertions like "does not establish", "no provisions", "lacks",
-  "provides no", "establishes no"...), the card is flagged for review
-  instead of shipping the mismatch silently.
+- **Every provision is graded on a normative-force ladder** — T0 Aspirational,
+  T1 Intentional, T2 Assigned, T3 Obligatory, T4 Enforceable — from who it
+  addresses, how firmly (shall / must / should), and what consequence attaches
+  (penalty, fine, liability). This follows the Abbott & Snidal legalization
+  framework (obligation, precision, delegation). Recitals, definitions and
+  headings are excluded before anything is counted, and duplicate provisions
+  from overlapping chunks are collapsed.
+- **The whole supplied text is read**, not a sample: every operative sentence
+  of every uploaded document is scored, so a thin count means the document
+  barely addresses a dimension rather than that too little was retrieved.
+- **Coverage** — `Covered` needs two binding provisions, or one paired with an
+  enforceable one, *and* those duties must reach at least a third of the
+  mechanisms the dimension calls for. `Partial` is a duty that stands alone, a
+  commitment without a duty, or binding force spread too narrowly. `Missing`
+  is a dimension the document mentions only in passing.
+- **Implementation depth** — five stages, each a strictly stronger claim than
+  the last: Unaddressed, Emerging, Delegated, Operationalized,
+  Institutionalized. A dimension cannot be Operationalized unless at least one
+  of its expected mechanisms is carried by a duty, nor Institutionalized with
+  fewer than two. This gate only ever lowers a stage.
+- **Two indices, never one** — the depth index (mean stage score, 0–100) says
+  how hard the provisions bind; the coverage index says how much of each
+  dimension's expected mechanisms they reach at all. They are reported side
+  by side because the interesting cases are where they diverge: a narrow
+  statute that binds hard, a broad strategy that binds nobody.
+- **Where a model touches the verdict path** — once, and only downward. A
+  model checks whether a provision that mentions a mechanism actually
+  establishes it; it can remove a mechanism, never add one, and the gates it
+  feeds only lower a verdict. If that check is unavailable, the run is marked
+  provisional rather than passed off as complete.
 - **Priority is tiered in code** — `Covered` → none; `Partial` → Medium (High
   when a cluster dimension is also open); `Missing` → High (Critical when a
   cluster dimension is also open).
-- **Risk is cluster-aware** — core dimensions escalate; gaps in related
-  dimensions compound risk.
-- **Overall maturity uses the weakest-dimension rule on the Institutionalization
-  Scale** (`Unaddressed` → `Emerging` → `Formalized` → `Operationalized` →
-  `Institutionalized`) — the policy is as mature as its least mature dimension,
-  plus a continuous 0–100 composite index.
-
-Toggle the R1 floor with `LADDER_FLOOR_ENABLED=0` for a strict "no floor"
-baseline (read at startup).
 
 ### Every citation is verified
 
@@ -194,21 +186,18 @@ baseline (read at startup).
   match? is the quoted excerpt consistent with the chunk it came from?** The
   third is an embedding-similarity check (`BAAI/bge-small-en-v1.5`, cosine
   >= 0.65) with a keyword-overlap fallback at 0.30.
-- An NLI cross-encoder path (`cross-encoder/nli-deberta-v3-base`) also exists
-  behind `ENABLE_NLI_VERIFICATION=true`, but it is **off by default and that is
-  a measured decision, not an oversight** — see
-  [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md). On the 344 stored citations
-  whose excerpt appears verbatim in the chunk it cites — where fabrication is
-  impossible by construction — the embedding check accepts 88.7% and the NLI
-  check accepts 29.1%. NLI rejected 239 citations the embedding path accepted
-  and accepted none that it rejected.
+- An NLI cross-encoder (`cross-encoder/nli-deberta-v3-base`) was measured as
+  the third check and not adopted — see [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md).
+  On the 344 stored citations whose excerpt appears verbatim in the chunk it
+  cites — where fabrication is impossible by construction — the embedding check
+  accepts 88.7% and the NLI check 29.1%.
 - If no retrieved passage supports a claim, the model emits an explicit
   **"no citation"** sentinel — an honest decline, never a fabricated citation.
 - Low-information glossary/index fragments (e.g. "Explainability15" from PDF
   extraction) are detected and never become evidence.
 - When a dimension needs a citation and none was found, a deterministic
   fallback attaches the top **dimension-grounded** chunk — explicitly marked
-  *auto-attached, not LLM-grounded*, so it's never shown as verified.
+  as added rather than quoted, so it's never shown as verified.
 - Roadmap citations are **dimension-grounded**: a top-ranked but off-topic
   chunk (generic risk-assessment boilerplate) is dropped, even if the LLM cited
   it, because a verified-but-irrelevant citation is worse than honest absence.
@@ -221,18 +210,19 @@ baseline (read at startup).
   and never inherited from the recommendations unless the cross-reference
   verifies it.
 - Roadmap timelines are **computed, not guessed**: phase ranges derive from
-  coverage tier, existing operational mechanisms, maturity, agency grounding,
+  coverage tier, existing operational mechanisms, implementation depth, agency grounding,
   and scope — with the reasoning string exposed in the UI.
 - A deterministic **scope disclaimer** states plainly that the analysis
   evaluates only the document(s) provided, never the country's complete
   governance apparatus.
 
-### Confidence is calibrated, not guessed
+### Every verdict says what it rests on
 
-Confidence scores are the **geometric mean of seven evidence factors** — quality
-(mean similarity), diversity (unique sources), agreement, retrieval stability,
-citation strength, cross-source agreement, and coverage completeness — each
-derived from real pipeline state, never an LLM self-assessment.
+Each dimension carries a plain statement of the evidence behind it — how many
+provisions were read, how many bind, how many carry a consequence — in three
+coarse bands (strong, moderate, thin) rather than a percentage. A precise-looking
+confidence score built from counts would be exactly the kind of unearned
+precision the scorer exists to avoid.
 
 ---
 
@@ -240,12 +230,12 @@ derived from real pipeline state, never an LLM self-assessment.
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.12, FastAPI, SQLAlchemy (async) |
+| Backend | Python 3.13, FastAPI, SQLAlchemy (async) |
 | Vector store | ChromaDB (persistent, embedded) + `BAAI/bge-small-en-v1.5` embeddings |
 | LLM | **Gemini** (quota-aware routing, per-key RPM/RPD throttles, failover and backoff across configured credentials) |
-| Verification | `BAAI/bge-small-en-v1.5` embedding similarity (default); `cross-encoder/nli-deberta-v3-base` NLI available behind a flag |
+| Verification | Verbatim containment first, then `BAAI/bge-small-en-v1.5` embedding similarity with a keyword-overlap fallback (an NLI cross-encoder was measured and removed) |
 | Database | PostgreSQL 16 |
-| Frontend | Next.js 14 (fully static output), React 18, TypeScript, Tailwind, Motion (Framer Motion), Recharts |
+| Frontend | Next.js 14 (prerendered; standalone or static export), React 18, TypeScript, Tailwind, Motion, hand-built SVG charts |
 
 ### LLM provider strategy
 
@@ -305,16 +295,20 @@ Run `make` with no arguments for the same list.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg` | PostgreSQL connection |
-| `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini model |
+| `GEMINI_MODEL` | `gemini-3.5-flash` | Gemini model (the one the published results were scored with) |
 | `GEMINI_API_KEY` | — | Primary Gemini key (add `_2`/`_3`/`_4` for rotation) |
 | `CHROMA_PERSIST_DIR` | `./data/chroma` | Vector store location |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed browser origins |
-| `LADDER_FLOOR_ENABLED` | `1` | Enable the R1 commitment floor (see methodology) |
-| `SUBSTANTIVE_RELEVANCE_THRESHOLD` | `0.62` | Substantive-specificity bar for the ladder's anti-false-positive gate (model-dependent) |
-| `ANALYSIS_MAX_CONCURRENCY` | `3` | Parallel dimension-analysis workers |
-| `GEMINI_RPM_LIMIT` / `GEMINI_RPD_LIMIT` | `10` / `1000` | Free-tier throttle ceilings |
-| `LOG_LEVEL` / `DEV_MODE` | `INFO` / `false` | Logging + dev behavior |
+| `SUBSTANTIVE_RELEVANCE_THRESHOLD` | `0.62` | How close a passage must sit to a dimension before it is cited as a requirement (model-dependent) |
+| `BATCH_LLM_CALLS` | `1` | One roadmap call for all gapped dimensions instead of one each |
+| `BATCH_EVALUATION` | `0` | One evaluation call for all dimensions (3 calls a run, fewer citations) |
+| `ANALYSIS_MAX_CONCURRENCY` | `3` | Parallel dimension workers when batching is off |
+| `GEMINI_RPM_LIMIT` / `GEMINI_RPD_LIMIT` | `4` / off | Requests per minute per credential; optional self-imposed daily cap |
+| `LOG_LEVEL` | `INFO` | Log verbosity |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api/v1` | Frontend → API base URL (baked at build time) |
+| `ADMIN_TOKEN` | unset | Bearer token for `POST /frameworks/sync`; unset, the endpoint is refused |
+| `LOCKED_WORKSPACE_IDS` | unset | Read-only example workspaces on a public demo |
+| `FRONTEND_DIST` | unset | A static export of the frontend for the API to serve on the same origin |
 
 ---
 
@@ -326,11 +320,12 @@ All endpoints under `/api/v1`. Interactive docs at `/docs`.
 |---|---|---|
 | `GET` | `/health` | Health + vector store status (chunk/framework counts) |
 | `GET` | `/frameworks` | Framework library with indexing status |
-| `POST` | `/frameworks/sync` | Re-sync frameworks from `config/frameworks.yaml` |
+| `POST` | `/frameworks/sync` | Re-index frameworks whose PDF changed (operator only: `ADMIN_TOKEN`) |
 | `POST` | `/workspace` | Create a workspace (country, policy title) |
 | `GET` | `/workspace` · `/workspace/{id}` | List / fetch workspaces |
-| `POST` | `/upload/{workspace_id}` | Upload policy PDF → starts background analysis |
-| `GET` | `/analyze/{workspace_id}` | Full analysis results (8 dimensions × 4 sections) |
+| `POST` | `/upload/{workspace_id}` | Upload a policy PDF (queued for the next run) |
+| `POST` | `/analyze/{workspace_id}/run` | Run the analysis over every queued document, in the background |
+| `GET` | `/analyze/{workspace_id}` | Every run for the workspace, which dimensions each is missing, and the newest complete run |
 | `POST` | `/auditor/upload` | AI Auditor: ingest a PDF for chat only (no analysis) |
 | `POST` | `/brief/{workspace_id}/generate` | Generate the executive brief (one synthesis call) |
 | `GET` | `/brief/{workspace_id}` | Fetch the cached brief |
@@ -346,11 +341,12 @@ curl -X POST http://localhost:8000/api/v1/workspace \
   -H "Content-Type: application/json" \
   -d '{"country":"India","policy_title":"National AI Strategy"}'
 
-# 2. Upload the policy PDF (starts the background analysis pipeline)
+# 2. Upload the policy PDF (repeat for each document in the workspace)
 curl -X POST http://localhost:8000/api/v1/upload/{workspace_id} \
   -F "file=@national-ai-strategy.pdf"
 
-# 3. Poll for the completed analysis
+# 3. Run the analysis over everything uploaded, then poll for the result
+curl -X POST http://localhost:8000/api/v1/analyze/{workspace_id}/run
 curl http://localhost:8000/api/v1/analyze/{workspace_id}
 
 # 4. Generate + download the executive brief
@@ -362,8 +358,11 @@ curl -o brief.pdf "http://localhost:8000/api/v1/brief/{workspace_id}/export?form
 
 ## Frontend
 
-The frontend is **fully static** — every route prerenders, so it can be hosted
-anywhere (Vercel, Netlify, or behind the same Caddy instance as the API).
+Every route prerenders, and every page is a client component reading the API,
+so the same pages ship two ways: the standalone Next server behind Caddy (the
+compose stack), or a plain static export (`NEXT_OUTPUT=export`) that the API
+serves itself through `FRONTEND_DIST` — the single-container shape the hosted
+demo uses.
 
 | Route | Page |
 |---|---|
@@ -384,16 +383,12 @@ make test-container  # the same suite INSIDE the built image, as CI does
 make check           # lint, types and tests, in CI's order
 ```
 
-**1,269 passed, 18 skipped. Coverage 78.1%** on `src` (see
-[docs/MEASUREMENTS.md](docs/MEASUREMENTS.md)). The CI gate is 76% — set just
-below measured, so it catches regression without being aspirational.
+**1,329 passed, 20 skipped. Coverage 80%** on `src`. The CI gate is 76% —
+set below measured, so it catches regression without being aspirational.
+The suite writes every piece of state (index, uploads, quota ledger) to a
+throwaway directory, so it is safe to run beside a live API.
 
-<!-- This block read "721 passed, 9 skipped. Coverage 60%", contradicting the
-     Measured table at the top of this same file (1,269 / 78.1%). The landing
-     page cites the table, and the page's footer links here, so anyone
-     checking the citation found the source disagreeing with itself. -->
-
-The eighteen skips are deliberate and need external state:
+The twenty skips are deliberate and need external state:
 
 ```bash
 RUN_INTEGRATION_TESTS=1 make test   # requires running services
@@ -401,16 +396,15 @@ RUN_EVALUATION_TESTS=1  make test   # requires an indexed framework corpus
 ```
 
 What is covered: PDF validation failure modes, structure-aware chunking,
-citation verification (including deliberately broken cases and the NLI
-label-order regression), the deterministic coverage ladder, an AST guard
+citation verification (including deliberately broken cases), the
+normative-force scorer and its gates, an AST guard
 against a second verdict computation reappearing, guardrails, framework
 routing and role filtering, brief generation, stability, orphan recovery, and
 the liveness/readiness split.
 
-What is **not** covered, stated plainly: `tasks.py` (the pipeline
-orchestrator) and `workspace.py` are at 0%, `chat.py` at 10%, and
-`provider_router.py` at 26%. Those are the next targets, and the
-provider-failure and hostile-input tests land there.
+Least covered, stated plainly: `tasks.py` (the pipeline orchestrator) at
+41% and `workspace.py` at 43% — both mostly database and background-task
+paths — then `chat.py` at 70%. `provider_router.py` is at 92%.
 
 ---
 
@@ -421,13 +415,16 @@ See **[LAUNCH.md](LAUNCH.md)** for the full runbook. In short:
 - **Recommended:** a single VPS (4 GB RAM / ~30 GB disk) running
   `docker-compose.prod.yml` with Caddy TLS — the only option that survives
   long in-process analyses without sleeping.
-- **Free frontend:** the static frontend can go on Vercel/Netlify for free;
-  the API still needs an always-on host.
+- **Demo:** a single-container build for a Hugging Face Docker Space lives in
+  [deploy/huggingface](deploy/huggingface) — Postgres, the API and the static
+  frontend in one image, with the eight country analyses as read-only examples.
 - **Critical:** `backend/data/chroma` (the indexed corpus — much of it ingested
   from local files with **no public URL**) and `backend/data/uploads` **cannot
   be recreated** and must be shipped with the app.
-- **Security:** there is **no auth layer** — anyone with the URL can burn your
-  Gemini quota. Keep the site private (Caddy basic auth) until auth is built.
+- **Security:** there is **no user auth layer** — anyone with the URL can spend
+  the Gemini quota. Keep a production site private (the Caddyfile has a basic
+  auth block ready to enable) until auth is built; the public demo runs on
+  free-tier keys whose own limits are the ceiling.
 
 ---
 
@@ -435,23 +432,23 @@ See **[LAUNCH.md](LAUNCH.md)** for the full runbook. In short:
 
 - **No authentication** — no user/auth layer; intended for portfolio/team
   demonstration, not multi-tenant production.
-- **Dense retrieval only** — no hybrid (BM25 + embedding) search.
 - **Scanned PDFs** — no OCR. Scanned image PDFs are detected and flagged, not
   processed.
 - **Non-English documents** — tuned for English; other languages degrade
   retrieval quality.
 - **Background tasks** — FastAPI `BackgroundTasks` (adequate at portfolio scale;
   lost on restart; Celery + Redis is the planned upgrade).
-- **LLM quota** — analyses are designed to fit free-tier limits (8–16 calls with
-  throttling and key rotation), but a full run still consumes meaningful daily
-  quota.
+- **LLM quota** — a run makes about ten requests. A free-tier key allows 20 a
+  day per Google project, so each separately-projected key adds two runs a day;
+  `BATCH_EVALUATION=1` stretches one key to six, at a cost in citation depth. A
+  brief is one more request, and a chat reply one each.
 
 ---
 
 ## Project structure
 
 ```
-aura-sdg/
+Meridian/
 ├── config/
 │   └── frameworks.yaml           # All indexed frameworks: roles, dimension tags, regions, URLs
 ├── backend/
@@ -460,29 +457,49 @@ aura-sdg/
 │   │   ├── chroma/               # ChromaDB persistence (gitignored)
 │   │   └── uploads/              # Uploaded policy PDFs (gitignored)
 │   ├── src/
-│   │   ├── gap_analyzer.py       # 8-dimension × 4-section analysis orchestration
-│   │   ├── retrieval.py          # Per-dimension retrieval + dimension-tagged budget reserves
-│   │   ├── framework_router.py   # Deterministic framework selection (roles, tags, regions)
-│   │   ├── deterministic.py      # Coverage ladder (R1/R2), maturity, low-information filter
-│   │   ├── provider_router.py    # LLM routing: Gemini key rotation, throttles, backoff
-│   │   ├── llm_provider.py       # Provider client (Gemini)
-│   │   ├── verify.py             # Citation verification (chunk / page / NLI text support)
-│   │   ├── nli_verifier.py       # NLI cross-encoder wrapper (opt-in)
-│   │   ├── ingestion.py          # PDF parsing + structure-aware chunking
-│   │   ├── validation.py         # PDF validation (type, size, password, empty, OCR)
-│   │   ├── vectorstore.py        # ChromaDB + embeddings
-│   │   ├── brief_synthesis.py    # Executive brief (one synthesis call, cached)
-│   │   ├── brief_export.py       # DOCX / PDF rendering from the cached brief
-│   │   ├── chat.py               # Chat assistant (4 modes)
-│   │   ├── consistency.py        # Cross-dimension consistency + synthesis-drift detection
-│   │   ├── evidence_agreement.py # Cross-source evidence agreement scoring
-│   │   ├── framework_library.py  # Framework Library metadata/indexing status
-│   │   ├── framework_sync.py     # Config-driven framework sync
-│   │   ├── guardrails.py         # Off-topic rejection, insufficient-evidence handling
-│   │   ├── tasks.py              # Background analysis pipeline
-│   │   ├── workspace.py          # Workspace service
-│   │   ├── db_models.py          # PostgreSQL ORM models
-│   │   └── logging_config.py     # Structured JSON logging
+│   │   ├── tasks.py                  # Background pipeline: ingest every document, analyse, verify, save
+│   │   ├── validation.py             # PDF validation (type, size, password, empty, OCR)
+│   │   ├── ingestion.py              # PDF parsing, split-word repair, chunking, division titles
+│   │   ├── text_repair.py            # Rejoins words a PDF extractor split ("shal l" → "shall")
+│   │   ├── vectorstore.py            # ChromaDB + embeddings
+│   │   ├── hybrid_search.py          # BM25 fused with dense retrieval by reciprocal rank fusion
+│   │   ├── retrieval.py              # Per-dimension retrieval, budget reserves, scoring pools
+│   │   ├── framework_router.py       # Deterministic framework selection (roles, tags, regions)
+│   │   ├── gap_analyzer.py           # Per-dimension orchestration; the single place a verdict is set
+│   │   ├── grading.py                # Provision classification, de-duplication, depth and mechanism gates
+│   │   ├── evidence_strength.py      # Normative-force ladder, evidence profile, coverage and depth
+│   │   ├── mechanism_matching.py     # Which expected mechanisms a dimension's provisions evidence
+│   │   ├── mechanism_adjudication.py # Model check that a matched provision establishes the mechanism
+│   │   ├── framework_salience.py     # How many reference instruments expect each mechanism
+│   │   ├── deterministic.py          # Dimension vocabularies, low-information filter, fallback ladder
+│   │   ├── analysis_prompts.py       # Prompts for the evaluation and roadmap calls
+│   │   ├── consistency.py            # Cross-dimension consistency and narrative-drift detection
+│   │   ├── evidence_agreement.py     # Cross-source evidence agreement scoring
+│   │   ├── verify.py                 # Citation verification (passage exists · page · supports claim)
+│   │   ├── models.py                 # Pydantic models for the analysis output
+│   │   ├── provider_router.py        # LLM routing: key rotation, throttles, backoff
+│   │   ├── provider_errors.py        # What a provider failure means for the retry loop
+│   │   ├── key_health.py             # Per-credential circuit breakers and daily accounting
+│   │   ├── llm_provider.py           # Provider client (Gemini)
+│   │   ├── concurrency.py            # Admission control for concurrent analyses
+│   │   ├── brief_synthesis.py        # Executive brief (one synthesis call, cached)
+│   │   ├── brief_export.py           # DOCX / PDF rendering from the cached brief
+│   │   ├── chat.py                   # Chat assistant (AI Auditor / Rapporteur)
+│   │   ├── governance_advisor.py     # Intent routing and advisor responses
+│   │   ├── meridian_facts.py         # The instrument's own method, derived from live constants
+│   │   ├── analysis_brief.py         # The open run compacted as chat context
+│   │   ├── document_overview.py      # Section-stratified overview of an uploaded document
+│   │   ├── guardrails.py             # Off-topic rejection
+│   │   ├── framework_library.py      # Framework Library metadata and indexing status
+│   │   ├── framework_sync.py         # Config-driven framework sync
+│   │   ├── workspace.py              # Workspace service
+│   │   ├── db_models.py              # PostgreSQL ORM models
+│   │   ├── storage.py                # Filesystem / Azure Blob storage for uploads
+│   │   ├── provenance.py             # What produced a result: model, calls, code revision
+│   │   ├── replay.py                 # Recorded-provider replay for load tests
+│   │   ├── metrics.py                # Prometheus metrics
+│   │   ├── logging_config.py         # Structured JSON logging
+│   │   └── utils.py                  # Shared helpers
 │   ├── tests/                    # unit / integration / evaluation
 │   ├── main.py                   # FastAPI app
 │   ├── Dockerfile
@@ -510,7 +527,7 @@ aura-sdg/
 - **No training-data answers** — the LLM only answers from retrieved context,
   and never names institutions, timelines, priorities, or verdicts the evidence
   doesn't support.
-- **Deterministic where it matters** — coverage, maturity, priority, risk,
+- **Deterministic where it matters** — coverage, implementation depth, priority, risk,
   timelines, and responsible agencies are decided in code, reproducible across
   runs, and auditable.
 - **Testable building blocks** — every file in `src/` is independently unit-testable.

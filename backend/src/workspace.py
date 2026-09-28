@@ -8,7 +8,7 @@ import structlog
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db_models import Analysis, UploadLog, Workspace, WorkspaceStatus
+from src.db_models import Analysis, Report, UploadLog, Workspace, WorkspaceStatus
 
 logger = structlog.get_logger()
 
@@ -111,7 +111,6 @@ class WorkspaceService:
             governance_gaps=gaps_serialized,
             summary=analysis_data.get("summary", ""),
             total_retrieved=analysis_data.get("total_retrieved", 0),
-            retrieval_frameworks=analysis_data.get("retrieval_frameworks", []),
             similarity_scores=analysis_data.get("similarity_scores", []),
             llm_latency=analysis_data.get("llm_latency", 0.0),
             total_processing_time=analysis_data.get("total_processing_time", 0.0),
@@ -123,6 +122,25 @@ class WorkspaceService:
             ragas_metrics=analysis_data.get("ragas_metrics"),
         )
         self.db.add(analysis)
+
+        # A cached executive brief belongs to the analysis it was written
+        # from. The cache is keyed on workspace alone, so once a workspace is
+        # re-analysed the stored brief describes verdicts that no longer
+        # exist — and GET /brief serves it unconditionally while
+        # /brief/export renders it straight to PDF. Two of these were sitting
+        # in the database: the EU's brief was from 26 Aug against an analysis
+        # re-scored seven times since. Exporting one would hand someone a
+        # document contradicting the analysis page it came from.
+        #
+        # Dropped rather than regenerated, because regenerating costs an LLM
+        # call the user did not ask for. The brief page already handles
+        # "none yet" and offers to generate.
+        await self.db.execute(
+            delete(Report).where(
+                Report.workspace_id == analysis.workspace_id,
+                Report.type == "executive_brief",
+            )
+        )
         await self.db.commit()
         await self.db.refresh(analysis)
         return analysis

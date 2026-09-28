@@ -146,15 +146,18 @@ MECHANISM_GLOSS: dict[str, str] = {
 class MechanismMatch:
     """Which mechanisms a set of scored sentences evidences, and how.
 
-    Carries the full MechanismCoverage API because it replaced it: there were
-    two mechanism detectors returning two different types, production used the
-    weaker one, and `binding_met` existed on only one of them.
+    The only mechanism result type. There used to be two detectors returning
+    two different types; production used the weaker one, and `binding_met`
+    existed on only one of them.
     """
 
     dimension: str = ""
     present: dict[str, int] = field(default_factory=dict)  # mechanism -> max tier
     absent: list[str] = field(default_factory=list)
     matched_by: dict[str, str] = field(default_factory=dict)  # mechanism -> "cue" | "semantic"
+    # Set by mechanism_adjudication: APPLIED, UNAVAILABLE, or empty when the
+    # model was never asked. A reader of `present` needs to know which.
+    adjudication: str = ""
 
     @property
     def met(self) -> int:
@@ -172,18 +175,55 @@ class MechanismMatch:
         return sum(1 for t in self.present.values() if t >= TIER_OBLIGATORY)
 
     def summary(self) -> str:
+        """What is missing, named, with how many instruments expect it.
+
+        This used to open "Provides 3 of 5 governance mechanisms the reference
+        frameworks expect" — a score out of a denominator, which reads as a
+        pass mark and invites the reader to treat 3/5 as 60% of good
+        governance. It is not a percentage of anything; the five are not
+        equally weighted and nobody claims a document needs all of them.
+
+        A named absence with its consensus behind it says the same thing
+        without the arithmetic: "missing pre-deployment testing, which 35 of
+        43 indexed instruments expect" is checkable, actionable, and cannot be
+        misread as a grade. Salience comes from the reference corpus only —
+        see framework_salience — so it measures agreement between instruments,
+        never anything about this document.
+        """
         if not self.total:
             return ""
-        parts = [
-            f"Provides {self.met} of {self.total} governance mechanisms the "
-            f"reference frameworks expect for this dimension"
-        ]
+        parts: list[str] = []
+        ranked: list[dict] = []
+        total_instruments = 0
+        try:
+            from src.framework_salience import framework_count, rank_absent
+
+            ranked = rank_absent(self.dimension, list(self.absent))
+            total_instruments = framework_count()
+        except Exception:  # salience unavailable — fall back to bare names
+            ranked = []
+
+        if ranked and total_instruments:
+            named = [
+                f"{r['mechanism']} ({r['expected_by']} of {total_instruments})" for r in ranked[:3]
+            ]
+            parts.append("Not established: " + ", ".join(named))
+        elif self.absent:
+            parts.append("Not established: " + ", ".join(sorted(self.absent)[:4]))
+        else:
+            parts.append(
+                "Every mechanism the reference instruments expect for this "
+                "dimension is established in the document"
+            )
+
         if self.binding_met:
-            parts.append(f"{self.binding_met} of them as a binding requirement")
-        tail = "; ".join(parts)
-        if self.absent:
-            tail += f". Not addressed: {', '.join(self.absent[:4])}"
-        return tail + "."
+            parts.append(
+                f"{self.binding_met} of the mechanisms present "
+                f"{'is' if self.binding_met == 1 else 'are'} carried by a binding duty"
+            )
+        elif self.met:
+            parts.append("none of the mechanisms present is carried by a binding duty")
+        return "; ".join(parts) + "."
 
 
 @lru_cache(maxsize=1)

@@ -68,11 +68,14 @@ class TestAdmission:
         # A negative count would silently grant extra capacity forever.
         assert slots.in_flight == 0
 
-    def test_available_reflects_what_is_left(self):
+    def test_capacity_left_is_exactly_what_is_left(self):
         slots = AnalysisSlots(limit=3)
         slots.acquire()
 
-        assert slots.available == 2
+        slots.acquire()
+        slots.acquire()
+        with pytest.raises(CapacityFull):
+            slots.acquire()
 
 
 class TestDraining:
@@ -99,7 +102,8 @@ class TestDraining:
         slots.begin_drain()
         slots.begin_drain()
 
-        assert slots.draining
+        with pytest.raises(CapacityFull):
+            slots.acquire()
 
 
 class TestGracefulShutdown:

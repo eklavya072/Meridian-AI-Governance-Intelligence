@@ -362,7 +362,7 @@ export default function HeroScrub() {
            headlines in a pile". The cost of that was not a pile: it was the
            <h1>. Below 720px, on portrait touch, and under
            prefers-reduced-motion, the page lost its headline, the OECD
-           finding, the forty-four-framework claim, the force ladder and the
+           finding, the framework-corpus claim, the force ladder and the
            governance-only scope caveat — the entire argument — leaving a
            tagline and two buttons. `visibility: hidden` also took the <h1>
            out of the accessibility tree and out of rendered indexing.
@@ -477,7 +477,10 @@ export default function HeroScrub() {
          still arrives at assembled text. */
       const t0 = performance.now();
       const ramp = setInterval(() => {
-        loadK = clamp((performance.now() - t0) / 2200, 0, 1);
+        /* 2200ms was the whole opening line taking over two seconds to
+           arrive, with nothing happening for most of it. An entrance the
+           reader waits through is not an entrance. */
+        loadK = clamp((performance.now() - t0) / 1050, 0, 1);
         updateBands(shown);
         if (loadK >= 1) clearInterval(ramp);
       }, 60);
@@ -675,20 +678,40 @@ export default function HeroScrub() {
             {/* "Eight readings, forty-four frameworks, one brief" was a
                 specification — three quantities and a deliverable, which
                 tells a reader what they are buying rather than what happens
-                to their document. This is the same three facts as an event:
-                one thing goes in, forty-four instruments are brought to bear
-                on it, eight verdicts come out. */}
+                to their document. This is the same facts as an event: one
+                thing goes in, the instruments are brought to bear on it,
+                eight verdicts come out.
+
+                "against forty-four frameworks. Eight verdicts." put the two
+                clauses in sequence and so read as cause and effect — as if
+                comparing a document to the corpus were what produced the
+                verdict. It is not, and the paper says so explicitly: adding
+                or removing a framework does not move a verdict. The corpus
+                supplies the expectation set, which is what makes an absence
+                nameable; the verdict comes from the force of the document's
+                own provisions. Naming the subject of the verdict in the
+                accent separates them — and "its duties" keeps the beat
+                at two lines, which the longer phrasings did not. The count
+                is forty-three: the UNESCO
+                EIA entry was withdrawn on 18 Sep as a duplicate of the
+                Recommendation, and the hero was the last place still
+                claiming forty-four. */}
             <ScrubWords
-              text="One document, against forty-four frameworks."
+              text="One document, against forty-three frameworks."
               seed={53}
               spread={0.5}
             />{" "}
-            {/* The brief is the thing beat three delivers — the readings and
-                the frameworks are how it is made — so it takes the accent,
-                the way the turn does in the hook and "A minority" does in
-                the finding. One gold phrase per beat, on the payload. */}
+            {/* The verdict is the thing beat three delivers — the reading
+                and the frameworks are how it is made — so it takes the
+                accent, the way the turn does in the hook and "A minority"
+                does in the finding. One gold phrase per beat, on the
+                payload. */}
             <span className="l-band-key">
-              <ScrubWords text="Eight verdicts." seed={59} spread={0.2} />
+              <ScrubWords
+                text="Eight verdicts on its duties."
+                seed={59}
+                spread={0.2}
+              />
             </span>
           </p>
           {/* This ran five lines — the eight dimensions listed in full, then

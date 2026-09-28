@@ -19,7 +19,7 @@ remembering to record something.
 |---|---|---|---|
 | **Availability** — `/healthz` returns 200 | 99% monthly | *not measured — no production deployment* | A single-instance service with an in-process worker cannot honestly promise more. Three nines would require the queue and the redundancy described under "Known limits". |
 | **Successful-analysis rate** — runs reaching `COMPLETE` with no failed dimension | ≥ 95% of runs | *not measured* | The dominant failure is provider quota, which is outside our control. 95% admits the occasional exhausted budget without excusing a code defect. |
-| **Analysis latency** — upload accepted to brief available | p95 < 15 min | *not measured* | A full run is up to 16 LLM calls paced against a ~10 RPM per-credential ceiling, so the floor is set by the provider, not by us. |
+| **Analysis latency** — upload accepted to brief available | p95 < 15 min | *not measured on a healthy provider* | A full run is about ten LLM calls; the three that matter took 20s, 38s and 28s when the model answered, so the floor is set by the provider, not by us. |
 | **Citation pass rate** — citations that resolve and verify | ≥ 85%, alert below 80% | **88.7%** on 344 verbatim-contained excerpts (2026-08-30, `docs/MEASUREMENTS.md`) | This is the only objective measured against real data, and it is the one that matters most: it is the evidence gate's own pass rate. |
 
 The citation pass rate is the objective to watch. Availability and latency
@@ -108,7 +108,7 @@ shows `ingest` climbing before the process disappears.
 are read in bounded chunks, so a legitimate upload should not reach here — if
 one does, the cap is wrong for the corpus rather than the file being hostile.
 
-**Response.** Lower `ANALYSIS_MAX_CONCURRENCY` (default 8; each worker holds
+**Response.** Lower `ANALYSIS_MAX_CONCURRENCY` (default 3; each worker holds
 its own retrieval context) and set `WARM_FRAMEWORK_COUNTS=0`, which skips a
 startup sweep that holds the whole collection in memory.
 
@@ -170,8 +170,9 @@ Stated because a runbook that omits them is worse than none.
 
 - **No durable queue.** Analysis runs in-process. A restart loses in-flight
   work; the startup sweep makes that recoverable, not invisible.
-- **No backpressure.** Concurrent runs are bounded per workspace (409 on a
-  second run) but not globally. N workspaces can start N pipelines.
+- **Backpressure is per process.** A workspace refuses a second run (409), and
+  `MAX_CONCURRENT_ANALYSES` (default 2) refuses runs beyond it with 429 rather
+  than queueing them. The limit counts one process, not a cluster.
 - **`GEMINI_RPD_LIMIT` is our own accounting**, not a reading of Google's
   quota. It has been observed reading 146/1000 while every credential was
   already returning 429.

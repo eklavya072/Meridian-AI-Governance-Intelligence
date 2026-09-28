@@ -8,9 +8,7 @@ before, not the model — so it is the part worth pinning.
 import pytest
 
 from src.governance_advisor import (
-    AdvisorPlugin,
     Intent,
-    PluginRegistry,
     SessionContext,
     _extract_dimension,
     _gap_to_finding_context,
@@ -129,53 +127,6 @@ class TestFindingContext:
 
     def test_an_empty_gap_is_handled(self):
         assert isinstance(_gap_to_finding_context({}), dict)
-
-
-class TestPluginRegistry:
-    def test_a_registered_plugin_is_returned_for_its_intent(self):
-        registry = PluginRegistry()
-
-        class _Plugin(AdvisorPlugin):
-            @property
-            def name(self):
-                return "test-plugin"
-
-            def can_handle(self, intent, dimension, message):
-                return intent is Intent.GREETING
-
-            def handle(self, message, dimension, context, **kwargs):
-                return "handled"
-
-        registry.register(_Plugin())
-        found = registry.get_handler(Intent.GREETING, None, "hello")
-
-        assert found is not None
-        assert found.handle("hello", None, SessionContext()) == "handled"
-
-    def test_no_plugin_matches_returns_none(self):
-        registry = PluginRegistry()
-
-        assert registry.get_handler(Intent.GREETING, None, "hi") is None
-
-    def test_registering_twice_does_not_duplicate_handling(self):
-        registry = PluginRegistry()
-
-        class _Plugin(AdvisorPlugin):
-            @property
-            def name(self):
-                return "dup"
-
-            def can_handle(self, intent, dimension, message):
-                return True
-
-            def handle(self, message, dimension, context, **kwargs):
-                return "x"
-
-        plugin = _Plugin()
-        registry.register(plugin)
-        registry.register(plugin)
-
-        assert registry.get_handler(Intent.GREETING, None, "hi") is not None
 
 
 class TestSessionContext:

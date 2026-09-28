@@ -227,6 +227,44 @@ class TestSchemaRepair:
         assert _call(provider).answer == "ok"
         assert len(provider.calls) == 2
 
+    def test_a_malformed_batch_is_handed_back_unshrunk(self):
+        """The batch is split in two by the analyzer instead.
+
+        A shrink instruction on a batch would thin every dimension in it at
+        once, and a plain retry spends a request on the same reply.
+        """
+        from pydantic import ValidationError
+
+        try:
+            Reply.model_validate_json("{")
+        except ValidationError as exc:
+            err = exc
+
+        provider = FakeGemini(keys=1, script=[err])
+
+        with pytest.raises(ValidationError):
+            pr.generate_with_retry(
+                provider=provider, prompt="p", schema=Reply, operation="module1_2_batch"
+            )
+        assert len(provider.calls) == 1
+
+    def test_half_a_batch_is_repaired_like_a_single_call(self):
+        from pydantic import ValidationError
+
+        try:
+            Reply.model_validate_json("{")
+        except ValidationError as exc:
+            err = exc
+
+        provider = FakeGemini(keys=1, script=[err])
+
+        result = pr.generate_with_retry(
+            provider=provider, prompt="p", schema=Reply, operation="module1_2_batch_part"
+        )
+
+        assert result.answer == "ok"
+        assert len(provider.calls) == 2
+
 
 class TestDailyBudget:
     """The provider decides when the day is over; we only measure it."""
@@ -322,23 +360,6 @@ class TestThrottles:
 
         assert slept, "a full window must pace the next request"
 
-    def test_the_token_throttle_sleeps_when_the_window_is_full(self, monkeypatch):
-        slept = []
-        monkeypatch.setattr(pr.time, "sleep", lambda s: slept.append(s))
-        throttle = pr.TokenThrottle(limit=1000, window=60)
-        throttle.record(900)
-
-        throttle.wait(estimated_input=500)
-
-        assert slept
-
-    def test_reset_clears_the_window(self):
-        throttle = pr.TokenThrottle(limit=100, window=60)
-        throttle.record(50)
-        throttle.reset()
-
-        assert throttle.total_used == 0
-
 
 class TestRetryDelayExtraction:
     def test_reads_a_delay_from_prose(self):
@@ -348,20 +369,24 @@ class TestRetryDelayExtraction:
         assert pr._extract_retry_delay("something went wrong") is None
 
 
-class TestDebugSummary:
-    def test_printing_a_summary_never_raises_on_an_empty_run(self, capsys):
+class TestRunSummary:
+    def test_a_summary_never_raises_on_an_empty_run(self):
         pr._debug_stats["primary_requests"].clear()
 
-        pr.print_debug_summary()
+        summary = pr.log_run_summary()
 
-        assert "LLM ANALYSIS SUMMARY" in capsys.readouterr().out
+        assert summary["requests"] == 0
+        assert summary["avg_latency_s"] == 0.0
 
-    def test_printing_a_summary_after_a_real_call(self, capsys):
-        _call(FakeGemini())
+    def test_a_summary_counts_the_run(self):
+        pr._debug_stats["primary_requests"].clear()
+        pr._debug_stats["primary_requests"].append({"prompt_chars": 100, "latency": 1.5})
 
-        pr.print_debug_summary()
+        summary = pr.log_run_summary()
 
-        assert "Successful" in capsys.readouterr().out
+        assert summary["requests"] == 1
+        assert summary["avg_prompt_chars"] == 100
+        assert summary["avg_latency_s"] == 1.5
 
 
 class TestShortCooldownsAreWaitedOut:

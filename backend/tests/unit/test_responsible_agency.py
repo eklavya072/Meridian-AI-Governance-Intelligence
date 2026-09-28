@@ -135,3 +135,28 @@ class TestAntiFabricationStillHolds:
         )
         assert grounding == "none_identified"
         assert "not specified by policy" in name.lower()
+
+    def test_an_undocumented_proper_name_is_not_accepted_as_implied(self):
+        # An institutional-sounding proper name the document never uses is
+        # still a fabrication.
+        _, grounding = GapAnalyzer._verify_responsible_agency(
+            "European Sustainability Office", "document_implied", CLEAN_CHUNK, DIM
+        )
+        assert grounding == "none_identified"
+
+    def test_a_generic_description_may_still_be_implied(self):
+        name, grounding = GapAnalyzer._verify_responsible_agency(
+            "the national supervisory authority", "document_implied", CLEAN_CHUNK, DIM
+        )
+        assert grounding == "document_implied"
+        assert name == "the national supervisory authority"
+
+
+class TestDecoratedNamesAreCorrected:
+    @pytest.mark.parametrize("claimed", ["document_named", "document_implied"])
+    def test_a_decorated_name_becomes_the_documents_own(self, claimed):
+        # "European AI Office" for a statute that only ever says "AI Office".
+        name, grounding = GapAnalyzer._verify_responsible_agency(
+            "European AI Office", claimed, CLEAN_CHUNK, DIM
+        )
+        assert (name, grounding) == ("AI Office", "document_named")

@@ -43,7 +43,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@postgres:5432/${POSTGRES_DB:-aura_sdg}
       CHROMA_PERSIST_DIR: /app/data/chroma
       LOG_LEVEL: INFO
-      DEV_MODE: "false"
     volumes:
       - chroma_data:/app/data/chroma
       - uploads_data:/app/data/uploads

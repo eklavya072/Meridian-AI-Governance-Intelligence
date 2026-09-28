@@ -16,7 +16,14 @@ the modules were starved of framework evidence. Nothing errored.
 """
 
 import os
+import sys
 import time
+from pathlib import Path
+
+# Run as `python scripts/<name>.py` from backend/: Python puts scripts/ on the
+# path, not backend/, so `src` would not import without this.
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_DIR))
 
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
@@ -30,16 +37,20 @@ print(f"collection before: {before}", flush=True)
 
 t0 = time.time()
 ok = err = 0
-for i, fw in enumerate(load_frameworks_config(), 1):
+frameworks = load_frameworks_config()
+total = len(frameworks)
+for i, fw in enumerate(frameworks, 1):
     name = fw["name"]
     n0 = vs.count_chunks(framework_filter=[name])
     r = svc.sync_framework(fw)
     if r.get("status") == "synced":
         ok += 1
-        print(f"[{i:2d}/33] {name[:52]:<52} {n0:>6} -> {r.get('chunk_count', 0):<6}", flush=True)
+        print(
+            f"[{i:2d}/{total}] {name[:52]:<52} {n0:>6} -> {r.get('chunk_count', 0):<6}", flush=True
+        )
     else:
         err += 1
-        print(f"[{i:2d}/33] {name[:52]:<52} ERROR {r.get('error', '')[:60]}", flush=True)
+        print(f"[{i:2d}/{total}] {name[:52]:<52} ERROR {r.get('error', '')[:60]}", flush=True)
 
 print(
     f"\nRESYNC DONE: {ok} synced, {err} errored, "

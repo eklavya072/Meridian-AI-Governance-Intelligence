@@ -32,7 +32,6 @@ Copy `backend/.env` → `.env.prod` and adjust:
 | `GEMINI_MODEL` | as configured |
 | `CORS_ORIGINS` | the browser origin(s), e.g. `https://meridian.example.com` (same-origin via caddy needs nothing; set it if frontend and API live on different domains) |
 | `LOG_LEVEL` | `INFO` |
-| `DEV_MODE` | `false` (compose forces this) |
 | `CHROMA_PERSIST_DIR` | `/app/data/chroma` (compose forces this) |
 
 Compose-level vars for `.env.prod` (root of `aura-sdg/`):
@@ -110,11 +109,11 @@ FastAPI (always-on host)
 Vercel polls /workspace + /analyze/{id} every 3s  ->  dashboard
 ```
 
-The good news: **this flow already exists in the code.** The workspace page
-polls every 3s while any workspace is `queued`/`processing`/`generating_report`;
-`POST /upload/{id}` returns immediately with `{status: "processing"}`; status
-lives in Postgres so polling is instance-agnostic. You are wiring hosting, not
-rewriting.
+The good news: **this flow already exists in the code.** `POST /upload/{id}`
+queues a document, `POST /analyze/{id}/run` returns at once and runs the
+pipeline in the background, and the pages poll the workspace's status while a
+run is live. Status lives in Postgres, so polling is instance-agnostic. You
+are wiring hosting, not rewriting.
 
 ### 3a. Frontend → Vercel (free)
 
@@ -167,7 +166,6 @@ the VPS itself.
 | `DATABASE_URL` | hosted Postgres connection string |
 | `CORS_ORIGINS` | `https://<your-app>.vercel.app` (or custom domain) |
 | `CHROMA_PERSIST_DIR` | path to the shipped `backend/data/chroma` |
-| `DEV_MODE` | `false` |
 
 ### 3d. Verify
 
@@ -192,7 +190,7 @@ Render's **free tier is not suitable** for this app:
   background tasks) die on sleep, and every wake/recycle loses ephemeral disk.
 - The Chroma corpus + uploads (1.2 GB) need a **persistent disk add-on**
   (paid) or an external volume.
-- API web service (Python 3.12, 2 GB+ RAM for the models), Render Postgres,
+- API web service (Python 3.13, 2 GB+ RAM for the models), Render Postgres,
   and the frontend as a static site.
 
 Workable but roughly $7–19/mo for the API + disk — at which point the VPS
@@ -205,26 +203,54 @@ and mount the disk at `/opt/render/project/src/backend/data`.
 ## 5. Verification checklist
 
 - [ ] `curl https://<domain>/api/v1/health` → 200 with vector store status
-- [ ] `curl https://<domain>/api/v1/frameworks` → 33 frameworks, all indexed
+- [ ] `curl https://<domain>/api/v1/frameworks` → 43 frameworks, all indexed
 - [ ] Home page loads; create a workspace; upload a PDF; analysis completes
 - [ ] `docker compose ... logs api` shows no 429 storm / startup errors
 
 ---
 
-## 6. Current production-readiness fixes (this session)
+## 6. Option D — Hugging Face Space (the hosted demo)
 
-- `backend/main.py` — CORS origins now env-driven (`CORS_ORIGINS`), no longer
-  hardcoded to localhost.
-- `backend/Dockerfile` — removed `--reload` (dev flag); image now runs
-  production uvicorn.
-- `backend/.dockerignore`, `frontend/.dockerignore` — keep `.env` secrets,
-  dev data, and caches out of the images.
-- `frontend/Dockerfile` — `NEXT_PUBLIC_API_URL` build arg (was silently
-  defaulting to `localhost:8000` in the image).
-- `docker-compose.prod.yml` — production compose: no source mounts, restart
-  policies, persistent volumes (chroma/uploads/postgres), healthchecks,
-  optional Caddy TLS reverse proxy.
+One container holds Postgres, the API and the frontend as a static export the
+API serves itself. The eight country analyses ship as read-only examples;
+visitors create their own workspaces, run analyses, chat and export briefs.
+The Space's disk is not persistent, so a restart returns it to the showcase.
 
-**Still open before launch:** Docker is not installed on this machine, so the
-images have not been built/run here — first `docker compose up` on the server
-is the real smoke test. And there is no auth layer (see security note above).
+Files: [deploy/huggingface](deploy/huggingface) — `Dockerfile`,
+`entrypoint.sh`, the Space card (`README.md`), and two scripts.
+
+```bash
+hf auth login                                   # once, with a write token
+
+# 1. The showcase data, into a PRIVATE dataset. Stop the local API first:
+#    the index is copied as files.
+deploy/huggingface/make_seed.sh dist/seed
+hf repo create <user>/meridian-demo-data --repo-type dataset --private
+hf upload <user>/meridian-demo-data dist/seed . --repo-type dataset
+
+# 2. The Space, from COMMITTED files only (git archive: no .env can leak).
+deploy/huggingface/build_space.sh dist/space
+hf repo create <user>/meridian --repo-type space --space_sdk docker
+hf upload <user>/meridian dist/space . --repo-type space
+```
+
+Then, in the Space's **Settings → Variables and secrets**:
+
+| Name | Kind | Value |
+|---|---|---|
+| `GEMINI_API_KEY` (and `_2` … `_5`) | secret | Gemini keys — they exist only here, never in the repository |
+| `HF_TOKEN` | secret | a read token that can see the private dataset (used at build time) |
+| `MERIDIAN_DATA_REPO` | variable | `<user>/meridian-demo-data` |
+
+The Space rebuilds on every settings change. Showcase ids are fixed in the
+Dockerfile (`LOCKED_WORKSPACE_IDS`); uploading to or re-running one of them
+is refused with a 403, and the UI hides both actions.
+
+---
+
+## 7. Security
+
+There is no user auth layer: anyone who can reach the site can spend the
+model quota. For a private deployment, enable the `basic_auth` block in the
+Caddyfile. `POST /frameworks/sync` is refused unless `ADMIN_TOKEN` is set and
+presented as a bearer token.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Workspace, BriefDocument } from "@/lib/api";
 import SpecularButton from "@/components/SpecularButton";
 import AnimatedSelect from "@/components/AnimatedSelect";
@@ -37,6 +37,11 @@ function BulletList({ items, empty }: { items: string[]; empty: string }) {
 export default function BriefPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWs, setSelectedWs] = useState("");
+  // The country on screen now, for replies that arrive later. Generating a
+  // brief takes ~20s; switching country meanwhile showed the finished brief
+  // under the wrong name, and a slow cached read did the same.
+  const currentWs = useRef("");
+  currentWs.current = selectedWs;
   const [brief, setBrief] = useState<BriefDocument | null>(null);
   const [cached, setCached] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,27 +61,31 @@ export default function BriefPage() {
     setInfo(null);
     try {
       const b = await api.getBrief(wsId);
+      if (currentWs.current !== wsId) return;
       setBrief(b);
       setCached(true);
     } catch {
-      setBrief(null); // 404 — nothing cached yet
+      if (currentWs.current === wsId) setBrief(null); // 404 — nothing cached yet
     }
   }, []);
 
   async function generate() {
-    if (!selectedWs) return;
+    const wsId = selectedWs;
+    if (!wsId) return;
     setLoading(true);
     setError(null);
     setInfo(null);
     try {
-      const b = await api.generateBrief(selectedWs);
+      const b = await api.generateBrief(wsId);
+      if (currentWs.current !== wsId) return;
       setBrief(b);
       setCached(false);
       setInfo(
         "Brief generated from the stored, citation-verified analysis results — one synthesis call."
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate brief");
+      if (currentWs.current === wsId)
+        setError(e instanceof Error ? e.message : "Failed to generate brief");
     } finally {
       setLoading(false);
     }
@@ -145,7 +154,7 @@ export default function BriefPage() {
               compact button — the same size as the download buttons it
               sits beside. generate() no-ops without a selection, so it
               never greys out; disabled only while a call is in flight. */}
-          {brief ? (
+          {brief && workspaces.find((w) => w.id === selectedWs)?.locked ? null : brief ? (
             <button
               onClick={generate}
               disabled={loading}
@@ -199,7 +208,7 @@ export default function BriefPage() {
         </div>
         {cached && !info && (
           <p className="mt-3 text-xs text-gray-500">
-            Showing the cached brief — exports render from it without re-running the LLM call.
+            Downloads contain exactly the brief shown here.
           </p>
         )}
         {info && (
@@ -397,6 +406,9 @@ export default function BriefPage() {
                         <p className="text-sm italic leading-relaxed text-gray-700">
                           &ldquo;{q.quote}&rdquo;
                         </p>
+                        {q.source && (
+                          <p className="text-xs text-gray-500 mt-0.5">{q.source}</p>
+                        )}
                       </li>
                     ))}
                   </ul>

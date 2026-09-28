@@ -17,11 +17,17 @@ import os
 import sqlite3
 import sys
 import time
+from pathlib import Path
+
+# Run as `python scripts/<name>.py` from backend/: Python puts scripts/ on the
+# path, not backend/, so `src` would not import without this.
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_DIR))
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 
-SRC = "data/chroma/chroma.sqlite3"
-DEST = sys.argv[1] if len(sys.argv) > 1 else "data/chroma_rebuilt"
+SRC = str(BACKEND_DIR / "data" / "chroma" / "chroma.sqlite3")
+DEST = sys.argv[1] if len(sys.argv) > 1 else str(BACKEND_DIR / "data" / "chroma_rebuilt")
 
 import chromadb
 from sentence_transformers import SentenceTransformer

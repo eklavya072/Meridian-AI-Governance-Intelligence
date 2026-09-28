@@ -1,5 +1,16 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+/** The message a failed response carries. FastAPI puts it in `detail`, as a
+ *  plain string or as {error, message}; an object passed straight to
+ *  `new Error` read "[object Object]". */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => ({ detail: res.statusText }));
+  const detail = body?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (detail && typeof detail.message === "string") return detail.message;
+  return `${fallback}: ${res.status}`;
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
@@ -13,8 +24,7 @@ async function request<T>(
     },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || `Request failed: ${res.status}`);
+    throw new Error(await errorMessage(res, "Request failed"));
   }
   return res.json();
 }
@@ -26,8 +36,10 @@ export interface Workspace {
   frameworks: string[];
   status: string;
   status_detail: string | null;
-  /** Uploaded but not yet analysed. Non-empty means "Run Analysis" is available. */
+  /** The workspace's documents. Non-empty means "Run Analysis" is available. */
   pending_documents: string[];
+  /** A read-only example on the public demo: no upload, no re-run. */
+  locked?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +113,8 @@ export interface GovernanceGap {
   evidence_confidence?: string;
   /** Why that band, in the counters the verdict itself was computed on. */
   evidence_confidence_reason?: string;
+  /** "applied" | "unavailable" | "" — whether mechanisms were adjudicated. */
+  mechanism_adjudication?: string;
   module_1?: Module1Evaluation | null;
   module_2?: Module2Recommendation | null;
   // ── Module 3 + Module 4 (conditional, Part 2) ──
@@ -145,6 +159,8 @@ export interface InternationalExample {
   practice: string;
   country_or_source: string;
   reference: string;
+  /** How the practice relates to what the assessed document already does. */
+  alignment?: string;
   citation: ModuleCitation | null;
 }
 
@@ -196,6 +212,8 @@ export interface Module3Implementation {
 export interface IncidentMatch {
   incident_name: string;
   source: string;
+  /** The incident's concrete facts, drawn from the cited passage. */
+  what_happened?: string;
   dimension_relevance: string;
   potential_consequence: string;
   lessons_learned: string;
@@ -275,7 +293,8 @@ export interface Analysis {
   total_processing_time: number;
   generated_by?: GeneratedBy;
   created_at: string;
-  /** Actual LLM calls: 8 Module 1+2 + up to 8 conditional Module 3+4. */
+  /** Model calls this run: one per dimension analysed, one Module 3+4 per
+   *  Partial/Missing dimension, one mechanism adjudication. */
   llm_call_count?: number;
   /** Per-coverage-tier module_2 output sizes (chars) for token-reduction reporting. */
   tier_stats?: Record<string, { count: number; module2_chars: number; module2_avg_chars: number }> | null;
@@ -285,6 +304,10 @@ export interface Analysis {
   scope_disclaimer?: string;
   /** The document(s) actually ingested and evaluated for this workspace. */
   evaluated_documents?: string[];
+  /** Dimensions the provider failed on this run; empty on a complete run. */
+  failed_dimensions?: string[];
+  /** Complete, but mechanism evidence was not adjudicated, so depth is provisional. */
+  provisional?: boolean;
 }
 
 // --- Executive Brief types ---
@@ -327,7 +350,8 @@ export interface BriefRoadmapItem {
 export interface BriefEvidenceBase {
   citations_total: number;
   citations_verified: number;
-  representative_quotes: { dimension: string; quote: string }[];
+  /** Quotes from the assessed document only, each with "<document>, p. N". */
+  representative_quotes: { dimension: string; quote: string; source?: string }[];
 }
 
 export interface BriefSections {
@@ -361,14 +385,6 @@ export interface BriefDocument {
   coverage_summary: Record<string, number>;
   sections: BriefSections;
   decision_analytics?: Record<string, unknown>;
-}
-
-interface HealthResponse {
-  status: string;
-  vector_store: {
-    chunks: number;
-    frameworks: string[];
-  };
 }
 
 // --- Chat types ---
@@ -426,16 +442,11 @@ export interface ChatSessionDetail {
 }
 
 export const api = {
-  health: () => request<HealthResponse>("/health"),
-
   listFrameworks: () => request<Framework[]>("/frameworks"),
-  syncFrameworks: () =>
-    request<{ frameworks_synced: number; results: unknown[] }>("/frameworks/sync", {
-      method: "POST",
-    }),
 
   listWorkspaces: () => request<Workspace[]>("/workspace"),
-  getWorkspace: (id: string) => request<Workspace>(`/workspace/${id}`),
+  /** One workspace's status: the cheap thing to poll while a run is live. */
+  getWorkspace: (workspaceId: string) => request<Workspace>(`/workspace/${workspaceId}`),
   createWorkspace: (data: {
     country: string;
     policy_title: string;
@@ -452,13 +463,13 @@ export const api = {
     const url = `${API_BASE}/upload/${workspaceId}`;
     const res = await fetch(url, { method: "POST", body: formData });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail?.message || err.detail || `Upload failed: ${res.status}`);
+      throw new Error(await errorMessage(res, "Upload failed"));
     }
     return res.json() as Promise<{
       status: string;
       file_name: string;
       pending_documents: string[];
+      notice?: string;
     }>;
   },
 
@@ -468,10 +479,7 @@ export const api = {
       method: "POST",
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(
-        err.detail?.message || err.detail || `Could not start analysis: ${res.status}`
-      );
+      throw new Error(await errorMessage(res, "Could not start analysis"));
     }
     return res.json() as Promise<{
       status: string;
@@ -487,8 +495,7 @@ export const api = {
     const url = `${API_BASE}/auditor/upload`;
     const res = await fetch(url, { method: "POST", body: formData });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail?.message || err.detail || `Upload failed: ${res.status}`);
+      throw new Error(await errorMessage(res, "Upload failed"));
     }
     return res.json() as Promise<{
       workspace_id: string;
@@ -503,6 +510,8 @@ export const api = {
       workspace_id: string;
       status: string;
       status_detail: string | null;
+      /** Newest complete run — what the page opens on. */
+      preferred_analysis_id?: string | null;
       analyses: Analysis[];
     }>(`/analyze/${workspaceId}`),
 
@@ -520,8 +529,7 @@ export const api = {
   downloadBrief: async (workspaceId: string, format: "pdf" | "docx") => {
     const res = await fetch(`${API_BASE}/brief/${workspaceId}/export?format=${format}`);
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || `Export failed: ${res.status}`);
+      throw new Error(await errorMessage(res, "Export failed"));
     }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

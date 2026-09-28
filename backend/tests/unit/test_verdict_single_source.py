@@ -110,8 +110,8 @@ class TestCoveredNeverShipsUnderGapProse:
 
     def test_real_shipped_contradictions_are_detected(self):
         from src.consistency import (
-            LADDER_RAISE_REVIEW_THRESHOLD,
-            detect_ladder_raise_contradiction,
+            GAP_ASSERTION_THRESHOLD,
+            detect_gap_assertions,
         )
 
         for text in (
@@ -124,21 +124,21 @@ class TestCoveredNeverShipsUnderGapProse:
             "mandatory bias testing, accessibility requirements, or formal "
             "participatory channels for underrepresented groups.",
         ):
-            score, phrases = detect_ladder_raise_contradiction(text)
-            assert score >= LADDER_RAISE_REVIEW_THRESHOLD, phrases
+            score, phrases = detect_gap_assertions(text)
+            assert score >= GAP_ASSERTION_THRESHOLD, phrases
 
     def test_clean_covered_prose_is_left_alone(self):
         """The reconciliation must not rewrite text that says nothing wrong."""
         from src.consistency import (
-            LADDER_RAISE_REVIEW_THRESHOLD,
-            detect_ladder_raise_contradiction,
+            GAP_ASSERTION_THRESHOLD,
+            detect_gap_assertions,
         )
 
-        score, _ = detect_ladder_raise_contradiction(
+        score, _ = detect_gap_assertions(
             "The regulation establishes comprehensive obligations across the "
             "AI lifecycle, backed by market surveillance authorities."
         )
-        assert score < LADDER_RAISE_REVIEW_THRESHOLD
+        assert score < GAP_ASSERTION_THRESHOLD
 
     def test_reconciliation_is_not_gated_on_coverage_rules(self):
         """It used to sit inside `if coverage_rules:`, which the winning path
@@ -156,54 +156,36 @@ class TestCoveredNeverShipsUnderGapProse:
         )
 
 
-class TestLadderIsFallbackOnly:
-    """The ladder's machinery must not be built when the profile supersedes it.
+class TestTheModelNeverSetsTheVerdict:
+    """The model's own coverage label is telemetry, never the verdict.
 
-    Per dimension the ladder needs a multi-query RRF sweep of the whole
-    document, a batched embedding call, and two sentence-level semantic
-    predicates. On every real document the evidence profile wins and all of
-    that was discarded — eight times per run.
+    A fallback used to run when no evidence profile existed: it took the
+    model's label and passed it through a keyword ladder that could RAISE it,
+    to Covered on mechanisms the model itself reported. Both halves are gone —
+    a profile that scored nothing is a computed Missing, and a profile that
+    could not be computed leaves the dimension unassessed.
     """
 
-    def _guarded_block(self):
+    def _finish_source(self):
         source = SRC.read_text()
-        start = source.index("use_profile_verdict = bool(")
-        end = source.index("raw_coverage = coverage", start)
-        return source[start:end]
+        start = source.index("def _finish_dimension_combined")
+        return source[start : source.index("\n    def ", start + 10)]
 
-    def test_evidence_pool_is_skipped_when_the_profile_wins(self):
-        block = self._guarded_block()
-        pool_at = block.index("retrieve_document_evidence_pool")
-        guard_at = block.index("not use_profile_verdict")
-        assert guard_at < pool_at, (
-            "retrieve_document_evidence_pool must sit behind the "
-            "`not use_profile_verdict` guard — its result feeds only the "
-            "ladder, which the evidence profile supersedes."
-        )
+    def test_the_models_label_is_only_ever_compared_not_assigned(self):
+        body = self._finish_source()
+        assert "coverage = model_coverage" not in body
+        assert 'determined["coverage_label"]' in body
+        assert "validate_coverage_deterministic" not in SRC.read_text()
 
-    def test_semantic_predicates_are_skipped_when_the_profile_wins(self):
-        block = self._guarded_block()
-        for name in (
-            "_batch_prewarm_sentence_cache",
-            "_build_dimension_relevance_predicate",
-            "_build_dimension_substantive_predicate",
-        ):
-            assert name in block
-        assert block.count("not use_profile_verdict") >= 2, (
-            "Both the evidence pool and the predicate builders need the guard."
-        )
-
-    def test_ladder_call_is_guarded(self):
+    def test_a_missing_profile_refuses_before_the_model_is_called(self):
         source = SRC.read_text()
-        idx = source.index("validated_coverage, coverage_rules = validate_coverage_deterministic(")
-        preceding = source[:idx].rsplit("\n", 4)[-4:]
-        assert any("not use_profile_verdict" in line for line in preceding), (
-            "validate_coverage_deterministic must only run on the fallback "
-            "path; its verdict is otherwise computed and thrown away."
-        )
+        start = source.index("def _prepare_dimension_combined")
+        prepare = source[start : source.index("build_module1_2_combined_prompt", start)]
+        assert "if determined is None:" in prepare and "raise RuntimeError" in prepare
 
-    def test_predicates_default_to_none_so_the_fallback_stays_safe(self):
-        """Skipping construction must leave the names defined, not undefined."""
-        block = self._guarded_block()
-        assert "dim_match = None" in block
-        assert "subst_match = None" in block
+    def test_zero_scored_sentences_is_a_computed_missing(self):
+        from src.evidence_strength import EvidenceProfile, coverage_from_profile, depth_from_profile
+
+        empty = EvidenceProfile(dimension="Environmental Sustainability")
+        assert coverage_from_profile(empty)[0] == "Missing"
+        assert depth_from_profile(empty)[0] == "Unaddressed"

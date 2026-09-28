@@ -6,23 +6,6 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class ImplementationDepthLevel(int, Enum):
-    ABSENT = 0
-    GENERAL_ACKNOWLEDGEMENT = 1
-    GOVERNANCE_OBJECTIVES_DEFINED = 2
-    OPERATIONAL_MECHANISMS = 3
-    IMPLEMENTATION_AND_OVERSIGHT = 4
-    CONTINUOUS_MONITORING_AND_ENFORCEMENT = 5
-
-
-class EvidenceStrength(str, Enum):
-    NOT_DEMONSTRATED = "Not Demonstrated"
-    WEAKLY_DEMONSTRATED = "Weakly Demonstrated"
-    IMPLICITLY_ADDRESSED = "Implicitly Addressed"
-    EXPLICITLY_ADDRESSED = "Explicitly Addressed"
-    STRONGLY_OPERATIONALISED = "Strongly Operationalised"
-
-
 class RiskLevel(str, Enum):
     HIGH = "High"
     MEDIUM = "Medium"
@@ -134,6 +117,9 @@ class InternationalExample(BaseModel):
     practice: str = ""
     country_or_source: str = ""
     reference: str = ""
+    # One sentence relating the practice to what the assessed document
+    # already does, so the example reads as a next step, not a digression.
+    alignment: str = ""
     citation: ModuleCitation | None = None
 
 
@@ -182,7 +168,6 @@ class RetrievedEvidence(BaseModel):
     section_title: str | None = None
     verified: bool = False
     verification: dict[str, Any] | None = None
-    semantic_score: float | None = None
 
 
 class Module3Phase(BaseModel):
@@ -235,6 +220,7 @@ class IncidentMatch(BaseModel):
 
     incident_name: str = ""
     source: str = ""  # curated incident record name
+    what_happened: str = ""  # the incident's concrete facts, from the citation
     dimension_relevance: str = ""  # why it relates to this dimension
     potential_consequence: str = ""
     lessons_learned: str = ""
@@ -266,64 +252,6 @@ class FrameworkPositionRaw(BaseModel):
     failure: str = ""
 
 
-class EvidenceInterpretation(BaseModel):
-    dimension: str
-    explicit_evidence: list[str] = []
-    implicit_evidence: list[str] = []
-    demonstrated_capability: str = ""
-    absent_capability: str = ""
-    strong_evidence: list[str] = []
-    weak_evidence: list[str] = []
-    contradictory_evidence: list[str] = []
-    evidence_strength: EvidenceStrength = EvidenceStrength.NOT_DEMONSTRATED
-    interpretation_summary: str = ""
-
-
-class DepthAssessment(BaseModel):
-    dimension: str
-    depth_level: ImplementationDepthLevel = ImplementationDepthLevel.ABSENT
-    depth_label: str = "Absent"
-    coverage: CoverageLevel = CoverageLevel.MISSING
-    depth_reasoning: str = ""
-    level_justification: str = ""
-    uncertainty_flags: list[str] = []
-    false_negative_check: str = ""
-
-
-class FrameworkSynthesisResult(BaseModel):
-    dimension: str
-    universal_requirements: list[str] = []
-    framework_agreements: list[str] = []
-    framework_differences: list[str] = []
-    existing_mechanisms: list[str] = []
-    missing_mechanisms: list[str] = []
-    framework_specific_requirements: dict[str, list[str]] = {}
-    synthesis: str = ""
-    implementation_depth_comparison: dict[str, list[str]] = {}
-
-
-class PlausibilityReview(BaseModel):
-    dimension: str
-    original_depth_level: int = 0
-    validated_depth_level: int = 0
-    validated_coverage: CoverageLevel = CoverageLevel.MISSING
-    plausibility_checks: list[str] = []
-    adjustment_rationale: str = ""
-    confidence_in_assessment: str = "Medium"
-    uncertainty_acknowledged: list[str] = []
-
-
-class PolicyRecommendation(BaseModel):
-    dimension: str
-    existing_strengths: str = ""
-    governance_capability: str = ""
-    remaining_limitations: str = ""
-    missing_mechanisms: list[str] = []
-    recommendations: list[str] = []
-    smallest_effective_improvement: str = ""
-    recommendation_rationale: str = ""
-
-
 class GovernanceGap(BaseModel):
     dimension: str
     coverage: CoverageLevel = CoverageLevel.MISSING
@@ -345,10 +273,6 @@ class GovernanceGap(BaseModel):
     confidence_score: float = 0.0
     confidence_method: str = ""
     coverage_reasoning: str = ""
-    evidence_quotes: list[str] = []
-    aspects_addressed: list[str] = []
-    aspects_missing: list[str] = []
-    gap_analysis: str = ""
     # ── Mechanism breadth: the COVERAGE axis ──
     # Which framework-required mechanisms this dimension actually provides,
     # mapped to the normative tier (0-4) of the strongest provision supplying
@@ -375,6 +299,11 @@ class GovernanceGap(BaseModel):
     # tell you what they are worth.
     evidence_confidence: str = ""
     evidence_confidence_reason: str = ""
+    # Whether the mechanisms above were adjudicated or are raw cue matches
+    # ("applied" | "unavailable" | "" when never asked). The fallback
+    # over-reports presence, which can only raise depth, so a run carrying
+    # "unavailable" is provisional and must not stand in for a complete one.
+    mechanism_adjudication: str = ""
     # ── Module 1 + Module 2 (expanded analysis) ──
     implementation_depth: ImplementationDepth = ImplementationDepth.UNADDRESSED
     depth_reasoning: str = ""
@@ -391,21 +320,6 @@ class GovernanceGap(BaseModel):
     # quota exhaustion / provider failure). Distinct from INSUFFICIENT_EVIDENCE
     # coverage, which is a genuine finding that no evidence supports a verdict.
     analysis_error: str | None = None
-    # Fully Covered drift safeguard: True when the deterministic check found
-    # gap-filling/recommendation language in a Covered dimension's own
-    # framework_synthesis and auto-downgraded it to Partial for review. A
-    # consumer (frontend, executive summary) should treat this as a review
-    # state, NOT a normal Partial finding — it signals the Coverage label and
-    # the generated content drifted apart.
-    synthesis_drift_downgraded: bool = False
-    # Ladder-raise review flag: True when the deterministic coverage ladder
-    # (R1/R2) raised the LLM's raw verdict to a level its own
-    # coverage_reasoning contradicts (the reasoning lists explicit gaps —
-    # "does not establish", "no provisions", "lacks" — yet the raised
-    # verdict says Covered/Partial). A review state, not an ordinary finding:
-    # the ladder's own override is held to the same consistency discipline
-    # as LLM output (mirror of synthesis_drift_downgraded).
-    ladder_raise_review_flag: bool = False
     # Article/recital/section numbers the narrative cited that could NOT be
     # located in the retrieved source text. Measured on real runs as the
     # weakest link in the output: article numbers were reliable, but recital
@@ -430,7 +344,6 @@ class EvidenceItem(BaseModel):
     similarity_score: float | None = None
     aspect: str = ""
     claim: str = ""
-    semantic_relevance: float = 0.0
     is_document: bool = True
     verified: bool = False
     verification: dict[str, Any] | None = None
@@ -487,65 +400,3 @@ class CalibratedConfidence(BaseModel):
         for f in factors:
             product *= f
         return round(product ** (1.0 / len(factors)), 4)
-
-
-class DimensionNode(BaseModel):
-    name: str
-    parents: list[str] = []
-    children: list[str] = []
-    requires: list[str] = []
-    required_by: list[str] = []
-
-
-class DimensionGraph(BaseModel):
-    nodes: dict[str, DimensionNode] = {}
-
-    def add_relationship(self, parent: str, child: str, rel_type: str = "subsumes"):
-        if parent not in self.nodes:
-            self.nodes[parent] = DimensionNode(name=parent)
-        if child not in self.nodes:
-            self.nodes[child] = DimensionNode(name=child)
-        if child not in self.nodes[parent].children:
-            self.nodes[parent].children.append(child)
-        if parent not in self.nodes[child].parents:
-            self.nodes[child].parents.append(parent)
-        if rel_type == "requires":
-            if child not in self.nodes[parent].requires:
-                self.nodes[parent].requires.append(child)
-            if parent not in self.nodes[child].required_by:
-                self.nodes[child].required_by.append(parent)
-
-    def get_ancestors(self, name: str) -> list[str]:
-        visited: set[str] = set()
-        result: list[str] = []
-        stack = [name]
-        while stack:
-            current = stack.pop()
-            node = self.nodes.get(current)
-            if node is None:
-                continue
-            for p in node.parents:
-                if p not in visited:
-                    visited.add(p)
-                    result.append(p)
-                    stack.append(p)
-        return result
-
-    def get_descendants(self, name: str) -> list[str]:
-        visited: set[str] = set()
-        result: list[str] = []
-        stack = [name]
-        while stack:
-            current = stack.pop()
-            node = self.nodes.get(current)
-            if node is None:
-                continue
-            for c in node.children:
-                if c not in visited:
-                    visited.add(c)
-                    result.append(c)
-                    stack.append(c)
-        return result
-
-    def has_path(self, source: str, target: str) -> bool:
-        return target in self.get_descendants(source)

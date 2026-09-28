@@ -81,3 +81,14 @@ frontend/public/hero/*
 # Local editor/assistant config and the pointer to docs/ENGINEERING-NOTES.md
 CLAUDE.md
 **/.claude/
+
+# ── Private working material (not for the public repository) ──────────
+# The session handoff, the unpublished working paper and the engineering
+# notes that carry its benchmark results, and the benchmark data itself.
+handoff.md
+paper/
+docs/ENGINEERING-NOTES.md
+backend/data/benchmarks/
+
+# ── Build output of the demo scripts ────────────────────────────────────
+dist/

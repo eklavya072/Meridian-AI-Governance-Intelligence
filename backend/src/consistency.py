@@ -5,7 +5,7 @@ from typing import Any
 
 import structlog
 
-from src.models import CoverageLevel, DimensionGraph, GovernanceGap, RiskLevel
+from src.models import CoverageLevel, GovernanceGap, RetrievedEvidence, RiskLevel
 
 logger = structlog.get_logger()
 
@@ -106,17 +106,16 @@ _COVERED_SYNTHESIS_SOFT_PHRASES: tuple[str, ...] = (
     "no provisions",
 )
 
-# Auto-downgrade when the weighted score reaches this threshold.
-# e.g. "should establish" alone (3) downgrades; a lone "lacks" (1) flags only.
-COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD = 3
-
 
 def detect_covered_synthesis_drift(synthesis: str) -> tuple[int, list[str]]:
     """Score a Covered-tier framework_synthesis for gap-filling language.
 
     Returns (weighted_score, matched_phrases). (0, []) means the synthesis is
-    clean compliance-justification language. Score >= threshold is a strong
-    drift signal (auto-downgrade); score > 0 is a weak signal (flag only).
+    clean compliance-justification language. Any score above zero means the
+    narrative and the verdict disagree; the weight says how strongly. The
+    score never changes a verdict — coverage comes from counted provisions, so
+    the prose is the part that is wrong. See the call site in gap_analyzer for
+    the measurement that settled it.
     """
     if not synthesis:
         return 0, []
@@ -151,20 +150,16 @@ def detect_covered_synthesis_drift(synthesis: str) -> tuple[int, list[str]]:
     return score, dedup
 
 
-# ── Ladder-raise review safeguard ────────────────────────────────────────
-# The deterministic coverage ladder (R1 floor, R2 raise) can override the
-# LLM's raw verdict (Missing → Partial, Partial → Covered). When such a
-# raise produces a final verdict that contradicts the model's OWN
-# coverage_reasoning — the reasoning lists explicit gaps ("does not
-# establish", "no provisions", "lacks") yet the raised verdict says
-# Covered — the mismatch must be flagged for review rather than shipped
-# silently. This is the same review discipline as the synthesis-drift
-# safeguard above, applied to the ladder's OWN override instead of LLM
-# output.
+# ── Gap assertions in text that sits under a Covered verdict ──────────────
+# The verdict is computed, and the model writes the prose around it. When a
+# Covered dimension's reason_flagged still lists explicit gaps ("does not
+# establish", "no provisions", "lacks"), the card would contradict its own
+# label. This scores that text so the contradiction is reconciled rather
+# than shipped.
 
-# Weight 3: unambiguous gap assertions — the model's own admission that the
-# document lacks the very mechanisms a raised verdict claims.
-_LADDER_RAISE_GAP_PHRASES: tuple[str, ...] = (
+# Weight 3: unambiguous gap assertions — the text's own statement that the
+# document lacks something.
+_GAP_ASSERTION_PHRASES: tuple[str, ...] = (
     "does not establish",
     "does not provide",
     "does not address",
@@ -202,7 +197,7 @@ _LADDER_RAISE_GAP_PHRASES: tuple[str, ...] = (
     # ("provides no concrete operational mechanisms", "establishes no
     # liability framework", "contains no privacy provisions", "sets out
     # no redress pathway"). The "does not provide" family only catches
-    # subject-verb-negator order; a raised verdict paired with "provides
+    # subject-verb-negator order; a Covered verdict paired with "provides
     # no…" reasoning is the same contradiction and must flag too.
     "provides no",
     "provides neither",
@@ -224,33 +219,30 @@ _LADDER_RAISE_GAP_PHRASES: tuple[str, ...] = (
 )
 
 # Weight 1: softer gap vocabulary (word-bounded).
-_LADDER_RAISE_GAP_SOFT_RE = re.compile(r"\b(missing|gap|insufficient|deficient)\b", re.IGNORECASE)
+_GAP_ASSERTION_SOFT_RE = re.compile(r"\b(missing|gap|insufficient|deficient)\b", re.IGNORECASE)
 
 # Flag for review when the weighted score reaches this threshold — a single
 # strong gap assertion ("does not establish") is enough.
-LADDER_RAISE_REVIEW_THRESHOLD = 3
+GAP_ASSERTION_THRESHOLD = 3
 
 
-def detect_ladder_raise_contradiction(reasoning: str) -> tuple[int, list[str]]:
-    """Score a model's coverage_reasoning for gap assertions that contradict
-    a deterministic ladder raise.
+def detect_gap_assertions(reasoning: str) -> tuple[int, list[str]]:
+    """Score text for explicit statements that the document lacks something.
 
-    Returns (weighted_score, matched_phrases). (0, []) means the reasoning
-    does not list explicit gaps — the raise is consistent with the model's
-    own text. Score >= LADDER_RAISE_REVIEW_THRESHOLD is a strong
-    contradiction (flag for review, e.g. reasoning lists explicit gaps but
-    the raised verdict says Covered).
+    Returns (weighted_score, matched_phrases). (0, []) means the text lists
+    no explicit gaps. Score >= GAP_ASSERTION_THRESHOLD is a strong assertion,
+    which under a Covered verdict is a contradiction to reconcile.
     """
     if not reasoning:
         return 0, []
     lower = reasoning.lower()
     score = 0
     matched: list[str] = []
-    for phrase in _LADDER_RAISE_GAP_PHRASES:
+    for phrase in _GAP_ASSERTION_PHRASES:
         if phrase in lower:
             score += 3
             matched.append(phrase)
-    for m in _LADDER_RAISE_GAP_SOFT_RE.finditer(lower):
+    for m in _GAP_ASSERTION_SOFT_RE.finditer(lower):
         score += 1
         matched.append(m.group(1))
     seen: set[str] = set()
@@ -260,30 +252,6 @@ def detect_ladder_raise_contradiction(reasoning: str) -> tuple[int, list[str]]:
             seen.add(p)
             dedup.append(p)
     return score, dedup
-
-
-def build_governance_dimension_graph() -> DimensionGraph:
-    g = DimensionGraph()
-
-    g.add_relationship("Governance", "Accountability", "subsumes")
-    g.add_relationship("Accountability", "Human Oversight", "requires")
-    g.add_relationship("Human Oversight", "Transparency", "requires")
-    g.add_relationship("Transparency", "Explainability", "subsumes")
-    g.add_relationship("Explainability", "Auditability", "requires")
-    g.add_relationship("Risk Management", "Impact Assessment", "subsumes")
-    g.add_relationship("Risk Management", "Safety", "requires")
-    g.add_relationship("Safety", "Robustness", "subsumes")
-    g.add_relationship("Privacy", "Data Protection", "subsumes")
-    g.add_relationship("Data Protection", "Anonymization", "requires")
-    g.add_relationship("Fairness", "Non-discrimination", "subsumes")
-    g.add_relationship("Inclusivity", "Accessibility", "subsumes")
-    g.add_relationship("Inclusivity", "Equity", "requires")
-    g.add_relationship("Accountability", "Liability", "subsumes")
-    g.add_relationship("Ethics", "Human Rights", "subsumes")
-    g.add_relationship("Ethics", "Inclusivity", "requires")
-    g.add_relationship("Governance", "Risk Management", "requires")
-
-    return g
 
 
 # Risk levels each coverage tier may legitimately carry.
@@ -305,7 +273,15 @@ RISK_COVERAGE_MAP: dict[CoverageLevel, list[RiskLevel]] = {
 }
 
 
-GOVERNANCE_GRAPH = build_governance_dimension_graph()
+def _is_document_evidence(e: RetrievedEvidence) -> bool:
+    """A passage from the assessed document rather than a reference framework.
+
+    A document citation's source IS its document; a framework citation names
+    the framework and carries the framework's file as document_name. The old
+    test, source != "unknown", held for every citation, so the check that
+    needs framework evidence could never find it missing.
+    """
+    return bool(e.document_name) and e.document_name == e.source_framework
 
 
 class ConsistencyViolation:
@@ -348,19 +324,14 @@ class ConsistencyReport:
         }
 
 
-SUBSET_DIMENSIONS: dict[str, set[str]] = {
-    "Transparency": {"Explainability"},
-    "Privacy": {"Data Protection", "Anonymization"},
-    "Inclusivity": {"Accessibility", "Non-discrimination"},
-    "Risk Management": {"Safety", "Impact Assessment"},
-    "Accountability": {"Liability", "Oversight"},
-    "Fairness": {"Non-discrimination"},
-}
-
-
 class ConsistencyValidator:
-    def __init__(self):
-        self.dimension_graph = GOVERNANCE_GRAPH
+    """Cross-checks on a finished run. Flags for review; never moves a verdict.
+
+    A relationship graph over broader governance concepts ("Explainability",
+    "Data Protection", "Liability") used to drive two further checks. None of
+    its edges joined two of the eight assessed dimensions, so neither could
+    ever fire, and both were removed rather than left looking like coverage.
+    """
 
     def validate(
         self,
@@ -370,12 +341,10 @@ class ConsistencyValidator:
         violations: list[ConsistencyViolation] = []
         gap_by_dim = {g.dimension: g for g in gaps}
 
-        violations.extend(self._check_subset_consistency(gap_by_dim))
         violations.extend(self._check_risk_coherence(gaps))
         violations.extend(self._check_evidence_sufficiency(gaps, doc_chunks_per_dimension))
         violations.extend(self._check_framework_synthesis_quality(gap_by_dim))
         violations.extend(self._check_covered_synthesis_drift(gap_by_dim))
-        violations.extend(self._check_graph_consistency(gap_by_dim))
 
         if not violations:
             logger.info("consistency_check_passed", dimensions=len(gaps))
@@ -387,181 +356,6 @@ class ConsistencyValidator:
             )
 
         return ConsistencyReport(violations)
-
-    def _check_subset_consistency(
-        self, gap_by_dim: dict[str, GovernanceGap]
-    ) -> list[ConsistencyViolation]:
-        violations: list[ConsistencyViolation] = []
-
-        for parent_dim, child_keywords in SUBSET_DIMENSIONS.items():
-            parent_gap = gap_by_dim.get(parent_dim)
-            if parent_gap is None:
-                continue
-
-            if parent_gap.coverage == CoverageLevel.COVERED:
-                continue
-
-            for child_keyword in child_keywords:
-                child_gap = gap_by_dim.get(child_keyword)
-                if child_gap is not None:
-                    if child_gap.coverage == CoverageLevel.COVERED and parent_gap.coverage in (
-                        CoverageLevel.MISSING,
-                        CoverageLevel.PARTIAL,
-                    ):
-                        violations.append(
-                            ConsistencyViolation(
-                                dimension=parent_dim,
-                                violation_type="subset_inconsistency",
-                                description=(
-                                    f"'{child_keyword}' is {child_gap.coverage.value} "
-                                    f"but its parent dimension '{parent_dim}' is {parent_gap.coverage.value}. "
-                                    f"'{child_keyword}' is conceptually part of '{parent_dim}'."
-                                ),
-                                severity="error",
-                                suggestion=(
-                                    f"Review whether '{parent_dim}' coverage should be elevated "
-                                    f"since '{child_keyword}' is addressed."
-                                ),
-                            )
-                        )
-
-        for parent_dim, child_keywords in SUBSET_DIMENSIONS.items():
-            parent_gap = gap_by_dim.get(parent_dim)
-            if parent_gap is None:
-                continue
-
-            if parent_gap.coverage == CoverageLevel.COVERED:
-                all_children_covered = True
-                for child_keyword in child_keywords:
-                    child_gap = gap_by_dim.get(child_keyword)
-                    if child_gap is not None and child_gap.coverage != CoverageLevel.COVERED:
-                        all_children_covered = False
-
-                if not all_children_covered:
-                    missing_children = [
-                        ck
-                        for ck in child_keywords
-                        if gap_by_dim.get(ck) and gap_by_dim[ck].coverage != CoverageLevel.COVERED
-                    ]
-                    violations.append(
-                        ConsistencyViolation(
-                            dimension=parent_dim,
-                            violation_type="missing_sub_elements",
-                            description=(
-                                f"'{parent_dim}' is {parent_gap.coverage.value} but sub-elements "
-                                f"{missing_children} are not. Coverage may be overestimated."
-                            ),
-                            severity="warning",
-                            suggestion=(
-                                f"Ensure sub-elements {missing_children} reflect the parent dimension coverage."
-                            ),
-                        )
-                    )
-
-        return violations
-
-    def _check_graph_consistency(
-        self, gap_by_dim: dict[str, GovernanceGap]
-    ) -> list[ConsistencyViolation]:
-        violations: list[ConsistencyViolation] = []
-
-        processed_pairs: set[tuple[str, str]] = set()
-
-        for dim_name, gap in gap_by_dim.items():
-            node = self.dimension_graph.nodes.get(dim_name)
-            if node is None:
-                continue
-
-            for child in node.children:
-                child_gap = gap_by_dim.get(child)
-                if child_gap is None:
-                    continue
-                pair = (dim_name, child)
-                if pair in processed_pairs:
-                    continue
-                processed_pairs.add(pair)
-
-                if (
-                    gap.coverage == CoverageLevel.COVERED
-                    and child_gap.coverage != CoverageLevel.COVERED
-                ):
-                    self.dimension_graph.nodes.get(dim_name)
-                    self.dimension_graph.nodes.get(child)
-                    violations.append(
-                        ConsistencyViolation(
-                            dimension=dim_name,
-                            violation_type="graph_child_not_covered",
-                            description=(
-                                f"'{dim_name}' is {gap.coverage.value} but child dimension "
-                                f"'{child}' is {child_gap.coverage.value}. "
-                            ),
-                            severity="warning",
-                            suggestion=(
-                                f"Review if '{child}' coverage should be elevated "
-                                f"to match parent '{dim_name}'."
-                            ),
-                        )
-                    )
-
-            for parent in node.parents:
-                parent_gap = gap_by_dim.get(parent)
-                if parent_gap is None:
-                    continue
-                pair = (parent, dim_name)
-                if pair in processed_pairs:
-                    continue
-                processed_pairs.add(pair)
-
-                if gap.coverage == CoverageLevel.COVERED and parent_gap.coverage in (
-                    CoverageLevel.MISSING,
-                    CoverageLevel.PARTIAL,
-                ):
-                    violations.append(
-                        ConsistencyViolation(
-                            dimension=dim_name,
-                            violation_type="graph_child_covered_but_parent_missing",
-                            description=(
-                                f"'{dim_name}' is {gap.coverage.value} but parent dimension "
-                                f"'{parent}' is {parent_gap.coverage.value}. "
-                                f"A child dimension cannot be covered if the parent is not."
-                            ),
-                            severity="error",
-                            suggestion=(
-                                f"Review '{parent}' coverage — it may need to be elevated."
-                            ),
-                        )
-                    )
-
-            for required in node.requires:
-                req_gap = gap_by_dim.get(required)
-                if req_gap is None:
-                    continue
-                pair = (dim_name, required)
-                if pair in processed_pairs:
-                    continue
-                processed_pairs.add(pair)
-
-                if (
-                    gap.coverage == CoverageLevel.COVERED
-                    and req_gap.coverage == CoverageLevel.MISSING
-                ):
-                    violations.append(
-                        ConsistencyViolation(
-                            dimension=dim_name,
-                            violation_type="missing_required_dimension",
-                            description=(
-                                f"'{dim_name}' is {gap.coverage.value} but requires "
-                                f"'{required}' which is {req_gap.coverage.value}. "
-                            ),
-                            severity="error",
-                            suggestion=(
-                                f"'{dim_name}' depends on '{required}'. "
-                                f"Address coverage for '{required}' first."
-                            ),
-                        )
-                    )
-
-        return violations
 
     def _check_risk_coherence(self, gaps: list[GovernanceGap]) -> list[ConsistencyViolation]:
         violations: list[ConsistencyViolation] = []
@@ -616,7 +410,7 @@ class ConsistencyValidator:
                 )
                 continue
 
-            fw_items = [e for e in g.evidence if e.source_framework != "unknown"]
+            fw_items = [e for e in g.evidence if not _is_document_evidence(e)]
             if g.coverage in (CoverageLevel.MISSING, CoverageLevel.PARTIAL) and not fw_items:
                 violations.append(
                     ConsistencyViolation(
@@ -639,9 +433,12 @@ class ConsistencyValidator:
             # structured positions list, so keying this check on
             # framework_positions meant it could never fire on a real run —
             # a validator that is always silent is not a validator.
-            if (g.framework_synthesis or g.framework_positions) and g.recommendation in (
-                "",
-                "No recommendation provided.",
+            # A Covered dimension carries no recommendation by design (Best
+            # Practices replace it), so it is not a missing one.
+            if (
+                g.coverage != CoverageLevel.COVERED
+                and (g.framework_synthesis or g.framework_positions)
+                and g.recommendation in ("", "No recommendation provided.")
             ):
                 violations.append(
                     ConsistencyViolation(

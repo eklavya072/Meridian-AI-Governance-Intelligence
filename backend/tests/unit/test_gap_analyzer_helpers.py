@@ -14,7 +14,6 @@ from src.gap_analyzer import (
     _is_institution_phrase,
     _mechanism_sentences,
     _ocr_tolerant_phrase,
-    build_framework_synthesis,
     compute_decision_analytics,
     estimate_phase_timelines,
     resolve_priority,
@@ -201,29 +200,6 @@ class TestPhaseTimelines:
 
     def test_estimates_are_deterministic(self):
         assert self._estimate() == self._estimate()
-
-
-class TestFrameworkSynthesis:
-    def test_no_positions_yields_an_empty_synthesis(self):
-        assert build_framework_synthesis([], []) == ""
-
-    def test_positions_produce_prose(self):
-        positions = [
-            {"framework": "EU AI Act", "position": "Requires automatic logging."},
-            {"framework": "NIST AI RMF", "position": "Recommends measurement."},
-        ]
-
-        assert isinstance(build_framework_synthesis(positions, []), str)
-
-    def test_a_framework_is_not_repeated(self):
-        positions = [
-            {"framework": "EU AI Act", "position": "Requires logging."},
-            {"framework": "EU AI Act", "position": "Requires logging again."},
-        ]
-
-        result = build_framework_synthesis(positions, [])
-
-        assert result.count("EU AI Act") <= 1 or isinstance(result, str)
 
 
 class TestDecisionAnalytics:

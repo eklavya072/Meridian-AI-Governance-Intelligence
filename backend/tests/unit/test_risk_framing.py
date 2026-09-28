@@ -18,14 +18,14 @@ import pytest
 
 from src.evidence_strength import (
     EvidenceProfile,
-    MechanismCoverage,
     describe_risk_basis,
 )
 from src.gap_analyzer import compute_risk
+from src.mechanism_matching import MechanismMatch
 from src.models import CoverageLevel
 
 DIM = "Environmental Sustainability"
-MECH = MechanismCoverage(
+MECH = MechanismMatch(
     dimension=DIM,
     present={"energy reporting": 3},
     absent=["carbon disclosure", "e-waste / hardware lifecycle"],

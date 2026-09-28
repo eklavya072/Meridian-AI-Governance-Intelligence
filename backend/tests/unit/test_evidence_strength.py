@@ -425,9 +425,9 @@ class TestMechanismBreadthGate:
         )
 
     def test_narrow_mechanism_coverage_holds_verdict_at_partial(self):
-        from src.evidence_strength import MechanismCoverage
+        from src.mechanism_matching import MechanismMatch
 
-        mech = MechanismCoverage(
+        mech = MechanismMatch(
             dimension="Privacy",
             present={"data security": 4},
             absent=[
@@ -446,9 +446,9 @@ class TestMechanismBreadthGate:
         assert "6 of the 7" in note
 
     def test_broad_mechanism_coverage_allows_covered(self):
-        from src.evidence_strength import MechanismCoverage
+        from src.mechanism_matching import MechanismMatch
 
-        mech = MechanismCoverage(
+        mech = MechanismMatch(
             dimension="Privacy",
             present={
                 "consent": 3,
@@ -463,7 +463,7 @@ class TestMechanismBreadthGate:
 
     def test_gate_never_promotes_a_weak_document(self):
         """Full mechanism breadth with no binding force must stay below Covered."""
-        from src.evidence_strength import MechanismCoverage
+        from src.mechanism_matching import MechanismMatch
 
         weak = EvidenceProfile(
             dimension="Privacy",
@@ -474,7 +474,7 @@ class TestMechanismBreadthGate:
             n_enforceable=0,
             max_tier=2,
         )
-        mech = MechanismCoverage(
+        mech = MechanismMatch(
             dimension="Privacy",
             present={f"m{i}": 1 for i in range(7)},
             absent=[],
@@ -606,9 +606,10 @@ class TestMechanismGateReachesTheVerdict:
 
     @staticmethod
     def _mechanisms(present_n, absent_n):
-        from src.evidence_strength import TIER_OBLIGATORY, MechanismCoverage
+        from src.evidence_strength import TIER_OBLIGATORY
+        from src.mechanism_matching import MechanismMatch
 
-        return MechanismCoverage(
+        return MechanismMatch(
             dimension="Privacy",
             present={f"mech_{i}": TIER_OBLIGATORY for i in range(present_n)},
             absent=[f"absent_{i}" for i in range(absent_n)],

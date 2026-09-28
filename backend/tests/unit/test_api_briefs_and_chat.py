@@ -35,7 +35,6 @@ class FakeAnalysis:
         self.citation_fail_count = kw.get("citation_fail_count", 0)
         self.llm_latency = kw.get("llm_latency", 3.1)
         self.retrieval_count = kw.get("retrieval_count", 12)
-        self.retrieval_frameworks = kw.get("retrieval_frameworks", ["EU AI Act"])
         self.status = kw.get("status", "complete")
 
 
@@ -225,9 +224,6 @@ class TestBriefRoutes:
         assert response.status_code in (400, 404, 409)
         assert response.status_code != 500
 
-    def test_the_legacy_brief_route_validates_its_body(self, client):
-        assert client.post("/api/v1/brief", json={}).status_code == 422
-
 
 class TestChatRoutes:
     def test_a_chat_request_requires_a_message(self, client):
@@ -285,5 +281,23 @@ class TestFrameworkSync:
 
         monkeypatch.setattr(main, "FrameworkSyncService", _Sync)
         monkeypatch.setattr(main, "get_vector_store", lambda: object())
+        monkeypatch.setenv("ADMIN_TOKEN", "operator-secret")
 
-        assert client.post("/api/v1/frameworks/sync").status_code == 200
+        response = client.post(
+            "/api/v1/frameworks/sync", headers={"Authorization": "Bearer operator-secret"}
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize("configured", ["", "operator-secret"])
+    def test_sync_is_refused_without_the_operator_token(self, client, monkeypatch, configured):
+        # It re-embeds the whole library and replaces passages stored runs
+        # cite, so a public caller must never be able to start it.
+        monkeypatch.setenv("ADMIN_TOKEN", configured)
+
+        assert client.post("/api/v1/frameworks/sync").status_code == 403
+        assert (
+            client.post(
+                "/api/v1/frameworks/sync", headers={"Authorization": "Bearer wrong"}
+            ).status_code
+            == 403
+        )

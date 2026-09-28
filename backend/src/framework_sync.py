@@ -49,9 +49,6 @@ def _resolve_frameworks_config() -> Path:
     return _BACKEND_DIR.parent / "config" / "frameworks.yaml"
 
 
-FRAMEWORKS_CONFIG_PATH = _resolve_frameworks_config()
-
-
 def load_frameworks_config() -> list[dict[str, Any]]:
     # Re-resolved per call rather than trusting the import-time constant, so a
     # test or a deployment can set FRAMEWORKS_CONFIG_PATH after import.
@@ -90,7 +87,6 @@ class FrameworkSyncService:
 
         local_path = RAW_POLICIES_DIR / f"{name.replace(' ', '_').replace('/', '_')}.pdf"
         framework_known_path = fw_config.get("local_path")
-
         if framework_known_path:
             # Relative local_path values in config/frameworks.yaml are written
             # relative to the project ROOT (e.g. "backend/data/raw_policies/…"),
@@ -99,20 +95,21 @@ class FrameworkSyncService:
             if not resolved_path.is_absolute():
                 resolved_path = Path(__file__).parent.parent.parent / resolved_path
             local_path = resolved_path
-        elif not local_path.exists():
-            if pdf_url:
-                try:
-                    local_path = self.download_pdf(name, pdf_url, local_path)
-                except Exception as exc:
-                    logger.error("framework_download_failed", name=name, error=str(exc))
-                    return {
-                        "name": name,
-                        "version": expected_version,
-                        "status": "error",
-                        "error": f"Download failed: {exc}",
-                        "chunk_count": 0,
-                    }
-            else:
+
+        indexed = self.vector_store.count_chunks(framework_filter=[name])
+        if not local_path.exists():
+            if indexed:
+                # Indexed from a copy this machine does not hold. Downloading
+                # now would replace the passages every stored run cites with
+                # whatever the publisher serves today, so it is left alone.
+                logger.info("framework_indexed_without_local_copy", name=name)
+                return {
+                    "name": name,
+                    "version": expected_version,
+                    "status": "synced",
+                    "chunk_count": indexed,
+                }
+            if not pdf_url:
                 logger.warning("no_pdf_url_for_framework", name=name)
                 return {
                     "name": name,
@@ -121,30 +118,37 @@ class FrameworkSyncService:
                     "error": "No PDF URL configured.",
                     "chunk_count": 0,
                 }
-
-        if not local_path.exists():
-            return {
-                "name": name,
-                "version": expected_version,
-                "status": "error",
-                "error": "Local PDF not found and download failed.",
-                "chunk_count": 0,
-            }
+            try:
+                local_path = self.download_pdf(name, pdf_url, local_path)
+            except Exception as exc:
+                logger.error("framework_download_failed", name=name, error=str(exc))
+                return {
+                    "name": name,
+                    "version": expected_version,
+                    "status": "error",
+                    "error": f"Download failed: {exc}",
+                    "chunk_count": 0,
+                }
 
         current_hash = compute_file_hash(local_path)
         stored_hash = fw_config.get("checksum")
 
-        if stored_hash and current_hash == stored_hash:
-            existing_count = self.vector_store.count_chunks(framework_filter=[name])
-            if existing_count > 0:
-                logger.info("framework_unchanged_skipping", name=name)
-                return {
-                    "name": name,
-                    "version": expected_version,
-                    "status": "synced",
-                    "checksum": current_hash,
-                    "chunk_count": existing_count,
-                }
+        if indexed and current_hash == stored_hash:
+            logger.info("framework_unchanged_skipping", name=name)
+            return {
+                "name": name,
+                "version": expected_version,
+                "status": "synced",
+                "checksum": current_hash,
+                "chunk_count": indexed,
+            }
+        if indexed and stored_hash:
+            logger.warning(
+                "framework_checksum_changed",
+                name=name,
+                expected=stored_hash,
+                found=current_hash,
+            )
 
         # INGEST FIRST, then delete the old chunks. Deleting before ingestion
         # means an interrupted sync (crash, download/parse failure, process
@@ -198,10 +202,9 @@ class FrameworkSyncService:
             }
 
         # Ingestion succeeded — safe to replace the previous version's chunks.
-        existing_count_before = self.vector_store.count_chunks(framework_filter=[name])
-        if existing_count_before > 0:
+        if indexed:
             self.vector_store.delete_framework_chunks(name)
-            logger.info("framework_reindexing", name=name, previous_chunks=existing_count_before)
+            logger.info("framework_reindexing", name=name, previous_chunks=indexed)
 
         try:
             added = self.vector_store.add_chunks(chunks)

@@ -46,15 +46,6 @@ class CitationVerificationResult(BaseModel):
         }
 
 
-class Citation(BaseModel):
-    chunk_id: str
-    text: str
-    page_number: int | None
-    source_framework: str
-    claim: str | None = None
-    verification: CitationVerificationResult | None = None
-
-
 def _compute_semantic_similarity(
     text_a: str,
     text_b: str,
@@ -68,6 +59,29 @@ def _compute_semantic_similarity(
     if na == 0 or nb == 0:
         return 0.0
     return dot / (na * nb)
+
+
+# Shorter than this, a quote can occur in a chunk by coincidence ("the
+# authority shall"), so containment alone proves nothing.
+MIN_VERBATIM_CHARS = 40
+
+
+def _alnum(text: str) -> str:
+    return re.sub(r"[^0-9a-z]", "", (text or "").lower())
+
+
+def quote_is_verbatim(quote: str, chunk_text: str) -> bool:
+    """True when the quote appears in the chunk, ignoring case, spacing and
+    punctuation.
+
+    Checked before any embedding. Similarity is computed on the first 500
+    characters of each side, so a word-for-word quote from later in a long
+    chunk could score under the threshold and be reported unconfirmed. Letters
+    and digits only, so PDF word-splitting ("Off ice") and line-break hyphens
+    do not defeat an exact match.
+    """
+    needle = _alnum(quote)
+    return len(needle) >= MIN_VERBATIM_CHARS and needle in _alnum(chunk_text)
 
 
 def _compute_keyword_overlap(claim_text: str, chunk_text: str) -> float:
@@ -87,7 +101,7 @@ def verify_citation(
     chunk = vector_store.get_chunk(chunk_id)
     chunk_exists = chunk is not None
     if not chunk_exists:
-        failures.append("Cited chunk_id does not exist in the vector store.")
+        failures.append("The cited passage could not be found in the indexed documents.")
         return CitationVerificationResult(
             chunk_exists=False,
             page_exists=False,
@@ -110,7 +124,7 @@ def verify_citation(
     if page_number is not None and chunk_page is not None:
         if page_number != chunk_page:
             page_exists = False
-            failures.append(f"Claimed page {page_number} does not match stored page {chunk_page}.")
+            failures.append(f"Cited as page {page_number}; the passage is on page {chunk_page}.")
     # document_total_pages is the UPLOADED POLICY's own page count — it must
     # only bound citations that actually come FROM that document. A chunk
     # carries a workspace_id only when it was ingested as part of a
@@ -127,7 +141,8 @@ def verify_citation(
         if page_number > document_total_pages:
             page_exists = False
             failures.append(
-                f"Page {page_number} exceeds document length ({document_total_pages} pages)."
+                f"Cited as page {page_number}, but the document has {document_total_pages} pages "
+                "(page number exceeds document length)."
             )
 
     chunk_text = chunk["text"]
@@ -136,7 +151,13 @@ def verify_citation(
     verification_confidence = 0.0
     verification_reason = ""
 
-    if SEMANTIC_VERIFICATION:
+    if quote_is_verbatim(claim_text, chunk_text):
+        semantic_sim = None
+        text_supports_claim = True
+        verification_method = "verbatim"
+        verification_confidence = 1.0
+        verification_reason = "The quote appears word for word in the cited passage."
+    elif SEMANTIC_VERIFICATION:
         try:
             semantic_sim = _compute_semantic_similarity(claim_text, chunk_text, vector_store)
         except Exception as exc:
@@ -172,13 +193,12 @@ def verify_citation(
         if not text_supports_claim:
             if semantic_sim is not None:
                 failures.append(
-                    f"Semantic similarity {semantic_sim:.3f} below threshold {SEMANTIC_THRESHOLD} "
-                    f"(keyword overlap: {keyword_overlap:.2f})."
+                    "The passage is related but does not state the claim closely enough to "
+                    "confirm it."
                 )
             else:
                 failures.append(
-                    "The retrieved chunk's text does not contain sufficient evidence "
-                    "to support the claimed statement (insufficient term overlap)."
+                    "The passage does not contain enough of the claim's substance to confirm it."
                 )
     else:
         semantic_sim = None
@@ -188,7 +208,7 @@ def verify_citation(
 
     passed = chunk_exists and page_exists and text_supports_claim
     if not passed and not failures:
-        failures.append("Citation verification failed: unknown reason.")
+        failures.append("The citation could not be confirmed.")
 
     result = CitationVerificationResult(
         chunk_exists=chunk_exists,
@@ -220,6 +240,7 @@ def verify_chat_citation(
     source_framework: str,
     quote_text: str,
     vector_store: VectorStore,
+    workspace_id: str = "",
 ) -> CitationVerificationResult:
     """Verify an LLM-generated chat citation by searching the vector store.
 
@@ -238,11 +259,14 @@ def verify_chat_citation(
         framework_filter=framework_filter,
     )
 
-    # If nothing found within the claimed framework, broaden the search
+    # If nothing found within the claimed framework, broaden the search — to the
+    # library and this conversation's own workspace, never other workspaces.
     if not results:
         results = vector_store.retrieve(
             query=quote_text[:500],
             top_k=5,
+            workspace_filter=["", workspace_id] if workspace_id else None,
+            frameworks_only=not workspace_id,
         )
 
     if not results:
@@ -251,7 +275,7 @@ def verify_chat_citation(
             page_exists=False,
             text_supports_claim=False,
             passed=False,
-            failure_reason="No matching chunk found in vector store for this citation.",
+            failure_reason="No passage in the indexed documents matches this citation.",
             verification_method="chat_lookup",
         )
 
@@ -279,8 +303,8 @@ def verify_chat_citation(
             text_supports_claim=False,
             passed=False,
             failure_reason=(
-                f"Could not find a sufficiently matching chunk for this citation "
-                f"(best term overlap: {best_score:.2f})."
+                "No passage in the indexed documents matches this citation closely "
+                "enough to confirm it."
             ),
             verification_method="chat_lookup",
         )
@@ -304,8 +328,8 @@ def verify_chat_citation(
                 text_supports_claim=False,
                 passed=False,
                 failure_reason=(
-                    f"Matched chunk belongs to '{chunk_framework}' but citation "
-                    f"references '{source_framework}'."
+                    f"The matching passage comes from '{chunk_framework}', not "
+                    f"'{source_framework}' as cited."
                 ),
                 verification_method="chat_lookup",
             )

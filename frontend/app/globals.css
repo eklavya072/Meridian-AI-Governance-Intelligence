@@ -672,6 +672,14 @@ html, body { overflow-x: hidden; overflow-x: clip; }
      gliding quality the brief asked for; --ease-glide is that curve. */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-glide: cubic-bezier(0.19, 1, 0.22, 1);
+  /* Three curves, three jobs, and nothing else on this route.
+     Measured before this: 7 distinct timing functions in the computed
+     styles, of which cubic-bezier(0.16,1,0.3,1) and (0.22,1,0.36,1) are the
+     same exponential ease-out at two strengths, used interchangeably rather
+     than deliberately. `ease` and bare `ease-out` were doing a third job
+     nobody named. A curve per job, named for the job. */
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
 
   /* Text sits over a moving ground, which is a background nobody controls
@@ -1031,7 +1039,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
    middle of a video. */
 .l-band-a { justify-content: center;      align-items: center;     text-align: center; }
 .l-band-b { justify-content: center;      align-items: flex-start; text-align: left; }
-.l-band-c { justify-content: center;      align-items: flex-end;   text-align: left; }
+.l-band-c { justify-content: center;      align-items: flex-end;   text-align: right; }
 .l-band-d { justify-content: center;      align-items: flex-start; text-align: left; }
 .l-band-e { justify-content: center;      align-items: center;     text-align: center; }
 /* Beat three sits on the right edge (`align-items: flex-end`), which
@@ -1044,7 +1052,22 @@ html, body { overflow-x: hidden; overflow-x: clip; }
    attempt at this left the two blocks 96px apart at the left edge while
    their right edges sat flush, which looked exactly as wrong as the
    original. */
-.l-band.l-band-c > * { text-align: left; width: min(34rem, 100%); max-width: none; }
+/* Beat three is the only beat anchored to the right edge, and it set its
+   text flush LEFT inside that anchor — so the block had a hard edge on the
+   side nobody reads from and a ragged one on the side everybody does. That
+   is what made it feel unplaced: the composition's edge and the reading's
+   edge were on opposite sides.
+
+   Both blocks are the same width and both set flush right now, so the
+   band's anchor IS the edge the eye follows down. Two short lines and a
+   two-line note is the length right-aligned text stays comfortable at; the
+   other four beats keep their left rag. */
+.l-band.l-band-c > * {
+  text-align: right;
+  width: min(34rem, 100%);
+  max-width: none;
+  margin-left: auto;
+}
 /* Beat three carries a list, not a proclamation. At the full display size it
    ran four lines in its column and sat taller than the note underneath it,
    which is what made the beat look top-heavy against the other four. */
@@ -1160,7 +1183,13 @@ html, body { overflow-x: hidden; overflow-x: clip; }
   font-feature-settings: "ss01";
   font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
-  font-variant-numeric: lining-nums tabular-nums;
+  /* NO tabular figures here. `tnum` widens punctuation to a figure width so
+     decimal columns align — correct on the three numeric selectors that
+     have it, wrong on display headlines containing no figures. Measured
+     with it on: the full stop in `.l-h1` rendered 27.84px against 11.95px
+     normal, the comma in `.l-band-stmt` 23.30 against 9.77. Every hero line
+     read "…name a duty ." — a 16px phantom gap in 47px type, in all five
+     beats, on screen one. */
 }
 /* Beat one. It was set at the display cap — 96px at 1440 — which is where
    a headline stops being read and starts being looked at, and it filled
@@ -1466,7 +1495,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
      whatever its threshold, at any spread, while still arriving in order. */
   --kc: clamp(
     0,
-    (var(--k, 1) - var(--th, 0)) / max(0.08, (1 - var(--th, 0)) * 0.72),
+    (var(--k, 1) - var(--th, 0)) / max(0.08, (1 - var(--th, 0)) * 0.6),
     1
   );
 
@@ -1485,10 +1514,20 @@ html, body { overflow-x: hidden; overflow-x: clip; }
      and it exists only while a beat is leaving. */
   --xc: clamp(0, (var(--x, 0) - (1 - var(--th, 0)) * 0.16) * 1.25, 1);
 
+  /* Arrival and departure are now the same gesture run in opposite
+     directions. The entrance was a bare rise behind a mask edge — correct,
+     and inert: transform and opacity alone, which is where most scroll
+     type stops. It gets the departure's other two properties as well, so a
+     word resolves OUT of softness instead of simply appearing, and the two
+     halves of the beat are recognisably one idea.
+
+     Entry blur is smaller than exit blur (3px against 5px). A line arriving
+     wants to resolve quickly and be read; a line leaving can afford to
+     dissolve. */
   opacity: calc(var(--kc) * (1 - var(--xc)));
   transform: translateY(calc((1 - var(--kc)) * 110% - var(--xc) * 30%))
-    scale(calc(1 - var(--xc) * 0.045));
-  filter: blur(calc(var(--xc) * 5px));
+    scale(calc(1 - (1 - var(--kc)) * 0.028 - var(--xc) * 0.045));
+  filter: blur(calc((1 - var(--kc)) * 3px + var(--xc) * 5px));
   transform-origin: 50% 100%;
 }
 /* Three beats, three entrances, each echoing what the footage is doing
@@ -1657,7 +1696,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
 .l-btn-primary { background: var(--accent); color: var(--canvas); border: 1px solid var(--accent); }
 .l-btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); }
 .l-btn-quiet { color: var(--ink); border: 1px solid var(--hairline-strong); background: transparent; }
-.l-btn-quiet:hover { border-color: var(--ink); background: rgba(244, 244, 245, 0.06); transform: translateY(-1px); }
+.l-btn-quiet:hover { border-color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); transform: translateY(-1px); }
 @media (pointer: coarse) { .l-btn { min-height: 44px; } }
 
 /* Applied to type only. Buttons and the light product screens are opaque
@@ -1889,7 +1928,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
    ink they are sitting on. */
 .l-stats {
   position: relative;
-  margin: 0 0 clamp(3.5rem, 7vh, 5.5rem);
+  margin: 0 0 clamp(0.9rem, 1.8vh, 1.3rem);
 }
 
 
@@ -1919,7 +1958,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
   display: grid;
   align-content: start;
   gap: 0.4rem;
-  padding: clamp(1.25rem, 2.6vh, 1.75rem) clamp(1.15rem, 1.8vw, 1.5rem);
+  padding: clamp(0.75rem, 1.5vh, 1rem) clamp(1rem, 1.5vw, 1.25rem);
 }
 /* The display family, tabular, so the four roll in place without the row
    reflowing under them while the count runs. */
@@ -1927,8 +1966,8 @@ html, body { overflow-x: hidden; overflow-x: clip; }
   margin: 0;
   font-family: var(--grotesk);
   font-weight: 600;
-  font-size: clamp(2rem, 3.2vw, 2.7rem);
-  line-height: 0.98;
+  font-size: clamp(1.7rem, 2.7vw, 2.25rem);
+  line-height: 1;
   letter-spacing: -0.032em;
   color: var(--ink);
   font-variant-numeric: lining-nums tabular-nums;
@@ -2482,7 +2521,7 @@ body.paused *, body.paused *::before, body.paused *::after {
 }
 .l-roll-in {
   display: inline-block;
-  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 900ms var(--ease-glide);
 }
 /* Hidden ONLY once JS has armed the page. Without this gate the
    server-rendered markup paints a blank hero for anyone whose JS never
@@ -2531,9 +2570,9 @@ body.paused *, body.paused *::before, body.paused *::after {
   filter: blur(14px);
   transform: translateY(26px) scale(0.985);
   transition:
-    opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 1100ms cubic-bezier(0.16, 1, 0.3, 1),
-    filter 900ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 900ms var(--ease-glide),
+    transform 1100ms var(--ease-glide),
+    filter 900ms var(--ease-glide);
   will-change: transform, filter;
 }
 .landing.is-armed .l-sec.in .l-standards-visual {
@@ -2558,8 +2597,8 @@ body.paused *, body.paused *::before, body.paused *::after {
   opacity: 0;
   transform: translateX(-34px);
   transition:
-    opacity 850ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 1000ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 850ms var(--ease-glide),
+    transform 1000ms var(--ease-glide);
 }
 .landing.is-armed .l-stage-row[data-visual-first="false"] .l-stage-visual { transform: translateX(34px); }
 .landing.is-armed .l-stage-row.in .l-stage-visual { opacity: 1; transform: none; }
@@ -2597,7 +2636,7 @@ body.paused *, body.paused *::before, body.paused *::after {
   0%, 100% { opacity: 0.28; transform: scale(0.82); }
   50%      { opacity: 1;    transform: scale(1); }
 }
-.l-think { animation: l-think 1.25s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.l-think { animation: l-think 1.25s var(--ease-glide) infinite; }
 @media (prefers-reduced-motion: reduce) {
   .l-think { animation: none; opacity: 0.6; }
 }
@@ -2611,7 +2650,11 @@ body.paused *, body.paused *::before, body.paused *::after {
    sentence and the source it came from. */
 .l-ink {
   position: relative;
-  padding: clamp(5rem, 11vh, 8.5rem) var(--gutter) clamp(4rem, 9vh, 7rem);
+  /* One screen at a laptop height. This ran 1223px against a 900px
+     viewport, so the chapter could never be seen whole — you arrived at
+     figures and left before the rules, or the reverse. Every interval below
+     is cut, none of the type is. */
+  padding: clamp(1.6rem, 3.1vh, 2.25rem) var(--gutter) clamp(1.35rem, 2.7vh, 1.9rem);
 }
 .l-ink-inner {
   max-width: var(--measure);
@@ -2619,15 +2662,15 @@ body.paused *, body.paused *::before, body.paused *::after {
 }
 .l-ink-head {
   max-width: 46rem;
-  margin: 0 0 clamp(2.5rem, 5vh, 4rem);
+  margin: 0 0 clamp(0.9rem, 1.9vh, 1.4rem);
 }
 /* The dark chapters speak in the hero's voice, not the paper sections' —
    they are the same register as the film, one step quieter. */
 .l-ink-h {
   font-family: var(--grotesk);
   font-weight: 600;
-  font-size: clamp(2rem, 3.6vw, 3rem);
-  line-height: 1.04;
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  line-height: 1.06;
   letter-spacing: var(--tr-h1);
   margin: 0;
   color: var(--ink);
@@ -2733,8 +2776,8 @@ body.paused *, body.paused *::before, body.paused *::after {
 .l-ink-rule {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.5rem 2.5rem;
-  padding: clamp(1.5rem, 3vh, 2.25rem) 0;
+  gap: 0.3rem 2.5rem;
+  padding: clamp(0.5rem, 1.1vh, 0.78rem) 0;
   border-top: 1px solid var(--hairline);
   opacity: 0;
   transform: translateY(14px);
@@ -2770,8 +2813,8 @@ body.paused *, body.paused *::before, body.paused *::after {
   margin: 0;
   font-family: var(--grotesk);
   font-weight: 600;
-  font-size: clamp(1.15rem, 1.6vw, 1.42rem);
-  line-height: 1.2;
+  font-size: clamp(1.05rem, 1.35vw, 1.2rem);
+  line-height: 1.25;
   letter-spacing: -0.022em;
   color: var(--ink);
   font-optical-sizing: auto;
@@ -2783,8 +2826,11 @@ body.paused *, body.paused *::before, body.paused *::after {
   line-height: 1.62;
   letter-spacing: 0.004em;
   color: var(--ink-2);
-  /* Inside the floor's 65-75ch band, measured at this size. */
-  max-width: 68ch;
+  /* Measured, not declared. A `68ch` cap resolved to 83.2 characters here
+     because `ch` is the width of the zero glyph, not of an average one — at
+     15.68px Public Sans that is a 22% under-count. 30rem measures 61
+     characters at this size, inside the 45-75 band. */
+  max-width: 30rem;
 }
 @media (prefers-reduced-motion: reduce) {
   .l-ink-cell, .l-ink-rule {
@@ -2903,29 +2949,6 @@ html {
   margin-right: calc(var(--tr-label) * -1);
 }
 
-/* ── The figures rail ────────────────────────────────────────────────────
-   The figures were a fourth panel on the track: they arrived, then left,
-   which made the conclusion of the argument into one more station on it.
-   They hold the foot of the sticky stage now — present for the whole
-   travel, gone when the section is.
-
-   Spatially it is a rule with four readings hung off it, not a card: one
-   line of type, a hairline above, and the numbers spaced along it. A strip
-   that occupies a tenth of the stage rather than a third. */
-.l-track-rail-fixed {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 3;
-  pointer-events: none;
-  padding: 0 var(--gutter) clamp(1rem, 2.4vh, 1.75rem);
-}
-.l-track-rail-fixed > * { pointer-events: auto; }
-.l-track:not(.is-horizontal) .l-track-rail-fixed {
-  position: static;
-  padding: clamp(2rem, 5vh, 3rem) var(--gutter) 0;
-}
 
 
 /* ── Clearance under the pinned bar ──────────────────────────────────────
@@ -2943,8 +2966,8 @@ html {
 .landing h3 {
   scroll-margin-top: calc(var(--nav-h, 77px) + 1rem);
 }
-.l-ink-head,
-.l-method-head {
+.l-ink-head:first-child,
+.l-method-head:first-child {
   padding-top: calc(var(--nav-h, 77px) * 0.55);
 }
 

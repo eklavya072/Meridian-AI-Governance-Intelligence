@@ -8,11 +8,13 @@ No network, no quota, deterministic.
 """
 
 import time
+from datetime import UTC
 
 import pytest
 
 from src.key_health import (
     BREAKER_FAILURE_THRESHOLD,
+    HALF_OPEN_PROBE_TIMEOUT_SECONDS,
     CircuitState,
     KeyHealthRegistry,
 )
@@ -83,7 +85,6 @@ class TestClassification:
         failure = classify(_ProviderError("404 model not found: llama-3.3-70b", 404))
 
         assert failure.kind is FailureKind.TERMINAL
-        assert not failure.is_retryable
 
     def test_invalid_api_key_is_terminal(self):
         assert classify(Exception("API key not valid")).kind is FailureKind.TERMINAL
@@ -195,6 +196,31 @@ class TestCircuitBreaker:
         assert registry.is_available("k1")
         assert registry.snapshot(["k1"])["keys"][0]["state"] == CircuitState.CLOSED.value
 
+    def test_a_probe_that_never_reports_back_does_not_strand_the_credential(
+        self, registry, monkeypatch
+    ):
+        """The failure that made five working credentials read as none healthy.
+
+        HALF_OPEN is left only by recording the probe's outcome. A run that
+        gives up after its last retry, or a task killed mid-call, records
+        nothing — and the credential stayed out of rotation for the life of
+        the process while its daily allowance was untouched. Two analyses
+        failed every dimension against a provider that was working.
+        """
+        for _ in range(BREAKER_FAILURE_THRESHOLD):
+            registry.record_failure("k1", FailureKind.QUOTA, "429")
+        after_cooldown = time.time() + 10_000
+        monkeypatch.setattr(time, "time", lambda: after_cooldown)
+        assert registry.is_available("k1"), "cooldown elapsed, one probe expected"
+        assert not registry.is_available("k1"), "a second probe would be a storm"
+
+        # The probe never reports an outcome. Long enough after it was handed
+        # out, another one is owed.
+        stranded = after_cooldown + HALF_OPEN_PROBE_TIMEOUT_SECONDS + 1
+        monkeypatch.setattr(time, "time", lambda: stranded)
+
+        assert registry.is_available("k1")
+
     def test_provider_retry_after_extends_the_cooldown(self, registry):
         registry.record_failure("k1", FailureKind.TERMINAL, "429", retry_after=3600)
 
@@ -209,9 +235,6 @@ class TestRotation:
         for _ in range(BREAKER_FAILURE_THRESHOLD):
             registry.record_failure("k1", FailureKind.QUOTA, "429")
 
-        chosen = registry.next_available(keys, start=0)
-
-        assert chosen in ("k2", "k3")
         assert registry.available_keys(keys) == ["k2", "k3"]
 
     def test_a_429_storm_does_not_re_ask_a_dropped_credential(self, registry):
@@ -224,7 +247,6 @@ class TestRotation:
         # Before the breaker, round-robin would keep handing these back and
         # the retry budget would be spent re-asking exhausted credentials.
         assert registry.available_keys(keys) == []
-        assert registry.next_available(keys) is None
 
     def test_all_credentials_exhausted_reports_when_to_retry(self, registry):
         keys = ["k1", "k2"]
@@ -365,3 +387,26 @@ class TestSharedQuotaLedger:
         reg._merge({"keys": {"k:0": {"requests": 0, "daily_exhausted": False}}})
 
         assert not reg.is_available("k:0")
+
+
+class TestQuotaDay:
+    def test_the_day_turns_over_at_pacific_midnight_not_the_servers(self, monkeypatch):
+        """11:00 in India on 24 Sep is still the 23rd for Gemini's allowance.
+
+        On local time, a key spent that morning stayed "exhausted" until Indian
+        midnight — half a day after the provider had reset it.
+        """
+        from datetime import datetime, timezone
+
+        import src.key_health as kh
+
+        fixed = datetime(2026, 9, 24, 5, 30, tzinfo=UTC)  # 11:00 IST
+
+        class _Clock:
+            @staticmethod
+            def now(tz):
+                return fixed.astimezone(tz)
+
+        monkeypatch.setattr(kh, "datetime", _Clock)
+
+        assert kh.quota_day() == "2026-09-23"

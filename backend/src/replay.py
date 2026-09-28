@@ -99,7 +99,6 @@ class ReplayProvider(LLMProvider):
 
     def __init__(self) -> None:
         self.model_name_str = "replay-fixture"
-        self.call_count = 0
         logger.warning(
             "replay_mode_enabled",
             detail="No provider calls will be made. Output is fixture data.",
@@ -132,13 +131,34 @@ class ReplayProvider(LLMProvider):
     def generate_structured(
         self, prompt: str, schema: type, system_prompt: str | None = None, **kw
     ):
-        self.call_count += 1
         if REPLAY_LATENCY_SECONDS > 0:
             time.sleep(REPLAY_LATENCY_SECONDS)
+        batched = self._batched(prompt, schema)
+        if batched is not None:
+            return batched
         return _fill(schema, prompt, self._chunk_ids_in(prompt))
 
+    def _batched(self, prompt: str, schema: type):
+        """One answer per dimension section of a batched request.
+
+        Each answer is filled from its own section — its own text, its own
+        chunk ids — exactly as a single-dimension request would have been.
+        """
+        from src.analysis_prompts import split_batched_prompt
+
+        field = getattr(schema, "model_fields", {}).get("dimensions")
+        if field is None or get_origin(field.annotation) is not list:
+            return None
+        item = get_args(field.annotation)[0]
+        answers = []
+        for name, section in split_batched_prompt(prompt):
+            answer = _fill(item, section, self._chunk_ids_in(section))
+            if "dimension" in item.model_fields:
+                answer.dimension = name
+            answers.append(answer)
+        return schema(dimensions=answers)
+
     def generate_text(self, prompt: str, system_prompt: str | None = None, **kw) -> str:
-        self.call_count += 1
         if REPLAY_LATENCY_SECONDS > 0:
             time.sleep(REPLAY_LATENCY_SECONDS)
         return _deterministic_text(prompt, "reply")

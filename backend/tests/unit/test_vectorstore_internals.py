@@ -180,3 +180,43 @@ class TestStopwords:
 
         # Dropping these would gut the lexical half of every dimension query.
         assert not {"bias", "transparency", "accountability"} & stopwords
+
+
+class TestEmbeddingIsSerialised:
+    def test_concurrent_callers_never_share_the_model(self):
+        """Three dimension workers embedding at once segfaulted the API on MPS."""
+        import threading
+        import time
+
+        import numpy as np
+
+        from src.vectorstore import EmbeddingService
+
+        inside = 0
+        worst = 0
+        guard = threading.Lock()
+
+        class _Model:
+            def encode(self, texts, **kw):
+                nonlocal inside, worst
+                with guard:
+                    inside += 1
+                    worst = max(worst, inside)
+                time.sleep(0.01)
+                with guard:
+                    inside -= 1
+                n = 1 if isinstance(texts, str) else len(texts)
+                return np.zeros((n, 4)) if n > 1 or not isinstance(texts, str) else np.zeros(4)
+
+        service = EmbeddingService.__new__(EmbeddingService)
+        service.model = _Model()
+        service.dimension = 4
+        workers = [threading.Thread(target=service.embed, args=(["a", "b"],)) for _ in range(4)] + [
+            threading.Thread(target=service.embed_query, args=("q",)) for _ in range(4)
+        ]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join()
+
+        assert worst == 1

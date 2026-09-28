@@ -37,6 +37,12 @@ documents_ingested = Counter(
     ["outcome"],
 )
 
+uploads_rejected = Counter(
+    "meridian_uploads_rejected_total",
+    "Uploads refused before storage, by reason.",
+    ["reason"],
+)
+
 chunks_indexed = Counter(
     "meridian_chunks_indexed_total",
     "Chunks written to the vector store.",

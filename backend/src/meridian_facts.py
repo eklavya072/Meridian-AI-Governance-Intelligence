@@ -24,8 +24,9 @@ from typing import Any
 
 import structlog
 
-from src.evidence_strength import DIMENSION_MECHANISMS, TIER_LABELS
+from src.evidence_strength import DIMENSION_MECHANISMS, MECHANISM_FLOOR, TIER_LABELS
 from src.gap_analyzer import DEPTH_STAGE_SCORE, GOVERNANCE_DIMENSIONS
+from src.grading import MECHANISMS_FOR_INSTITUTIONAL, MECHANISMS_FOR_OPERATIONAL
 
 logger = structlog.get_logger()
 
@@ -165,7 +166,26 @@ def build_method_context() -> str:
             "enforceable one. Not simply 'one binding sentence exists': the tier "
             "counters are cumulative, so a single binding sentence also lifts every "
             "weaker counter beneath it. Pairing a duty with actual enforcement is the "
-            "one genuinely independent signal available.",
+            "one genuinely independent signal available. Force alone is not enough, "
+            "either: if those duties reach fewer than "
+            f"{round(MECHANISM_FLOOR * 100)}% of the mechanisms the dimension calls for, "
+            "it is held at Partial, because one narrow binding provision does not govern "
+            "a whole dimension.",
+            "",
+            "THE MECHANISM GATE ON DEPTH. A dimension cannot be Operationalized unless at "
+            f"least {MECHANISMS_FOR_OPERATIONAL} of its expected mechanisms is carried by "
+            "a duty, nor Institutionalized with fewer than "
+            f"{MECHANISMS_FOR_INSTITUTIONAL}. This is the usual reason a dimension with "
+            "many binding provisions still reads Delegated: the duties exist, but none "
+            "of them establishes the machinery that dimension needs. The gate only ever "
+            "lowers a stage.",
+            "",
+            "WHERE A LANGUAGE MODEL IS INVOLVED. It extracts evidence and writes the "
+            "prose, and it is shown the verdict rather than asked for one. In one place "
+            "it touches the verdict path: it checks whether a provision that mentions a "
+            "mechanism actually establishes it. It can only remove a mechanism, never "
+            "add one, and the gates it feeds only lower a verdict, so it cannot raise a "
+            "score. Every tier, threshold and verdict is computed in code.",
             "",
             f"IMPLEMENTATION DEPTH STAGES, with the score each is worth: {_stage_line()}. The gaps "
             "between stages are not uniform, which is why explicit stage scores replaced "
@@ -183,10 +203,11 @@ def build_method_context() -> str:
             "high on the first and low on the second. The interesting cases are exactly "
             "where the two diverge.",
             "",
-            "NO SINGLE COUNTRY SCORE, AND NO RANKING. Meridian does not aggregate the "
-            "dimensions into one headline number for a country, and does not rank "
-            "countries against each other. Comparison across countries is a comparison "
-            "of what specific instruments do — not of who is 'ahead'.",
+            "TWO INDICES, NEVER ONE, AND NO RANKING. Meridian reports two country-level "
+            "figures side by side — the depth index (force) and the coverage index "
+            "(breadth) — and never folds them into a single headline score. It does not "
+            "rank countries against each other. Comparison across countries is a "
+            "comparison of what specific instruments do — not of who is 'ahead'.",
             "",
             "EVIDENCE DISCIPLINE. Every verdict cites the document. Citations are "
             "verified against the retrieved passages and the full document text, and "

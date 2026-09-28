@@ -32,7 +32,7 @@ logger = structlog.get_logger()
 # Bumped by hand when the prompt text changes in a way that could move a
 # verdict. It is the one value that cannot be derived, because "the prompts
 # changed meaningfully" is a judgment rather than a fact about the bytes.
-PROMPT_VERSION = "2026.08.1"
+PROMPT_VERSION = "2026.09.1"
 
 
 @lru_cache(maxsize=1)
@@ -140,10 +140,14 @@ def render_provenance_lines(provenance: dict[str, Any]) -> list[str]:
     method = verification.get("method", "unknown")
     if verification.get("model"):
         method = f"{method} ({verification['model']})"
+    model = provenance.get("llm_model", "unknown")
+    if isinstance(model, dict):
+        # Records written before the model was stored as a plain name.
+        model = model.get("provider", "unknown")
     lines = [
-        f"Generated: {provenance.get('generated_at', 'unknown')}",
+        f"Analysis generated: {provenance.get('generated_at', 'unknown')}",
         f"Mode: {provenance.get('mode', 'unknown')}",
-        f"Language model: {provenance.get('llm_model', 'unknown')}",
+        f"Language model: {model}",
         f"Prompt version: {provenance.get('prompt_version', 'unknown')}",
         f"Embedding model: {provenance.get('embedding_model', 'unknown')}",
         f"Citation verification: {method}",
@@ -152,4 +156,6 @@ def render_provenance_lines(provenance: dict[str, Any]) -> list[str]:
     ]
     if provenance.get("llm_calls") is not None:
         lines.insert(3, f"Language-model calls: {provenance['llm_calls']}")
+    if provenance.get("brief_llm_model"):
+        lines.append(f"Brief narrative written by: {provenance['brief_llm_model']}")
     return lines

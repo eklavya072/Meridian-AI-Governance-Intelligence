@@ -13,6 +13,9 @@ import pytest
 from pydantic import BaseModel
 
 from src.llm_provider import (
+    GEMINI_BATCH_REQUEST_TIMEOUT_SECONDS,
+    GEMINI_REQUEST_TIMEOUT_SECONDS,
+    GEMINI_SEED,
     GeminiProvider,
     QuotaExceededError,
     RetryableError,
@@ -94,25 +97,6 @@ class TestKeyRotation:
 
         assert all(0 <= i < 2 for i in indices)
 
-    def test_rotate_key_reports_exhaustion_at_the_last_credential(self, monkeypatch):
-        provider = self._provider(monkeypatch, n=2)
-        provider.current_key_index = 1
-
-        assert provider.rotate_key() is False
-
-    def test_rotate_key_advances_when_another_remains(self, monkeypatch):
-        provider = self._provider(monkeypatch, n=3)
-        provider.current_key_index = 0
-
-        assert provider.rotate_key() is True
-        assert provider.current_key_index == 1
-
-    def test_keys_remaining_counts_down(self, monkeypatch):
-        provider = self._provider(monkeypatch, n=3)
-        provider.current_key_index = 0
-
-        assert provider.keys_remaining == 2
-
     def test_the_api_key_property_returns_the_current_credential(self, monkeypatch):
         provider = self._provider(monkeypatch, n=2)
         provider.current_key_index = 1
@@ -157,8 +141,9 @@ class TestGeminiCalls:
                 return types.SimpleNamespace(candidates=[types.SimpleNamespace(content=content)])
 
         class _Client:
-            def __init__(self, api_key=None):
+            def __init__(self, api_key=None, http_options=None):
                 calls["api_key"] = api_key
+                calls["http_options"] = http_options
                 self.models = _Models()
 
         genai = types.ModuleType("google.genai")
@@ -166,6 +151,7 @@ class TestGeminiCalls:
         genai_types = types.ModuleType("google.genai.types")
         genai_types.ThinkingConfig = lambda **kw: kw
         genai_types.GenerateContentConfig = lambda **kw: kw
+        genai_types.HttpOptions = lambda **kw: kw
         genai.types = genai_types
 
         google = types.ModuleType("google")
@@ -192,6 +178,51 @@ class TestGeminiCalls:
         # concurrency and use a different credential than was reserved.
         assert fake_genai["api_key"] == "k2"
 
+    def test_every_call_carries_a_request_timeout(self, monkeypatch, fake_genai):
+        """The SDK sets none, and a call with no ceiling cannot be retried.
+
+        A brief loss of connectivity held one request for 781 seconds before
+        "[Errno 65] No route to host" surfaced; the dimension behind it waited
+        the whole time and the retry ladder never got a turn. The timeout is
+        what turns that into an ordinary retryable failure.
+        """
+        monkeypatch.setenv("GEMINI_API_KEY", "k1")
+
+        GeminiProvider().generate_text("prompt")
+
+        # The SDK takes milliseconds.
+        assert fake_genai["http_options"]["timeout"] == int(GEMINI_REQUEST_TIMEOUT_SECONDS * 1000)
+
+    def test_a_batched_call_gets_the_longer_ceiling(self, monkeypatch, fake_genai):
+        """Eight dimensions in one reply take far longer than 180s allows.
+
+        Cutting one off would waste the model's work and still spend the
+        request from the day's quota.
+        """
+        monkeypatch.setenv("GEMINI_API_KEY", "k1")
+
+        GeminiProvider().generate_structured("prompt", Reply, max_output_tokens=65536)
+
+        assert fake_genai["http_options"]["timeout"] == int(
+            GEMINI_BATCH_REQUEST_TIMEOUT_SECONDS * 1000
+        )
+        assert fake_genai["config"]["max_output_tokens"] == 65536
+
+    def test_every_call_pins_the_sampling_seed(self, monkeypatch, fake_genai):
+        """Same prompt, same text — the part temperature alone does not buy.
+
+        Measured on this workload: three identical prompts at temperature 0.1
+        with no seed returned three different answers, the closest pair 31%
+        similar; with the seed set they came back byte-identical. The verdict
+        never depended on the model, but the brief a reader sees did, and a
+        re-run that rewords itself looks like a tool changing its mind.
+        """
+        monkeypatch.setenv("GEMINI_API_KEY", "k1")
+
+        GeminiProvider().generate_text("prompt")
+
+        assert fake_genai["config"]["seed"] == GEMINI_SEED
+
     def test_a_text_call_returns_the_raw_text(self, monkeypatch, fake_genai):
         monkeypatch.setenv("GEMINI_API_KEY", "k1")
 
@@ -214,3 +245,78 @@ class TestGeminiCalls:
         # The combined Module 1+2 JSON routinely exceeds 4096 tokens, and
         # truncation turned real dimensions into "Insufficient Evidence".
         assert fake_genai["config"]["max_output_tokens"] == 8192
+
+
+class TestMalformedReplies:
+    """A reply that does not fit the schema is the model's answer, not a provider fault.
+
+    It used to be pushed through the provider-error classifier, which matches
+    substrings of the error text — and pydantic's error text echoes the start of
+    the reply. A truncated Safety answer therefore matched the terminal marker
+    "safety", failed with no retry and benched a healthy credential, while every
+    other dimension was re-sent verbatim. The router's shrink-and-retry repair
+    never ran for Gemini at all.
+    """
+
+    TRUNCATED_SAFETY = '{"dimension": "Safety", "coverage": "Partial", "reason_flagged": "The doc'
+
+    def test_a_truncated_reply_surfaces_as_a_validation_error(self, monkeypatch):
+        from pydantic import ValidationError
+
+        monkeypatch.setenv("GEMINI_API_KEY", "k1")
+        provider = GeminiProvider()
+        monkeypatch.setattr(provider, "_call_gemini", lambda **kw: (self.TRUNCATED_SAFETY, None))
+
+        with pytest.raises(ValidationError):
+            provider.generate_structured("prompt", Reply)
+
+    def test_the_router_repairs_it_instead_of_benching_the_key(self, monkeypatch):
+        from src import provider_router as pr
+        from src.key_health import KeyHealthRegistry
+
+        monkeypatch.setenv("GEMINI_API_KEY", "k1")
+        provider = GeminiProvider()
+        prompts: list[str] = []
+
+        def fake_call(prompt, **kw):
+            prompts.append(prompt)
+            text = self.TRUNCATED_SAFETY if len(prompts) == 1 else '{"answer": "ok"}'
+            return text, None
+
+        monkeypatch.setattr(provider, "_call_gemini", fake_call)
+        registry = KeyHealthRegistry(path=pr.Path(pr.GEMINI_RPD_FILE).with_name("kh.json"))
+        monkeypatch.setattr(pr, "get_registry", lambda: registry)
+        monkeypatch.setattr(pr, "_persist_daily_requests", lambda count: None)
+
+        result = pr.generate_with_retry(provider, "prompt", Reply, operation="module1_2_safety")
+
+        assert result.answer == "ok"
+        assert len(prompts) == 2
+        assert "KEEPING IT SHORT AND VALID" in prompts[1]
+        assert registry.snapshot()["open"] == 0
+
+    def test_a_blocked_reply_is_terminal_and_an_empty_one_retryable(self):
+        from src.llm_provider import _response_text
+
+        blocked = types.SimpleNamespace(
+            candidates=[
+                types.SimpleNamespace(
+                    finish_reason=types.SimpleNamespace(name="SAFETY"),
+                    content=types.SimpleNamespace(parts=[]),
+                )
+            ]
+        )
+        empty = types.SimpleNamespace(candidates=[])
+        with pytest.raises(TerminalProviderError):
+            _response_text(blocked)
+        with pytest.raises(RetryableError):
+            _response_text(empty)
+
+    def test_multi_part_replies_are_joined(self):
+        from src.llm_provider import _response_text
+
+        parts = [types.SimpleNamespace(text='{"answer": '), types.SimpleNamespace(text='"ok"}')]
+        reply = types.SimpleNamespace(
+            candidates=[types.SimpleNamespace(content=types.SimpleNamespace(parts=parts))]
+        )
+        assert _response_text(reply) == '{"answer": "ok"}'

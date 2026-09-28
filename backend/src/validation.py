@@ -35,6 +35,11 @@ MAX_PAGE_COUNT = int(os.getenv("MAX_PDF_PAGE_COUNT", "1500"))
 # check above — correct magic bytes, correct MIME, plausible size — and then
 # expands during extraction. Without a deadline the worker is simply gone.
 PARSE_TIMEOUT_SECONDS = float(os.getenv("PDF_PARSE_TIMEOUT_SECONDS", "60"))
+# A page with less text than this is an image, a cover or a divider. Measured
+# on the 18 documents in the corpus: at most 3 such pages in any of them, all
+# covers or blanks, so a quarter of the document is well clear of normal.
+MIN_PAGE_TEXT_CHARS = 50
+PARTLY_SCANNED_SHARE = 0.25
 
 
 class ValidationResult(BaseModel):
@@ -42,6 +47,9 @@ class ValidationResult(BaseModel):
     error_type: str | None = None
     error_message: str | None = None
     ocr_warning: bool = False
+    # Shown to the uploader when the file is accepted but part of it cannot be
+    # read, so the verdicts rest on less of the document than they appear to.
+    notice: str = ""
 
 
 def validate_pdf_file(
@@ -102,7 +110,7 @@ def validate_pdf_file(
             error_message="This PDF is password-protected. Please upload an unlocked version.",
         )
 
-    text_content, is_scanned = _extract_text_and_detect_scan(file_bytes)
+    text_content, is_scanned, pages_without_text = _extract_text_and_detect_scan(file_bytes)
     if not text_content or not text_content.strip():
         if is_scanned:
             return ValidationResult(
@@ -117,6 +125,19 @@ def validate_pdf_file(
             error_message="This document appears to be empty or contains no readable text.",
         )
 
+    # A scan is refused above only when almost nothing is readable. A PDF with
+    # a scanned annex or a run of image pages passes, and those pages would be
+    # skipped without a word — every verdict resting on part of the document.
+    if page_count and pages_without_text / page_count > PARTLY_SCANNED_SHARE:
+        return ValidationResult(
+            valid=True,
+            ocr_warning=True,
+            notice=(
+                f"{pages_without_text} of {page_count} pages have no readable text and will "
+                "not be analysed. If they carry policy text, upload a version with a text "
+                "layer (run it through OCR first)."
+            ),
+        )
     return ValidationResult(valid=True)
 
 
@@ -148,7 +169,7 @@ def _check_password_protected(file_bytes: bytes) -> bool:
         return False
 
 
-def _extract_text_and_detect_scan(file_bytes: bytes) -> tuple[str, bool]:
+def _extract_text_and_detect_scan(file_bytes: bytes) -> tuple[str, bool, int]:
     """Extract text under a wall-clock deadline.
 
     The work runs on a daemon thread so a page that never returns cannot pin
@@ -156,7 +177,7 @@ def _extract_text_and_detect_scan(file_bytes: bytes) -> tuple[str, bool]:
     safe way to kill one — but daemon status means it cannot hold the process
     open, and the caller gets a clean rejection instead of a hung worker.
     """
-    result: list[tuple[str, bool]] = []
+    result: list[tuple[str, bool, int]] = []
 
     def _run() -> None:
         result.append(_extract_text_and_detect_scan_unbounded(file_bytes))
@@ -166,31 +187,34 @@ def _extract_text_and_detect_scan(file_bytes: bytes) -> tuple[str, bool]:
     worker.join(timeout=PARSE_TIMEOUT_SECONDS)
     if worker.is_alive() or not result:
         logger.error("pdf_extraction_timeout", timeout_seconds=PARSE_TIMEOUT_SECONDS)
-        return "", False
+        return "", False, 0
     return result[0]
 
 
-def _extract_text_and_detect_scan_unbounded(file_bytes: bytes) -> tuple[str, bool]:
+def _extract_text_and_detect_scan_unbounded(file_bytes: bytes) -> tuple[str, bool, int]:
     try:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(file_bytes))
         text_parts: list[str] = []
         total_chars = 0
+        pages_without_text = 0
         for page in reader.pages:
             extracted = page.extract_text() or ""
             text_parts.append(extracted)
             total_chars += len(extracted.strip())
+            if len(extracted.strip()) < MIN_PAGE_TEXT_CHARS:
+                pages_without_text += 1
 
         full_text = "\n".join(text_parts)
 
         num_pages = len(reader.pages)
         is_scanned = num_pages > 0 and total_chars < num_pages * 10
 
-        return full_text, is_scanned
+        return full_text, is_scanned, pages_without_text
     except Exception as exc:
         logger.error("pdf_extraction_failed", error=str(exc))
-        return "", False
+        return "", False, 0
 
 
 def validate_file_path(file_path: Path, max_file_size: int | None = None) -> ValidationResult:

@@ -201,3 +201,27 @@ class TestAnalysisOverview:
     def test_no_analysis_yields_no_context(self):
         assert build_analysis_overview_context(None) == ""
         assert build_analysis_overview_context({"gaps": {}}) == ""
+
+
+class TestQuestionsAboutTheInstruments:
+    """Questions about the reference library are answered, not referred.
+
+    Matching the scoring vocabulary alone referred "how does the OECD compare
+    with UNESCO?" — the comparison the Auditor's greeting offers — to a full
+    analysis the user had no document for.
+    """
+
+    @pytest.mark.parametrize(
+        "q",
+        [
+            "How does the OECD compare with UNESCO on transparency?",
+            "What does the EU AI Act say about penalties against providers?",
+            "What does NIST recommend as best practice for bias testing?",
+            "What is best practice for human oversight?",
+        ],
+    )
+    def test_are_answered(self, q):
+        assert not needs_full_analysis(q)
+
+    def test_a_document_held_to_best_practice_is_still_referred(self):
+        assert needs_full_analysis("Does this policy follow international best practice?")

@@ -13,9 +13,11 @@ over headers/footers/page numbers. python-docx is pure-Python too (lxml wheel).
 from __future__ import annotations
 
 import html
+import re
 from io import BytesIO
 from typing import Any
 
+from src.brief_synthesis import format_evidence_quote
 from src.provenance import render_provenance_lines
 
 # Design tokens — mirrors the frontend palette (app/globals.css).
@@ -24,6 +26,23 @@ NAVY_800 = "#14408D"
 BODY_INK = "#1F2937"
 
 BRAND_LINE = "MERIDIAN  ·  AI Governance Assessment Brief"
+
+
+# Characters Word's XML cannot hold. PDF extraction puts form feeds (page
+# breaks) and vertical tabs into document text, and a quote carrying one into
+# the brief made python-docx refuse the whole export.
+_XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+
+
+def _xml_safe(value: Any) -> Any:
+    """The brief with every string made storable in a .docx, structure kept."""
+    if isinstance(value, str):
+        return _XML_ILLEGAL.sub(" ", value)
+    if isinstance(value, list):
+        return [_xml_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _xml_safe(v) for k, v in value.items()}
+    return value
 
 
 def _esc(text: str) -> str:
@@ -53,6 +72,7 @@ def _add_page_number_field(paragraph) -> None:
 
 
 def render_docx(brief: dict[str, Any]) -> bytes:
+    brief = _xml_safe(brief)
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
@@ -219,7 +239,7 @@ def render_docx(brief: dict[str, Any]) -> bytes:
             "verified against their source passage."
         )
         for q in ev.get("representative_quotes") or []:
-            bullet(f"{q['dimension']} — \u201c{q['quote']}\u201d")
+            bullet(format_evidence_quote(q))
 
     if s.get("relevant_precedent"):
         heading("RELEVANT PRECEDENT")
@@ -424,12 +444,7 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
             "verified against their source passage."
         )
         if ev.get("representative_quotes"):
-            _bullets(
-                [
-                    f"{q['dimension']} — \u201c{q['quote']}\u201d"
-                    for q in ev["representative_quotes"]
-                ]
-            )
+            _bullets([format_evidence_quote(q) for q in ev["representative_quotes"]])
 
     if s.get("relevant_precedent"):
         _h1("RELEVANT PRECEDENT")

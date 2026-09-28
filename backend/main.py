@@ -2,28 +2,46 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import structlog
 from dotenv import load_dotenv
 from sqlalchemy import select as sa_select
 from sqlalchemy import text as sa_text
 
-load_dotenv()
+# Pinned to THIS directory rather than the process cwd. A bare load_dotenv()
+# walks up from wherever the server happened to be launched, and there are two
+# .env files in this tree: backend/.env for a local uvicorn, and the repo-root
+# .env that docker-compose loads through env_file. They had drifted to
+# different GEMINI_MODEL values, so which model the pipeline used depended on
+# the launch directory — a probe against one model reported quota that the
+# other did not have. Under Docker the file is absent and the container's real
+# environment is used, which load_dotenv never overrides.
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from src import metrics
 from src.brief_export import render_docx, render_pdf
-from src.brief_generator import generate_executive_brief_text
 from src.brief_synthesis import generate_brief as generate_brief_v2
 from src.brief_synthesis import render_brief_markdown
 from src.chat import chat as chat_fn
@@ -52,6 +70,14 @@ CORS_ORIGINS = [
     if o.strip()
 ]
 
+# Workspaces a public demo serves as finished examples. Anyone can open them,
+# ask the Rapporteur about them and read their briefs; uploading to one or
+# re-running it would change the example for every other visitor, so those
+# two actions are refused. Empty by default: a local install locks nothing.
+LOCKED_WORKSPACE_IDS = frozenset(
+    w.strip().lower() for w in os.getenv("LOCKED_WORKSPACE_IDS", "").split(",") if w.strip()
+)
+
 _engine = None
 _session_factory = None
 _vector_store: VectorStore | None = None
@@ -70,6 +96,34 @@ def get_guardrails() -> Guardrails:
     if _guardrails is None:
         _guardrails = Guardrails(vector_store=get_vector_store())
     return _guardrails
+
+
+def _utc_iso(value: datetime | None) -> str:
+    """A stored timestamp as ISO 8601 carrying its UTC offset.
+
+    The columns hold naive UTC (datetime.utcnow). Sent bare, a browser reads
+    "2026-09-24T10:03:24" as its own local time: in India that placed a run's
+    start five and a half hours early, and a five-minute analysis showed an
+    elapsed time of 334 minutes.
+    """
+    if value is None:
+        return ""
+    return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
+
+
+def _safe_filename(name: str | None) -> str:
+    """The client's file name reduced to a bare name, safe inside a storage path.
+
+    The client chooses it, and it becomes part of the path the upload is written
+    to: "../../../escaped.pdf" wrote outside the uploads folder. Directory parts
+    (either slash) and control characters go; the rest is kept, so it still
+    reads as the user's own file.
+    """
+    base = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    base = "".join(ch for ch in base if ch.isprintable()).strip()
+    if base in ("", ".", ".."):
+        return "document.pdf"
+    return base[:200]
 
 
 @asynccontextmanager
@@ -194,6 +248,34 @@ async def lifespan(app: FastAPI):
     reclaim = await reclaim.execution_options(isolation_level="AUTOCOMMIT")
     try:
         for name, statement in (
+            # A run whose analysis already landed is not lost work. Kenya
+            # finished all eight dimensions and then sat wedged in
+            # PROCESSING because its slot leaked; this sweep saw the status
+            # alone, called it orphaned and sent a verified result back to
+            # QUEUED, where the page shows the country as never analysed.
+            # The analyses row is the evidence of what actually happened, so
+            # it is what decides which way the row is reclaimed.
+            #
+            # But only an analysis saved AFTER the workspace last changed is
+            # this run's. An older one is the previous run: the restart that
+            # killed Rwanda mid-analysis reported "Analysis complete" because
+            # an earlier run existed, when nothing from this one had landed.
+            (
+                "processing_with_results",
+                "UPDATE workspaces SET status = 'COMPLETE', status_detail = "
+                "'Analysis complete. The server restarted before the status "
+                "was written.' WHERE status = 'PROCESSING' AND EXISTS "
+                "(SELECT 1 FROM analyses WHERE analyses.workspace_id = workspaces.id "
+                "AND analyses.created_at >= workspaces.updated_at)",
+            ),
+            (
+                "processing_with_earlier_results",
+                "UPDATE workspaces SET status = 'COMPLETE', status_detail = "
+                "'The last run was interrupted by a server restart; the "
+                "previous analysis is shown. Run it again to update it.' "
+                "WHERE status = 'PROCESSING' AND EXISTS "
+                "(SELECT 1 FROM analyses WHERE analyses.workspace_id = workspaces.id)",
+            ),
             (
                 "processing",
                 "UPDATE workspaces SET status = 'QUEUED', status_detail = "
@@ -260,11 +342,36 @@ async def lifespan(app: FastAPI):
         await _engine.dispose()
 
 
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except ValueError:
+        return False
+    return True
+
+
+def _ids_are_well_formed(request: Request) -> None:
+    """A malformed id names nothing, so it is a 404 — not a server error.
+
+    Every route passes its id straight to uuid.UUID(), and "not-a-uuid" raised
+    out of it as a 500 on all twelve. Checked here once, for every *_id in the
+    path or the query string, before any handler runs.
+    """
+    params = list(request.path_params.items()) + list(request.query_params.items())
+    for name, value in params:
+        if name.endswith("_id") and value and not _is_uuid(value):
+            raise HTTPException(
+                404,
+                detail={"error": "not_found", "message": f"No {name[:-3]} has the id {value!r}."},
+            )
+
+
 app = FastAPI(
     title="Meridian — AI Policy Intelligence Workbench",
     description="UNDP DAI Hub: Policy gap analysis against international AI governance frameworks.",
     version="1.0.0",
     lifespan=lifespan,
+    dependencies=[Depends(_ids_are_well_formed)],
 )
 
 app.add_middleware(
@@ -298,12 +405,44 @@ class WorkspaceResponse(BaseModel):
     # Filenames uploaded but not yet analysed. Drives the workspace card's
     # "Run Analysis" affordance, so it must survive a page reload.
     pending_documents: list[str] = []
+    # A read-only example (see LOCKED_WORKSPACE_IDS): the UI hides Upload and
+    # Run for it rather than offering buttons that would be refused.
+    locked: bool = False
     created_at: str
     updated_at: str
 
 
-class BriefRequest(BaseModel):
-    workspace_id: str
+def _is_locked(workspace_id: Any) -> bool:
+    return str(workspace_id).lower() in LOCKED_WORKSPACE_IDS
+
+
+def _refuse_if_locked(workspace_id: str) -> None:
+    if _is_locked(workspace_id):
+        raise HTTPException(
+            403,
+            detail={
+                "error": "workspace_locked",
+                "message": (
+                    "This is a read-only example workspace. Create a workspace of your "
+                    "own to upload documents and run an analysis."
+                ),
+            },
+        )
+
+
+def _workspace_response(w: Any) -> WorkspaceResponse:
+    return WorkspaceResponse(
+        id=str(w.id),
+        country=w.country,
+        policy_title=w.policy_title,
+        frameworks=w.frameworks,
+        status=w.status.value,
+        status_detail=w.status_detail,
+        pending_documents=[d.get("file_name", "") for d in (w.pending_documents or [])],
+        locked=_is_locked(w.id),
+        created_at=_utc_iso(w.created_at),
+        updated_at=_utc_iso(w.updated_at),
+    )
 
 
 # --- Routes ---
@@ -414,7 +553,7 @@ async def readyz(response: Response):
             ready = False
     except Exception as exc:
         ready = False
-        checks["llm_provider"] = {"ok": False, "error": str(exc)[:200]}
+        checks["analysis_slots"] = {"ok": False, "error": str(exc)[:200]}
 
     if not ready:
         response.status_code = 503
@@ -449,8 +588,10 @@ async def health():
     """Retained for the frontend's status badge, which reads chunk and
     framework counts. New probes should use /healthz and /readyz."""
     vs = get_vector_store()
-    chunk_count = vs.count_chunks()
-    frameworks = vs.get_all_frameworks()
+    # Both walk the collection; in a thread so a badge refresh never stalls
+    # the requests queued behind it.
+    chunk_count = await asyncio.to_thread(vs.count_chunks)
+    frameworks = await asyncio.to_thread(vs.get_all_frameworks)
     return {
         "status": "ok",
         "service": "meridian-api",
@@ -464,15 +605,29 @@ async def health():
 
 @app.get("/api/v1/frameworks")
 async def list_frameworks():
-    vs = get_vector_store()
-    return get_framework_library(vs)
+    return await asyncio.to_thread(get_framework_library, get_vector_store())
 
 
 @app.post("/api/v1/frameworks/sync")
-async def sync_frameworks():
-    vs = get_vector_store()
-    sync_service = FrameworkSyncService(vs)
-    results = sync_service.sync_all()
+async def sync_frameworks(request: Request):
+    """Re-index the reference library. An operator action, not a public one.
+
+    It downloads, parses and re-embeds up to 43 documents, and every stored
+    run cites the passages it would replace, so it is off unless ADMIN_TOKEN
+    is set and the caller presents it as a bearer token.
+    """
+    admin_token = os.getenv("ADMIN_TOKEN", "")
+    supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not admin_token or not secrets.compare_digest(supplied, admin_token):
+        raise HTTPException(
+            403,
+            detail={
+                "error": "forbidden",
+                "message": "Framework sync needs the operator token (ADMIN_TOKEN).",
+            },
+        )
+    sync_service = FrameworkSyncService(get_vector_store())
+    results = await asyncio.to_thread(sync_service.sync_all)
     return {"frameworks_synced": len(results), "results": results}
 
 
@@ -485,17 +640,7 @@ async def create_workspace(body: WorkspaceCreate):
             policy_title=body.policy_title,
             frameworks=body.frameworks,
         )
-        return WorkspaceResponse(
-            id=str(workspace.id),
-            country=workspace.country,
-            policy_title=workspace.policy_title,
-            frameworks=workspace.frameworks,
-            status=workspace.status.value,
-            status_detail=workspace.status_detail,
-            pending_documents=[d.get("file_name", "") for d in (workspace.pending_documents or [])],
-            created_at=workspace.created_at.isoformat() if workspace.created_at else "",
-            updated_at=workspace.updated_at.isoformat() if workspace.updated_at else "",
-        )
+        return _workspace_response(workspace)
 
 
 @app.get("/api/v1/workspace")
@@ -503,20 +648,7 @@ async def list_workspaces():
     async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspaces = await ws_service.list_workspaces()
-        return [
-            WorkspaceResponse(
-                id=str(w.id),
-                country=w.country,
-                policy_title=w.policy_title,
-                frameworks=w.frameworks,
-                status=w.status.value,
-                status_detail=w.status_detail,
-                pending_documents=[d.get("file_name", "") for d in (w.pending_documents or [])],
-                created_at=w.created_at.isoformat() if w.created_at else "",
-                updated_at=w.updated_at.isoformat() if w.updated_at else "",
-            )
-            for w in workspaces
-        ]
+        return [_workspace_response(w) for w in workspaces]
 
 
 @app.get("/api/v1/workspace/{workspace_id}")
@@ -526,84 +658,107 @@ async def get_workspace(workspace_id: str):
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
             raise HTTPException(404, "Workspace not found")
-        return WorkspaceResponse(
-            id=str(workspace.id),
-            country=workspace.country,
-            policy_title=workspace.policy_title,
-            frameworks=workspace.frameworks,
-            status=workspace.status.value,
-            status_detail=workspace.status_detail,
-            pending_documents=[d.get("file_name", "") for d in (workspace.pending_documents or [])],
-            created_at=workspace.created_at.isoformat() if workspace.created_at else "",
-            updated_at=workspace.updated_at.isoformat() if workspace.updated_at else "",
+        return _workspace_response(workspace)
+
+
+async def _reject_upload(
+    status_code: int,
+    filename: str,
+    error_type: str,
+    message: str,
+    *,
+    workspace_id: str | None = None,
+    file_size: int | None = None,
+    ocr_warning: bool = False,
+) -> NoReturn:
+    """Refuse an upload, and leave the same record an accepted one leaves.
+
+    The upload log used to hold accepted files only, so a run of refused PDFs
+    was visible nowhere but the process log. Recording is best-effort: a
+    database hiccup must not turn a clean 400 into a 500.
+    """
+    log_upload_rejection(filename=filename, error_type=error_type, error_message=message)
+    metrics.uploads_rejected.labels(reason=error_type).inc()
+    try:
+        async with get_db() as db:
+            await WorkspaceService(db).log_upload(
+                filename=filename,
+                file_size=file_size,
+                validation_passed=False,
+                error_type=error_type,
+                error_message=message,
+                ocr_warning=ocr_warning,
+                workspace_id=workspace_id,
+            )
+    except Exception as exc:
+        logger.warning("upload_rejection_not_recorded", filename=filename, error=str(exc))
+    raise HTTPException(
+        status_code=status_code,
+        detail={"error": error_type, "message": message, "ocr_warning": ocr_warning},
+    )
+
+
+async def _read_and_validate_upload(
+    file: UploadFile, filename: str, workspace_id: str | None = None
+) -> tuple[bytes, Any]:
+    """The bounded read and the PDF checks every upload route shares."""
+    file_bytes = await _read_upload_within_limit(file, MAX_FILE_SIZE_BYTES)
+    if file_bytes is None:
+        await _reject_upload(
+            413,
+            filename,
+            "file_too_large",
+            f"File exceeds the {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit.",
+            workspace_id=workspace_id,
         )
+    # Parsing a 25MB PDF takes seconds of CPU; off the event loop, every other
+    # request (the pages poll) would otherwise stall behind it.
+    validation = await asyncio.to_thread(validate_pdf_file, file_bytes, filename)
+    if not validation.valid:
+        await _reject_upload(
+            400,
+            filename,
+            validation.error_type or "validation_failed",
+            validation.error_message or "Validation failed.",
+            workspace_id=workspace_id,
+            file_size=len(file_bytes),
+            ocr_warning=validation.ocr_warning,
+        )
+    return file_bytes, validation
 
 
 @app.post("/api/v1/upload/{workspace_id}")
 async def upload_policy(
     workspace_id: str,
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    file_bytes = await _read_upload_within_limit(file, MAX_FILE_SIZE_BYTES)
-    if file_bytes is None:
-        log_upload_rejection(
-            filename=file.filename or "unknown",
-            error_type="file_too_large",
-            error_message=f"File exceeds the {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit.",
-        )
-        raise HTTPException(
-            status_code=413,
-            detail={
-                "error": "file_too_large",
-                "message": f"File exceeds the {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit.",
-            },
-        )
-    file_size = len(file_bytes)
-    file_type = "pdf" if file.filename and file.filename.lower().endswith(".pdf") else "unknown"
+    filename = _safe_filename(file.filename)
+    # The workspace is checked before anything is read or stored: a file for
+    # a workspace that does not exist used to be written to storage first and
+    # then abandoned there by the 404.
+    async with get_db() as db:
+        if not await WorkspaceService(db).get_workspace(workspace_id):
+            raise HTTPException(404, "Workspace not found")
+    _refuse_if_locked(workspace_id)
+
+    file_bytes, validation = await _read_and_validate_upload(file, filename, workspace_id)
     logger.info(
         "stage_1_file_upload_received",
-        filename=file.filename or "unknown",
-        file_type=file_type,
-        file_size=file_size,
+        filename=filename,
+        file_size=len(file_bytes),
         workspace_id=workspace_id,
     )
-
-    validation = validate_pdf_file(file_bytes, file.filename or "document.pdf")
-    if not validation.valid:
-        log_upload_rejection(
-            filename=file.filename or "unknown",
-            error_type=validation.error_type or "validation_failed",
-            error_message=validation.error_message or "Validation failed.",
-        )
-        logger.error(
-            "stage_1_file_upload_rejected",
-            filename=file.filename or "unknown",
-            error_type=validation.error_type,
-            error_message=validation.error_message,
-            ocr_warning=validation.ocr_warning,
-            workspace_id=workspace_id,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": validation.error_type,
-                "message": validation.error_message,
-                "ocr_warning": validation.ocr_warning,
-            },
-        )
 
     # Through the storage interface rather than straight to container disk.
     # The reference is what gets persisted on the workspace row; for the
     # filesystem backend it is the same absolute path as before, so rows
     # written by older builds keep resolving.
     storage = get_storage()
-    stored_ref = storage.put(f"{uuid.uuid4()}_{file.filename}", file_bytes)
-    file_path = Path(stored_ref)
+    stored_ref = await asyncio.to_thread(storage.put, f"{uuid.uuid4()}_{filename}", file_bytes)
     logger.info(
         "stage_1_file_upload_saved",
-        filename=file.filename,
-        file_size=file_size,
+        filename=filename,
+        file_size=len(file_bytes),
         saved_path=stored_ref,
         workspace_id=workspace_id,
     )
@@ -612,6 +767,8 @@ async def upload_policy(
         ws_service = WorkspaceService(db)
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
+            # Deleted while the file was being checked.
+            await asyncio.to_thread(storage.delete, stored_ref)
             raise HTTPException(404, "Workspace not found")
 
         # Uploading no longer starts the pipeline. The file is queued on the
@@ -620,21 +777,25 @@ async def upload_policy(
         # implementation plan, say) and have both evaluated as one body of
         # policy instead of the first upload racing ahead on its own.
         pending = list(workspace.pending_documents or [])
-        file_label = file.filename or "document.pdf"
         # Re-uploading the same filename replaces the earlier copy rather than
         # queueing it twice — the pipeline would otherwise ingest, then
         # immediately delete and re-index, the same document.
-        pending = [d for d in pending if d.get("file_name") != file_label]
-        pending.append({"file_path": str(file_path), "file_name": file_label})
+        pending = [d for d in pending if d.get("file_name") != filename]
+        pending.append({"file_path": stored_ref, "file_name": filename})
 
         await ws_service.set_pending_documents(workspace_id, pending)
+        # A new document changes the body of policy being scored, so no
+        # dimension kept from an earlier, partial run still describes it. The
+        # cache exists to retry failed dimensions over the SAME documents; left
+        # in place, the next run mixed verdicts on the old set into the new.
+        await ws_service.clear_dimension_results(workspace_id)
         await ws_service.update_status(
             workspace_id,
             WorkspaceStatus.QUEUED,
             detail=(f"{len(pending)} document(s) ready. Run analysis to start."),
         )
         await ws_service.log_upload(
-            filename=file_label,
+            filename=filename,
             file_size=len(file_bytes),
             validation_passed=True,
             workspace_id=workspace_id,
@@ -645,9 +806,10 @@ async def upload_policy(
         "status": "ready",
         "message": "Upload accepted. Run analysis when your documents are ready.",
         "workspace_id": workspace_id,
-        "file_name": file_label,
+        "file_name": filename,
         "file_size": len(file_bytes),
         "pending_documents": [d["file_name"] for d in pending],
+        "notice": validation.notice,
     }
 
 
@@ -658,42 +820,31 @@ async def auditor_upload(file: UploadFile = File(...)):
     chat_only workspace, ingests the document chunks tagged to it, and hands
     the workspace id back so the merged auditor chat can scope document
     retrieval to it."""
-    # Same bounded read as the workspace upload: this endpoint is equally
-    # public and was equally happy to buffer an arbitrary POST.
-    file_bytes = await _read_upload_within_limit(file, MAX_FILE_SIZE_BYTES)
-    file_name = file.filename or "document.pdf"
-    if file_bytes is None:
-        raise HTTPException(
-            status_code=413,
-            detail={
-                "error": "file_too_large",
-                "message": f"File exceeds the {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit.",
-            },
-        )
-    logger.info(
-        "auditor_upload_received",
-        filename=file_name,
-        file_size=len(file_bytes),
-    )
+    file_name = _safe_filename(file.filename)
+    # Same bounded read and checks as the workspace upload: this endpoint is
+    # equally public.
+    file_bytes, _ = await _read_and_validate_upload(file, file_name)
+    logger.info("auditor_upload_received", filename=file_name, file_size=len(file_bytes))
 
-    validation = validate_pdf_file(file_bytes, file_name)
-    if not validation.valid:
-        log_upload_rejection(
-            filename=file_name,
-            error_type=validation.error_type or "validation_failed",
-            error_message=validation.error_message or "Validation failed.",
-        )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": validation.error_type,
-                "message": validation.error_message,
-                "ocr_warning": validation.ocr_warning,
-            },
-        )
+    storage = get_storage()
+    stored_ref = await asyncio.to_thread(storage.put, f"{uuid.uuid4()}_{file_name}", file_bytes)
 
-    stored_ref = get_storage().put(f"{uuid.uuid4()}_{file_name}", file_bytes)
-    file_path = Path(stored_ref)
+    def _ingest(workspace_id: str) -> int:
+        # Parsing, OCR fallback and embedding take tens of seconds on a long
+        # statute; run on the event loop they froze every other request. The
+        # stored reference may be remote (Azure), so ingestion reads it through
+        # local_path rather than assuming a file on this disk.
+        from src.ingestion import ingest_document
+
+        with storage.local_path(stored_ref) as path:
+            chunks = ingest_document(
+                path,
+                framework_name=None,
+                workspace_id=workspace_id,
+                document_name=file_name,
+            )
+        get_vector_store().add_chunks(chunks)
+        return len(chunks)
 
     async with get_db() as db:
         ws_service = WorkspaceService(db)
@@ -703,14 +854,11 @@ async def auditor_upload(file: UploadFile = File(...)):
             policy_title=f"AI Auditor — {title}",
             frameworks=[],
             policy_file_name=file_name,
-            policy_file_path=str(file_path),
+            policy_file_path=stored_ref,
         )
-        # NOTE: str() is required — after commit/refresh the ORM hands back
-        # an asyncpg UUID object, not a python uuid.UUID; update_status
-        # re-parses the id with uuid.UUID(...).
-        # NOTE: str() is required — after commit/refresh the ORM hands back
-        # an asyncpg UUID object, not a python uuid.UUID; update_status
-        # re-parses the id with uuid.UUID(...).
+        # str() is required: after commit/refresh the ORM hands back an
+        # asyncpg UUID object, and update_status re-parses the id with
+        # uuid.UUID(...).
         workspace_id_str = str(workspace.id)
         try:
             await ws_service.update_status(
@@ -718,19 +866,10 @@ async def auditor_upload(file: UploadFile = File(...)):
                 WorkspaceStatus.CHAT_ONLY,
                 detail="Uploaded for AI Auditor chat — no dimension analysis run.",
             )
-            from src.ingestion import ingest_document
-
-            vector_store = get_vector_store()
-            chunks = ingest_document(
-                file_path,
-                framework_name=None,
-                workspace_id=workspace_id_str,
-                document_name=file_name,
-            )
-            vector_store.add_chunks(chunks)
+            chunk_count = await asyncio.to_thread(_ingest, workspace_id_str)
         except Exception as exc:
             # No orphaned chat_only workspace / stray PDF on ingest failure:
-            # roll back the workspace row and delete the saved file, then
+            # roll back the workspace row and delete the stored file, then
             # surface a clean 500. (Any chunks already added are tagged to the
             # deleted workspace id and become unreachable — harmless.)
             logger.error(
@@ -744,7 +883,7 @@ async def auditor_upload(file: UploadFile = File(...)):
             except Exception:
                 pass
             try:
-                file_path.unlink(missing_ok=True)
+                await asyncio.to_thread(storage.delete, stored_ref)
             except Exception:
                 pass
             raise HTTPException(
@@ -754,13 +893,13 @@ async def auditor_upload(file: UploadFile = File(...)):
             "auditor_upload_ingested",
             workspace_id=workspace_id_str,
             filename=file_name,
-            chunk_count=len(chunks),
+            chunk_count=chunk_count,
         )
         return {
             "workspace_id": workspace_id_str,
             "file_name": file_name,
             "policy_title": title,
-            "chunk_count": len(chunks),
+            "chunk_count": chunk_count,
         }
 
 
@@ -781,6 +920,7 @@ async def run_analysis(
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
             raise HTTPException(404, "Workspace not found")
+        _refuse_if_locked(workspace_id)
 
         pending = list(workspace.pending_documents or [])
         if not pending:
@@ -809,8 +949,11 @@ async def run_analysis(
         # Asked of the storage backend, not of this container's disk — an
         # Azure-backed reference is not a local file and never was.
         storage = get_storage()
-        missing = [d for d in pending if not storage.exists(d.get("file_path", ""))]
-        usable = [d for d in pending if storage.exists(d.get("file_path", ""))]
+        present = await asyncio.to_thread(
+            lambda: [storage.exists(d.get("file_path", "")) for d in pending]
+        )
+        missing = [d for d, ok in zip(pending, present, strict=True) if not ok]
+        usable = [d for d, ok in zip(pending, present, strict=True) if ok]
         if missing:
             logger.warning(
                 "run_analysis_dropped_missing_files",
@@ -819,6 +962,13 @@ async def run_analysis(
             )
             await ws_service.set_pending_documents(workspace_id, usable)
         if not usable:
+            # The queue is now empty, so the "N document(s) ready" left by the
+            # upload would be a promise the next click cannot keep.
+            await ws_service.update_status(
+                workspace_id,
+                WorkspaceStatus.QUEUED,
+                detail="The uploaded files could not be found. Please upload them again.",
+            )
             raise HTTPException(
                 400,
                 detail={
@@ -848,16 +998,42 @@ async def run_analysis(
                 },
             ) from exc
 
-        await ws_service.update_status(
-            workspace_id,
-            WorkspaceStatus.PROCESSING,
-            detail=f"Starting analysis of {len(usable)} document(s).",
-        )
+        try:
+            await ws_service.update_status(
+                workspace_id,
+                WorkspaceStatus.PROCESSING,
+                detail=f"Starting analysis of {len(usable)} document(s).",
+            )
+        except BaseException:
+            # The slot is only handed to the background task below; until
+            # then a failure here would keep it for the life of the process.
+            get_slots().release()
+            raise
 
         from src.tasks import run_full_analysis_pipeline
 
+        async def _run_and_release(**kwargs: Any) -> None:
+            """Own the slot for the whole life of the background task.
+
+            The slot is taken here, in the request, and spent somewhere else,
+            in the task — so the release has to sit on the boundary between
+            the two. It used to live in the pipeline's own `finally`, which
+            is inside the `async with _get_db_session()` block and therefore
+            unreachable from the argument check and the session acquisition
+            that run ahead of it. Either of those raising returned a 200 to
+            the caller and kept the slot for the life of the process.
+
+            Two leaks is the whole limit, and then every run is refused with
+            capacity_full while nothing is running — a failure that reads
+            like a quota problem and is not one.
+            """
+            try:
+                await run_full_analysis_pipeline(**kwargs)
+            finally:
+                get_slots().release()
+
         background_tasks.add_task(
-            run_full_analysis_pipeline,
+            _run_and_release,
             workspace_id=workspace_id,
             documents=usable,
             frameworks=workspace.frameworks,
@@ -869,6 +1045,40 @@ async def run_analysis(
         "workspace_id": workspace_id,
         "documents": [d["file_name"] for d in usable],
     }
+
+
+def _failed_dimensions(analysis) -> list[str]:
+    return [
+        g.get("dimension", "")
+        for g in (analysis.governance_gaps or [])
+        if isinstance(g, dict) and g.get("analysis_error")
+    ]
+
+
+def _is_provisional(analysis) -> bool:
+    """Complete, but its mechanism evidence was never adjudicated."""
+    return any(
+        isinstance(g, dict) and g.get("mechanism_adjudication") == "unavailable"
+        for g in (analysis.governance_gaps or [])
+    )
+
+
+def _preferred_analysis(analyses: list):
+    """The run to show, brief from and answer about when none is named.
+
+    The newest COMPLETE run, not simply the newest. A run that lost dimensions
+    to the provider is still saved — on a first run it is all there is — but
+    taking analyses[0] let one displace a finished result everywhere at once:
+    a Japan run with all eight dimensions failed became the page, the brief
+    and the chat context the moment it landed. Falls back to the newest run
+    only when nothing complete exists.
+    """
+    if not analyses:
+        return None
+    return next(
+        (a for a in analyses if not _failed_dimensions(a) and not _is_provisional(a)),
+        analyses[0],
+    )
 
 
 @app.get("/api/v1/analyze/{workspace_id}")
@@ -916,60 +1126,30 @@ async def get_analysis(workspace_id: str):
                         "disclaimer", ""
                     ),
                     "evaluated_documents": metrics.get("evaluated_documents", []),
-                    "created_at": a.created_at.isoformat() if a.created_at else "",
+                    "failed_dimensions": _failed_dimensions(a),
+                    "provisional": _is_provisional(a),
+                    "created_at": _utc_iso(a.created_at),
                 }
             )
 
+        preferred = _preferred_analysis(analyses)
         return {
             "workspace_id": workspace_id,
             "status": workspace.status.value,
             "status_detail": workspace.status_detail,
+            "preferred_analysis_id": str(preferred.id) if preferred else None,
             "analyses": analysis_list,
         }
 
 
-@app.post("/api/v1/brief")
-async def generate_brief(body: BriefRequest):
-    async with get_db() as db:
-        ws_service = WorkspaceService(db)
-        analyses = await ws_service.get_analyses_for_workspace(body.workspace_id)
-        if not analyses:
-            raise HTTPException(404, "No analyses found for this workspace")
-
-        latest = analyses[0]
-
-        from src.gap_analyzer import GapAnalysisResult, GovernanceGap
-
-        gaps = [GovernanceGap(**g) for g in (latest.governance_gaps or [])]
-        result = GapAnalysisResult(
-            analysis_id=str(latest.id),
-            workspace_id=body.workspace_id,
-            document_name=latest.document_name,
-            frameworks_used=latest.frameworks_used or [],
-            governance_gaps=gaps,
-            summary=latest.summary or "",
-            total_retrieved=latest.total_retrieved or 0,
-            retrieval_frameworks=latest.retrieval_frameworks or [],
-            similarity_scores=latest.similarity_scores or [],
-            llm_latency=latest.llm_latency or 0.0,
-            total_processing_time=latest.total_processing_time or 0.0,
-        )
-
-        brief_text = generate_executive_brief_text(result)
-        return {"brief": brief_text, "format": "text"}
-
-
-# --- Executive Brief (Part 3) ---
+# --- Executive Brief ---
 # Generate = ONE synthesis LLM call over the already-stored, citation-verified
 # results. The structured brief is cached in reports (type='executive_brief',
 # meta=JSON); exports render from the cache and never re-run the LLM call.
 
 
 async def _load_latest_analysis(ws_service, workspace_id: str):
-    analyses = await ws_service.get_analyses_for_workspace(workspace_id)
-    if not analyses:
-        return None
-    return analyses[0]  # ordered created_at DESC — newest first
+    return _preferred_analysis(await ws_service.get_analyses_for_workspace(workspace_id))
 
 
 async def _load_cached_brief(db, workspace_id: str) -> Report | None:
@@ -1010,6 +1190,10 @@ async def generate_brief_v2_route(workspace_id: str):
         workspace = await ws_service.get_workspace(workspace_id)
         if not workspace:
             raise HTTPException(404, "Workspace not found")
+        # An example workspace keeps the brief it ships with; one that has none
+        # yet may still have it generated.
+        if _is_locked(workspace_id) and await _load_cached_brief(db, workspace_id):
+            _refuse_if_locked(workspace_id)
         latest = await _load_latest_analysis(ws_service, workspace_id)
         if latest is None:
             raise HTTPException(
@@ -1017,8 +1201,8 @@ async def generate_brief_v2_route(workspace_id: str):
             )
 
         gaps_raw = latest.governance_gaps or []
-        metrics = latest.ragas_metrics or {}
-        scope_info = metrics.get("scope_disclaimer") or {}
+        run_metrics = latest.ragas_metrics or {}
+        scope_info = run_metrics.get("scope_disclaimer") or {}
         scope_disclaimer = scope_info.get("disclaimer", "")
         if not scope_disclaimer:
             scope_disclaimer = (
@@ -1026,13 +1210,16 @@ async def generate_brief_v2_route(workspace_id: str):
                 "the system. It is not an assessment of the country's complete "
                 "AI governance apparatus."
             )
-        documents = metrics.get("evaluated_documents") or (
+        documents = run_metrics.get("evaluated_documents") or (
             [latest.document_name] if latest.document_name else []
         )
-        decision = metrics.get("decision_analytics") or {}
+        decision = run_metrics.get("decision_analytics") or {}
 
         try:
-            brief = generate_brief_v2(
+            # A model call of tens of seconds: in a thread, so the rest of the
+            # API keeps answering while it runs.
+            brief = await asyncio.to_thread(
+                generate_brief_v2,
                 workspace_id=workspace_id,
                 country=workspace.country,
                 policy_title=workspace.policy_title,
@@ -1042,6 +1229,7 @@ async def generate_brief_v2_route(workspace_id: str):
                 scope_disclaimer=scope_disclaimer,
                 gaps=list(gaps_raw),
                 decision_analytics=decision,
+                analysis_provenance=run_metrics.get("provenance"),
             )
         except Exception as exc:
             logger.error(
@@ -1053,8 +1241,9 @@ async def generate_brief_v2_route(workspace_id: str):
             raise HTTPException(
                 502,
                 detail=(
-                    "Brief generation failed (LLM provider/quota error). "
-                    "Try again when quota is available."
+                    "The language model could not write the brief just now (the provider "
+                    "was busy or out of quota). The analysis itself is unaffected; try "
+                    "again in a few minutes."
                 ),
             ) from exc
 
@@ -1084,11 +1273,11 @@ async def export_brief(workspace_id: str, format: str = "pdf"):
         brief = report.meta
         slug = workspace_id[:8]
         if format == "docx":
-            data = render_docx(brief)
+            data = await asyncio.to_thread(render_docx, brief)
             media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             filename = f"meridian_brief_{slug}.docx"
         elif format == "pdf":
-            data = render_pdf(brief)
+            data = await asyncio.to_thread(render_pdf, brief)
             media = "application/pdf"
             filename = f"meridian_brief_{slug}.pdf"
         else:
@@ -1111,10 +1300,8 @@ async def list_analyses(workspace_id: str):
                 "document_name": a.document_name,
                 "summary": a.summary,
                 "total_retrieved": a.total_retrieved,
-                "citation_pass_count": a.citation_pass_count,
-                "citation_fail_count": a.citation_fail_count,
                 "generated_by": a.generated_by or {"provider": "unknown", "tier": "unknown"},
-                "created_at": a.created_at.isoformat() if a.created_at else "",
+                "created_at": _utc_iso(a.created_at),
             }
             for a in analyses
         ]
@@ -1133,6 +1320,15 @@ class ChatRequest(BaseModel):
     # set, and the Rapporteur sits beside a run selector — without this it
     # answered from the newest run whatever the user was looking at.
     analysis_id: str | None = None
+
+    @field_validator("workspace_id", "session_id", "analysis_id")
+    @classmethod
+    def _well_formed(cls, value: str | None) -> str | None:
+        # Empty means "none" here (general chat has no workspace); anything
+        # else must be an id, or the handler's uuid.UUID() fails as a 500.
+        if value and not _is_uuid(value):
+            raise ValueError("not a valid id")
+        return value
 
 
 class ChatResponse(BaseModel):
@@ -1228,11 +1424,11 @@ async def chat_endpoint(body: ChatRequest):
             if workspace_id:
                 analyses = await ws_service.get_analyses_for_workspace(workspace_id)
                 if analyses:
-                    chosen = analyses[0]
+                    chosen = _preferred_analysis(analyses)
                     if body.analysis_id:
                         chosen = next(
                             (a for a in analyses if str(a.id) == body.analysis_id),
-                            analyses[0],
+                            chosen,
                         )
                     gaps_raw = chosen.governance_gaps or []
                     gaps_dict = {}
@@ -1344,8 +1540,8 @@ async def list_chat_sessions(workspace_id: str = "", mode: str | None = None):
                 finding_id=s.finding_id,
                 mode=s.mode or "advisor",
                 title=s.title,
-                created_at=s.created_at.isoformat() if s.created_at else "",
-                updated_at=s.updated_at.isoformat() if s.updated_at else "",
+                created_at=_utc_iso(s.created_at),
+                updated_at=_utc_iso(s.updated_at),
             )
             for s in sessions
         ]
@@ -1375,8 +1571,8 @@ async def get_chat_session(session_id: str):
                 finding_id=session.finding_id,
                 mode=session.mode or "advisor",
                 title=session.title,
-                created_at=session.created_at.isoformat() if session.created_at else "",
-                updated_at=session.updated_at.isoformat() if session.updated_at else "",
+                created_at=_utc_iso(session.created_at),
+                updated_at=_utc_iso(session.updated_at),
             ),
             "messages": [
                 {
@@ -1384,7 +1580,7 @@ async def get_chat_session(session_id: str):
                     "role": m.role,
                     "content": m.content,
                     "citations": m.citations or [],
-                    "created_at": m.created_at.isoformat() if m.created_at else "",
+                    "created_at": _utc_iso(m.created_at),
                 }
                 for m in messages
             ],
@@ -1402,6 +1598,33 @@ async def delete_chat_session(session_id: str):
         await db.delete(session)
         await db.commit()
         return {"status": "deleted"}
+
+
+# ── The web app, served by the API itself (optional) ─────────────────────
+# FRONTEND_DIST points at a static export of the frontend (`NEXT_OUTPUT=export
+# npm run build` writes it to frontend/out). Set, the API serves those pages
+# on the same origin, so one container is the whole application — the shape
+# of the hosted demo. Unset, as in the compose stack, nothing changes and the
+# Next server behind Caddy serves the pages instead.
+FRONTEND_DIST = os.getenv("FRONTEND_DIST", "").strip()
+
+if FRONTEND_DIST and Path(FRONTEND_DIST).is_dir():
+    _frontend_root = Path(FRONTEND_DIST).resolve()
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def frontend(path: str):
+        # Registered last, so every API route above is matched first. An
+        # unknown API path stays a JSON 404 rather than becoming a web page.
+        if path.startswith("api/"):
+            raise HTTPException(404, "Not found")
+        stem = path.strip("/")
+        for candidate in (stem, f"{stem}.html", f"{stem}/index.html".lstrip("/")):
+            target = (_frontend_root / candidate).resolve()
+            if candidate and target.is_file() and target.is_relative_to(_frontend_root):
+                # Hashed build assets never change under the same name.
+                cache = "public, max-age=31536000, immutable" if stem.startswith("_next/") else None
+                return FileResponse(target, headers={"Cache-Control": cache} if cache else None)
+        return FileResponse(_frontend_root / "404.html", status_code=404)
 
 
 if __name__ == "__main__":

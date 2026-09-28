@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
+from src.concurrency import get_slots, reset_slots
 from src.db_models import WorkspaceStatus
 
 
@@ -65,6 +66,9 @@ class FakeWorkspaceService:
 
     async def log_upload(self, **kw):
         type(self).calls.append(("log_upload", kw))
+
+    async def clear_dimension_results(self, workspace_id):
+        type(self).calls.append(("clear_dimension_results", workspace_id))
 
     async def get_analyses_for_workspace(self, workspace_id):
         return type(self).analyses
@@ -219,6 +223,62 @@ class TestUploadRoute:
         assert body["status"] == "ready"
         assert body["pending_documents"] == ["policy.pdf"]
 
+    def test_a_file_name_cannot_steer_where_the_upload_is_written(
+        self, client, monkeypatch, tmp_path
+    ):
+        # The name is the client's to choose. Unstripped, this one was written
+        # three directories above the uploads folder.
+        uploads = tmp_path / "uploads"
+        monkeypatch.setattr(main, "validate_pdf_file", lambda *a, **k: _valid())
+        monkeypatch.setattr(main, "get_storage", lambda: _FakeStorage(uploads))
+
+        body = client.post(
+            f"/api/v1/upload/{uuid.uuid4()}",
+            files={"file": ("../../../escaped.pdf", io.BytesIO(_pdf()), "application/pdf")},
+        ).json()
+
+        assert body["pending_documents"] == ["escaped.pdf"]
+        written = list(tmp_path.rglob("*escaped.pdf"))
+        assert written and all(w.parent == uploads for w in written)
+
+    def test_a_new_document_discards_dimensions_kept_from_a_partial_run(
+        self, client, monkeypatch, tmp_path
+    ):
+        # The cache lets a re-run retry only the dimensions that failed over
+        # the SAME documents. A new document changes what is being scored, so
+        # a kept verdict would describe a body of policy that no longer exists.
+        monkeypatch.setattr(main, "validate_pdf_file", lambda *a, **k: _valid())
+        monkeypatch.setattr(main, "get_storage", lambda: _FakeStorage(tmp_path))
+
+        client.post(
+            f"/api/v1/upload/{uuid.uuid4()}",
+            files={"file": ("statute.pdf", io.BytesIO(_pdf()), "application/pdf")},
+        )
+
+        assert any(c[0] == "clear_dimension_results" for c in FakeWorkspaceService.calls)
+
+    def test_nothing_is_stored_for_an_unknown_workspace(self, client, monkeypatch, tmp_path):
+        FakeWorkspaceService.workspace = None
+        monkeypatch.setattr(main, "validate_pdf_file", lambda *a, **k: _valid())
+        monkeypatch.setattr(main, "get_storage", lambda: _FakeStorage(tmp_path))
+
+        client.post(
+            f"/api/v1/upload/{uuid.uuid4()}",
+            files={"file": ("x.pdf", io.BytesIO(_pdf()), "application/pdf")},
+        )
+
+        assert not list(tmp_path.rglob("*.pdf"))
+
+    def test_a_refused_upload_is_recorded(self, client):
+        client.post(
+            f"/api/v1/upload/{uuid.uuid4()}",
+            files={"file": ("x.pdf", io.BytesIO(b"MZ\x90\x00not a pdf"), "application/pdf")},
+        )
+
+        logged = [c[1] for c in FakeWorkspaceService.calls if c[0] == "log_upload"]
+        assert logged and logged[-1]["validation_passed"] is False
+        assert logged[-1]["error_type"] == "wrong_file_type"
+
     def test_re_uploading_the_same_name_replaces_rather_than_queues_twice(
         self, client, monkeypatch, tmp_path
     ):
@@ -235,6 +295,45 @@ class TestUploadRoute:
         # Otherwise the pipeline ingests, then deletes and re-indexes, the
         # same document.
         assert body["pending_documents"] == ["policy.pdf"]
+
+
+# ── Example workspaces ──────────────────────────────────────────────────
+class TestLockedWorkspaces:
+    """A demo's showcase workspaces are read-only, and say so."""
+
+    @pytest.fixture
+    def locked_id(self, monkeypatch):
+        ws_id = str(uuid.uuid4())
+        FakeWorkspaceService.workspace = FakeWorkspace(
+            id=uuid.UUID(ws_id),
+            pending_documents=[{"file_path": "/x/policy.pdf", "file_name": "policy.pdf"}],
+        )
+        monkeypatch.setattr(main, "LOCKED_WORKSPACE_IDS", frozenset({ws_id}))
+        return ws_id
+
+    def test_a_locked_workspace_says_it_is_locked(self, client, locked_id):
+        assert client.get(f"/api/v1/workspace/{locked_id}").json()["locked"] is True
+
+    def test_an_ordinary_workspace_is_not_locked(self, client, locked_id):
+        FakeWorkspaceService.workspace = FakeWorkspace()
+        other = FakeWorkspaceService.workspace.id
+
+        assert client.get(f"/api/v1/workspace/{other}").json()["locked"] is False
+
+    def test_uploading_to_a_locked_workspace_is_refused(self, client, locked_id):
+        response = client.post(
+            f"/api/v1/upload/{locked_id}",
+            files={"file": ("x.pdf", io.BytesIO(_pdf()), "application/pdf")},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["error"] == "workspace_locked"
+
+    def test_re_running_a_locked_workspace_is_refused(self, client, locked_id):
+        response = client.post(f"/api/v1/analyze/{locked_id}/run")
+
+        assert response.status_code == 403
+        assert not any(c[0] == "update_status" for c in FakeWorkspaceService.calls)
 
 
 # ── Running an analysis ─────────────────────────────────────────────────
@@ -266,14 +365,45 @@ class TestRunAnalysis:
         assert response.status_code == 409
         assert response.json()["detail"]["error"] == "already_running"
 
+    def test_a_pipeline_that_raises_still_gives_the_slot_back(self, client, monkeypatch, tmp_path):
+        """The leak that wedged the server at capacity_full with nothing running.
+
+        The slot is acquired in the request and released in the background
+        task, so anything that stops the task reaching its own `finally` —
+        a bad argument, an unreachable database, a reload killing it — kept
+        the slot for the life of the process. Two of those and every
+        subsequent run is refused, which reads like a provider quota problem
+        and is not one.
+        """
+        reset_slots()
+
+        async def _explode(**kw):
+            raise RuntimeError("ingestion failed before the pipeline's own try")
+
+        monkeypatch.setattr("src.tasks.run_full_analysis_pipeline", _explode, raising=False)
+        present = tmp_path / "present.pdf"
+        present.write_bytes(_pdf())
+        FakeWorkspaceService.workspace.status = WorkspaceStatus.QUEUED
+        FakeWorkspaceService.workspace.pending_documents = [
+            {"file_path": str(present), "file_name": "present.pdf"}
+        ]
+
+        with pytest.raises(RuntimeError):
+            client.post(f"/api/v1/analyze/{uuid.uuid4()}/run")
+
+        assert get_slots().snapshot()["in_flight"] == 0
+
     def test_documents_missing_from_storage_are_dropped_not_fatal(
         self, client, monkeypatch, tmp_path
     ):
         # The background task is not run here; only the route's filtering is
-        # under test.
-        monkeypatch.setattr(
-            "src.tasks.run_full_analysis_pipeline", lambda **kw: None, raising=False
-        )
+        # under test. The stub is a coroutine because the real pipeline is
+        # one, and the route now awaits it through the wrapper that owns the
+        # concurrency slot — a sync stub passed only while nothing awaited.
+        async def _noop(**kw):
+            return None
+
+        monkeypatch.setattr("src.tasks.run_full_analysis_pipeline", _noop, raising=False)
         present = tmp_path / "present.pdf"
         present.write_bytes(_pdf())
         FakeWorkspaceService.workspace.pending_documents = [
@@ -298,6 +428,10 @@ class TestRunAnalysis:
 
         assert response.status_code == 400
         assert response.json()["detail"]["error"] == "files_unavailable"
+        # The upload left "1 document(s) ready"; with the queue emptied, the
+        # workspace must stop saying so.
+        details = [c[2] for c in FakeWorkspaceService.calls if c[0] == "update_status"]
+        assert details and "upload them again" in details[-1]
 
 
 # ── Analyses and briefs ─────────────────────────────────────────────────
@@ -394,3 +528,62 @@ class _FakeStorage:
         from pathlib import Path
 
         return Path(ref).is_file()
+
+
+class TestTimestamps:
+    def test_a_stored_timestamp_is_sent_as_utc(self):
+        # Stored naive, as datetime.utcnow() writes it. Sent without an offset
+        # a browser reads it as local time: in India a five-minute run showed
+        # 334 minutes elapsed.
+        assert main._utc_iso(datetime(2026, 9, 24, 10, 3, 24)) == "2026-09-24T10:03:24+00:00"
+
+    def test_a_missing_timestamp_is_empty(self):
+        assert main._utc_iso(None) == ""
+
+
+class TestSafeFilename:
+    @pytest.mark.parametrize(
+        "raw, safe",
+        [
+            ("policy.pdf", "policy.pdf"),
+            ("../../../etc/passwd.pdf", "passwd.pdf"),
+            ("..\\..\\main.py", "main.py"),
+            ("/abs/path/act.pdf", "act.pdf"),
+            ("..", "document.pdf"),
+            ("", "document.pdf"),
+            (None, "document.pdf"),
+            ("line\nbreak.pdf", "linebreak.pdf"),
+        ],
+    )
+    def test_only_the_bare_name_survives(self, raw, safe):
+        assert main._safe_filename(raw) == safe
+
+
+class TestMalformedIds:
+    """An id that cannot exist is a 404, never a 500 from uuid.UUID()."""
+
+    @pytest.mark.parametrize(
+        "method, path",
+        [
+            ("get", "/api/v1/workspace/not-a-uuid"),
+            ("get", "/api/v1/workspace/not-a-uuid/analyses"),
+            ("get", "/api/v1/analyze/not-a-uuid"),
+            ("post", "/api/v1/analyze/not-a-uuid/run"),
+            ("get", "/api/v1/brief/not-a-uuid"),
+            ("post", "/api/v1/brief/not-a-uuid/generate"),
+            ("get", "/api/v1/brief/not-a-uuid/export?format=pdf"),
+            ("get", "/api/v1/chat/sessions/not-a-uuid"),
+            ("delete", "/api/v1/chat/sessions/not-a-uuid"),
+            ("get", "/api/v1/chat/sessions?workspace_id=not-a-uuid"),
+        ],
+    )
+    def test_a_malformed_id_is_not_found(self, client, method, path):
+        assert getattr(client, method)(path).status_code == 404
+
+    def test_a_malformed_id_in_a_chat_request_is_rejected(self, client):
+        response = client.post("/api/v1/chat", json={"message": "hi", "workspace_id": "not-a-uuid"})
+
+        assert response.status_code == 422
+
+    def test_general_chat_with_no_workspace_is_still_allowed(self):
+        assert main.ChatRequest(message="hi", workspace_id="").workspace_id == ""

@@ -202,7 +202,7 @@ class TestVerifyCitation:
 
         assert result.passed is False
         assert result.chunk_exists is False
-        assert "does not exist" in result.failure_reason
+        assert "could not be found" in result.failure_reason
 
     def test_a_page_mismatch_is_reported(self):
         store = _FakeStore(
@@ -286,3 +286,44 @@ def _clear_ordinal_cache():
     _enumerated_ordinals.cache_clear()
     yield
     _enumerated_ordinals.cache_clear()
+
+
+class TestVerbatimQuotes:
+    """A word-for-word quote passes without an embedding comparison."""
+
+    LONG_CHUNK = (
+        "Preamble text that runs on for a while. "
+        * 20
+        + "The Commission shall establish a scientific panel of independent experts "
+        "to support the enforcement activities under this Regulation."
+    )
+
+    def test_a_quote_from_late_in_a_long_chunk_is_verbatim(self):
+        from src.verify import quote_is_verbatim
+
+        # Past the 500 characters the similarity check reads.
+        assert quote_is_verbatim(
+            "The Commission shall establish a scientific panel of independent experts",
+            self.LONG_CHUNK,
+        )
+
+    def test_pdf_word_splitting_does_not_defeat_it(self):
+        from src.verify import quote_is_verbatim
+
+        assert quote_is_verbatim(
+            "the AI Office shall monitor compliance of providers",
+            "Under Article 89, the AI Off ice shall monitor compliance of pro-\nviders.",
+        )
+
+    def test_a_short_fragment_proves_nothing(self):
+        from src.verify import quote_is_verbatim
+
+        assert not quote_is_verbatim("the authority shall", self.LONG_CHUNK)
+
+    def test_a_paraphrase_is_not_verbatim(self):
+        from src.verify import quote_is_verbatim
+
+        assert not quote_is_verbatim(
+            "A panel of independent scientists is set up by the Commission",
+            self.LONG_CHUNK,
+        )

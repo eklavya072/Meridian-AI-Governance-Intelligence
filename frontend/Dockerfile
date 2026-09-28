@@ -19,9 +19,13 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# The image's own unprivileged user. The server needs to write nothing, so
+# nothing is gained by running it as root and a compromise would gain it all.
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+
+USER node
 
 EXPOSE 3000
 

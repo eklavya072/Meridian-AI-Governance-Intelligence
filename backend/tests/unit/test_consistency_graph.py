@@ -1,65 +1,23 @@
 import pytest
 
 from src.consistency import (
-    COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD,
-    LADDER_RAISE_REVIEW_THRESHOLD,
+    GAP_ASSERTION_THRESHOLD,
     ConsistencyReport,
     ConsistencyValidator,
     ConsistencyViolation,
-    build_governance_dimension_graph,
     detect_covered_synthesis_drift,
-    detect_ladder_raise_contradiction,
+    detect_gap_assertions,
 )
 from src.models import (
     CoverageLevel,
-    DimensionGraph,
     GovernanceGap,
     RetrievedEvidence,
     RiskLevel,
 )
 
-
-def test_dimension_graph_build():
-    g = build_governance_dimension_graph()
-    assert "Governance" in g.nodes
-    assert "Accountability" in g.nodes
-    assert "Accountability" in g.nodes["Governance"].children
-    assert "Governance" in g.nodes["Accountability"].parents
-
-
-def test_dimension_graph_get_ancestors():
-    g = DimensionGraph()
-    g.add_relationship("A", "B", "subsumes")
-    g.add_relationship("B", "C", "requires")
-    ancestors = g.get_ancestors("C")
-    assert "B" in ancestors
-    assert "A" in ancestors
-    assert "C" not in ancestors
-
-
-def test_dimension_graph_get_descendants():
-    g = DimensionGraph()
-    g.add_relationship("A", "B", "subsumes")
-    g.add_relationship("B", "C", "requires")
-    descendants = g.get_descendants("A")
-    assert "B" in descendants
-    assert "C" in descendants
-    assert "A" not in descendants
-
-
-def test_dimension_graph_has_path():
-    g = DimensionGraph()
-    g.add_relationship("A", "B")
-    g.add_relationship("B", "C")
-    assert g.has_path("A", "C")
-    assert g.has_path("A", "B")
-    assert not g.has_path("C", "A")
-
-
-def test_consistency_validator_init():
-    validator = ConsistencyValidator()
-    assert validator.dimension_graph is not None
-    assert "Governance" in validator.dimension_graph.nodes
+# A strong gap-filling phrase weighs 3, a weak one 1. The scorer no longer
+# changes any verdict, so the boundary is a test expectation, not a rule.
+STRONG_DRIFT_WEIGHT = 3
 
 
 def test_consistency_validator_no_violations():
@@ -74,7 +32,7 @@ def test_consistency_validator_no_violations():
         ),
     ]
     report = validator.validate(gaps)
-    assert report.passed or len(report.violations) >= 0
+    assert report.passed, [v.violation_type for v in report.violations]
 
 
 def test_consistency_report():
@@ -91,31 +49,6 @@ def test_consistency_report_empty():
     report = ConsistencyReport([])
     assert report.passed
     assert report.score == 1.0
-
-
-def test_graph_child_not_covered():
-    validator = ConsistencyValidator()
-    gaps = [
-        GovernanceGap(
-            dimension="Accountability",
-            coverage=CoverageLevel.COVERED,
-            evidence=[RetrievedEvidence(chunk_id="c1", text="t1", source_framework="fw")],
-            reason_flagged="r",
-            recommendation="rec",
-        ),
-        GovernanceGap(
-            dimension="Human Oversight",
-            coverage=CoverageLevel.MISSING,
-            evidence=[RetrievedEvidence(chunk_id="c2", text="t2", source_framework="fw")],
-            reason_flagged="r",
-            recommendation="rec",
-        ),
-    ]
-    report = validator.validate(gaps)
-    graph_violations = [
-        v for v in report.violations if v.violation_type == "graph_child_not_covered"
-    ]
-    assert len(graph_violations) >= 0
 
 
 def test_risk_coherence():
@@ -177,6 +110,55 @@ def test_missing_evidence():
     assert len(evidence_violations) > 0
 
 
+def _gap(dimension, coverage, evidence, recommendation="", synthesis="Frameworks expect X."):
+    return GovernanceGap(
+        dimension=dimension,
+        coverage=coverage,
+        evidence=evidence,
+        reason_flagged="r",
+        recommendation=recommendation,
+        framework_synthesis=synthesis,
+    )
+
+
+DOC_EVIDENCE = RetrievedEvidence(
+    chunk_id="d1", text="t", source_framework="Act.pdf", document_name="Act.pdf"
+)
+FW_EVIDENCE = RetrievedEvidence(
+    chunk_id="f1",
+    text="t",
+    source_framework="OECD AI Principles",
+    document_name="OECD_AI_Principles.pdf",
+)
+
+
+def _types(gaps):
+    return [v.violation_type for v in ConsistencyValidator().validate(gaps).violations]
+
+
+def test_a_covered_dimension_is_not_missing_a_recommendation():
+    # Covered carries Best Practices instead of recommendations, so flagging
+    # it put a false warning on every Covered dimension of every run.
+    gaps = [_gap("Transparency", CoverageLevel.COVERED, [DOC_EVIDENCE, FW_EVIDENCE])]
+    assert "recommendation_missing" not in _types(gaps)
+
+
+def test_a_gap_without_a_recommendation_is_still_flagged():
+    gaps = [_gap("Transparency", CoverageLevel.PARTIAL, [DOC_EVIDENCE, FW_EVIDENCE])]
+    assert "recommendation_missing" in _types(gaps)
+
+
+def test_a_gap_resting_on_document_passages_alone_is_flagged():
+    # Every citation used to count as framework evidence, so this never fired.
+    gaps = [_gap("Transparency", CoverageLevel.PARTIAL, [DOC_EVIDENCE], recommendation="rec")]
+    assert "missing_framework_evidence" in _types(gaps)
+
+
+def test_a_gap_with_framework_evidence_is_not_flagged():
+    gaps = [_gap("Transparency", CoverageLevel.PARTIAL, [DOC_EVIDENCE, FW_EVIDENCE], "rec")]
+    assert "missing_framework_evidence" not in _types(gaps)
+
+
 # ── Fully Covered synthesis-drift safeguard ─────────────────────────────
 
 
@@ -201,7 +183,7 @@ def test_drift_detector_strong_signal_downgrades():
         "should establish an oversight body to close the gap."
     )
     score, phrases = detect_covered_synthesis_drift(bad)
-    assert score >= COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD
+    assert score >= STRONG_DRIFT_WEIGHT
     assert any(p in phrases for p in ("should establish", "in order to", "close the gap"))
 
 
@@ -209,7 +191,7 @@ def test_drift_detector_should_implement():
     score, phrases = detect_covered_synthesis_drift(
         "The policy should implement a national registry."
     )
-    assert score >= COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD
+    assert score >= STRONG_DRIFT_WEIGHT
     assert "should implement" in phrases
 
 
@@ -217,7 +199,7 @@ def test_drift_detector_would_strengthen():
     score, phrases = detect_covered_synthesis_drift(
         "Mandating disclosure would strengthen public oversight."
     )
-    assert score >= COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD
+    assert score >= STRONG_DRIFT_WEIGHT
     assert "would strengthen" in phrases
 
 
@@ -226,7 +208,7 @@ def test_drift_detector_weak_signal_flags_only():
     score, phrases = detect_covered_synthesis_drift(
         "The document covers the principle but the synthesis lacks clarity."
     )
-    assert 0 < score < COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD
+    assert 0 < score < STRONG_DRIFT_WEIGHT
     assert "lacks" in phrases
 
 
@@ -253,7 +235,7 @@ def test_drift_detector_explicit_non_substantive_admission_downgrades():
     score, phrases = detect_covered_synthesis_drift(
         "The document does not substantively satisfy the consent principle."
     )
-    assert score >= COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD
+    assert score >= STRONG_DRIFT_WEIGHT
     assert "does not substantively" in phrases
 
 
@@ -299,10 +281,10 @@ def test_drift_detector_does_not_match_recommendation_noun():
 # ── Ladder-raise review safeguard ────────────────────────────────────────
 
 
-def test_ladder_raise_detector_clean_reasoning():
+def test_gap_assertion_detector_clean_reasoning():
     # A raise whose reasoning describes the concrete mechanisms (no explicit
     # gap assertions) stays clean — no contradiction to flag.
-    score, phrases = detect_ladder_raise_contradiction(
+    score, phrases = detect_gap_assertions(
         "The Act establishes concrete notification and labeling duties for "
         "high-impact AI and generative AI services."
     )
@@ -310,70 +292,70 @@ def test_ladder_raise_detector_clean_reasoning():
     assert phrases == []
 
 
-def test_ladder_raise_detector_strong_gap_assertion_flags():
+def test_gap_assertion_detector_strong_gap_assertion_flags():
     # The exact India Transparency case: the model's reasoning lists explicit
     # gaps ("does not establish ... obligations") while the ladder raised the
     # verdict to Covered — one strong assertion crosses the review threshold.
-    score, phrases = detect_ladder_raise_contradiction(
+    score, phrases = detect_gap_assertions(
         "The Act requires advance notification for high-impact AI but does "
         "not establish individual-level explainability obligations, technical "
         "documentation standards, or system logging mechanisms."
     )
-    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+    assert score >= GAP_ASSERTION_THRESHOLD
     assert "does not establish" in phrases
 
 
-def test_ladder_raise_detector_never_mentions_flags():
-    score, phrases = detect_ladder_raise_contradiction("Document never mentions transparency.")
-    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+def test_gap_assertion_detector_never_mentions_flags():
+    score, phrases = detect_gap_assertions("Document never mentions transparency.")
+    assert score >= GAP_ASSERTION_THRESHOLD
     assert "never mentions" in phrases
 
 
-def test_ladder_raise_detector_lacks_flags():
-    score, phrases = detect_ladder_raise_contradiction(
+def test_gap_assertion_detector_lacks_flags():
+    score, phrases = detect_gap_assertions(
         "The policy covers notification but lacks any explainability or logging requirements."
     )
-    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+    assert score >= GAP_ASSERTION_THRESHOLD
     assert "lacks" in phrases
 
 
-def test_ladder_raise_detector_empty_reasoning():
-    assert detect_ladder_raise_contradiction("") == (0, [])
-    assert detect_ladder_raise_contradiction(None) == (0, [])
+def test_gap_assertion_detector_empty_reasoning():
+    assert detect_gap_assertions("") == (0, [])
+    assert detect_gap_assertions(None) == (0, [])
 
 
-def test_ladder_raise_detector_no_double_count_on_substring_phrases():
+def test_gap_assertion_detector_no_double_count_on_substring_phrases():
     # "does not provide" contains both "does not" and "does not provide" —
     # the score must count the specific phrase once, not double-inflate.
-    score, phrases = detect_ladder_raise_contradiction(
+    score, phrases = detect_gap_assertions(
         "The document does not provide any enforcement mechanism."
     )
     assert "does not provide" in phrases
     assert phrases.count("does not provide") == 1
 
 
-def test_ladder_raise_detector_provides_no_flags():
+def test_gap_assertion_detector_provides_no_flags():
     # The Fairness miss: the model phrased its gap as "provides no concrete
     # operational mechanisms" — subject-verb-negator order, not caught by
     # the "does not provide" family. A raised verdict paired with this
     # explicit-absence construction is the same contradiction and must
     # flag for review.
-    score, phrases = detect_ladder_raise_contradiction(
+    score, phrases = detect_gap_assertions(
         "The Act provides no concrete operational mechanisms for fairness or non-discrimination."
     )
-    assert score >= LADDER_RAISE_REVIEW_THRESHOLD
+    assert score >= GAP_ASSERTION_THRESHOLD
     assert "provides no" in phrases
 
 
-def test_ladder_raise_detector_explicit_absence_variants_flag():
+def test_gap_assertion_detector_explicit_absence_variants_flag():
     for reasoning in (
         "The Act establishes no liability framework for AI harms.",
         "The policy sets out no redress pathway for affected individuals.",
         "The framework contains no privacy provisions.",
         "The Act imposes no monitoring or enforcement duties.",
     ):
-        score, phrases = detect_ladder_raise_contradiction(reasoning)
-        assert score >= LADDER_RAISE_REVIEW_THRESHOLD, reasoning
+        score, phrases = detect_gap_assertions(reasoning)
+        assert score >= GAP_ASSERTION_THRESHOLD, reasoning
         assert phrases, reasoning
 
 
@@ -444,5 +426,5 @@ def test_drift_detector_honesty_phrase_with_strong_signal_downgrades():
         "The policy should establish a registry and currently does not provide "
         "any enforcement mechanism."
     )
-    assert score >= COVERED_SYNTHESIS_DOWNGRADE_THRESHOLD
+    assert score >= STRONG_DRIFT_WEIGHT
     assert "should establish" in phrases
