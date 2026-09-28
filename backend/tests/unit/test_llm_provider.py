@@ -320,3 +320,91 @@ class TestMalformedReplies:
             candidates=[types.SimpleNamespace(content=types.SimpleNamespace(parts=parts))]
         )
         assert _response_text(reply) == '{"answer": "ok"}'
+
+
+class TestOverloadFallback:
+    """An overloaded model hands the request on; nothing else does."""
+
+    @pytest.fixture
+    def genai_with(self, monkeypatch):
+        """A fake SDK whose answer depends on the model asked."""
+
+        def install(behaviour):
+            asked = []
+
+            class _Models:
+                def generate_content(self, model, contents, config):
+                    asked.append(model)
+                    outcome = behaviour.get(model, "ok")
+                    if outcome != "ok":
+                        raise Exception(outcome)
+                    part = types.SimpleNamespace(text='{"answer": "ok"}')
+                    content = types.SimpleNamespace(parts=[part])
+                    return types.SimpleNamespace(
+                        candidates=[types.SimpleNamespace(content=content)]
+                    )
+
+            class _Client:
+                def __init__(self, api_key=None, http_options=None):
+                    self.models = _Models()
+
+            genai = types.ModuleType("google.genai")
+            genai.Client = _Client
+            genai_types = types.ModuleType("google.genai.types")
+            genai_types.ThinkingConfig = lambda **kw: kw
+            genai_types.GenerateContentConfig = lambda **kw: kw
+            genai_types.HttpOptions = lambda **kw: kw
+            genai.types = genai_types
+            monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+            monkeypatch.setitem(sys.modules, "google.genai", genai)
+            monkeypatch.setitem(sys.modules, "google.genai.types", genai_types)
+            monkeypatch.setenv("GEMINI_API_KEY", "k1")
+            monkeypatch.setenv("GEMINI_MODEL", "primary-model")
+            monkeypatch.setattr(
+                "src.llm_provider.GEMINI_FALLBACK_MODELS", ["second-model", "third-model"]
+            )
+            return asked
+
+        return install
+
+    OVERLOADED = "503 UNAVAILABLE. This model is currently experiencing high demand."
+
+    def test_an_overloaded_model_hands_the_request_to_the_next(self, genai_with):
+        asked = genai_with({"primary-model": self.OVERLOADED})
+
+        assert GeminiProvider().generate_structured("prompt", Reply).answer == "ok"
+        assert asked == ["primary-model", "second-model"]
+
+    def test_the_run_records_which_model_answered(self, genai_with):
+        from collections import Counter
+
+        from src.llm_provider import MODELS_SERVED
+
+        genai_with({"primary-model": self.OVERLOADED})
+        served = Counter()
+        token = MODELS_SERVED.set(served)
+        try:
+            GeminiProvider().generate_text("prompt")
+            GeminiProvider().generate_text("prompt")
+        finally:
+            MODELS_SERVED.reset(token)
+
+        assert served == Counter({"second-model": 2})
+
+    def test_a_quota_refusal_is_not_handed_on(self, genai_with):
+        # A 429 belongs to the router's per-key circuit breaker; moving it to
+        # another model would hide a spent credential.
+        asked = genai_with({"primary-model": "429 RESOURCE_EXHAUSTED quota"})
+
+        with pytest.raises(QuotaExceededError):
+            GeminiProvider().generate_text("prompt")
+        assert asked == ["primary-model"]
+
+    def test_every_model_overloaded_is_still_an_error(self, genai_with):
+        asked = genai_with(
+            dict.fromkeys(("primary-model", "second-model", "third-model"), self.OVERLOADED)
+        )
+
+        with pytest.raises(RetryableError):
+            GeminiProvider().generate_text("prompt")
+        assert asked == ["primary-model", "second-model", "third-model"]

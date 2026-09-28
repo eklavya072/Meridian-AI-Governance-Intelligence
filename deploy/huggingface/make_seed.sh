@@ -60,7 +60,13 @@ FROM (
 WHERE c.workspace_id = w.id;
 SQL
 
-pg_dump $PG --no-owner --no-privileges "$SEED_DB" > "$OUT/seed.sql"
+# The showcase runs record the build they came from, 97f37e6. Publishing
+# the repository rewrote history to leave unpublished working material out,
+# which changed that commit's hash to 01646e4 without changing a line of its
+# code. The provenance is pointed at the commit that exists.
+pg_dump $PG --no-owner --no-privileges "$SEED_DB" \
+    | sed 's/97f37e67aacba68bc5cb023ac73c37dd75937e00/01646e49e59e1f9b3cd599c946999298748a74a6/g' \
+    > "$OUT/seed.sql"
 dropdb $PG "$SEED_DB"
 
 rm -rf "$OUT/chroma"

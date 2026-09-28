@@ -15,12 +15,14 @@ Sections split:
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
 import structlog
 from pydantic import BaseModel, Field
 
+from src.llm_provider import MODELS_SERVED, describe_models_served
 from src.provider_router import generate_with_retry, get_provider
 
 logger = structlog.get_logger()
@@ -626,13 +628,21 @@ def generate_brief(
         decision=decision_analytics,
         num_dimensions=len(gaps),
     )
-    synthesis = generate_with_retry(
-        provider=provider,
-        prompt=prompt,
-        schema=BriefSynthesis,
-        system_prompt=BRIEF_SYSTEM_PROMPT,
-        operation="brief_synthesis",
-    )
+    # Counted, because an overloaded model hands the request to a fallback:
+    # the brief names the model that actually wrote it.
+    served: Counter[str] = Counter()
+    token = MODELS_SERVED.set(served)
+    try:
+        synthesis = generate_with_retry(
+            provider=provider,
+            prompt=prompt,
+            schema=BriefSynthesis,
+            system_prompt=BRIEF_SYSTEM_PROMPT,
+            operation="brief_synthesis",
+        )
+    finally:
+        MODELS_SERVED.reset(token)
+    brief_model = describe_models_served(served) if served else provider.model_name
 
     brief = assemble_brief(
         workspace_id=workspace_id,
@@ -645,7 +655,7 @@ def generate_brief(
         gaps=gaps,
         synthesis=synthesis,
         decision_analytics=decision_analytics,
-        provenance={**(analysis_provenance or {}), "brief_llm_model": provider.model_name},
+        provenance={**(analysis_provenance or {}), "brief_llm_model": brief_model},
     )
 
     logger.info(
@@ -658,7 +668,7 @@ def generate_brief(
         attention=len(brief["sections"]["areas_requiring_attention"]),
         recommendations=len(brief["sections"]["priority_recommendations"]),
         precedent=bool(brief["sections"]["relevant_precedent"]),
-        provider=provider.model_name,
+        provider=brief_model,
     )
     return brief
 

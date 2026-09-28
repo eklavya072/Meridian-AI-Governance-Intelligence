@@ -98,6 +98,7 @@ def is_replay_mode() -> bool:
 def build_provenance(
     llm_model: str | None = None,
     llm_calls: int | None = None,
+    served_by: str | None = None,
 ) -> dict[str, Any]:
     """The provenance record persisted with an analysis and rendered in exports."""
     from src.vectorstore import EMBEDDING_MODEL_NAME
@@ -125,6 +126,9 @@ def build_provenance(
         "embedding_model": EMBEDDING_MODEL_NAME,
         "verification": verification,
         "llm_model": llm_model or os.getenv("GEMINI_MODEL", "unknown"),
+        # Which models actually answered, when that was not only llm_model:
+        # an overloaded model hands requests to a fallback.
+        "llm_served_by": served_by,
         "llm_calls": llm_calls,
         "prompt_version": PROMPT_VERSION,
         "framework_corpus": framework_corpus_hash(),
@@ -156,6 +160,8 @@ def render_provenance_lines(provenance: dict[str, Any]) -> list[str]:
     ]
     if provenance.get("llm_calls") is not None:
         lines.insert(3, f"Language-model calls: {provenance['llm_calls']}")
+    if provenance.get("llm_served_by"):
+        lines.insert(3, f"Models that answered: {provenance['llm_served_by']}")
     if provenance.get("brief_llm_model"):
         lines.append(f"Brief narrative written by: {provenance['brief_llm_model']}")
     return lines

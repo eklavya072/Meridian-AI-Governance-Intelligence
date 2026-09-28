@@ -5,8 +5,10 @@ import re
 import threading
 import time
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -53,7 +55,7 @@ from src.grading import (
     verdict_confidence,
 )
 from src.grading import build_provision_profile as build_provision_profile
-from src.llm_provider import LLMProvider
+from src.llm_provider import MODELS_SERVED, LLMProvider, describe_models_served
 from src.mechanism_adjudication import adjudicate_batch
 from src.models import (
     BestPractices,
@@ -4069,7 +4071,12 @@ class GapAnalyzer:
         with ThreadPoolExecutor(
             max_workers=max(1, min(ANALYSIS_MAX_CONCURRENCY, len(calls)))
         ) as pool:
-            for dimension, answer, error in pool.map(ask, calls):
+            # Each task runs in a copy of this context, so the run's model
+            # count (MODELS_SERVED) reaches the worker threads.
+            contexts = [copy_context() for _ in calls]
+            for dimension, answer, error in pool.map(
+                lambda ctx, call: ctx.run(ask, call), contexts, calls
+            ):
                 if answer is None:
                     errors[dimension] = error
                 else:
@@ -4220,6 +4227,41 @@ class GapAnalyzer:
         dimension_callback: Callable | None = None,
         country: str | None = None,
     ) -> GapAnalysisResult:
+        """Run the analysis, and record which models actually answered it.
+
+        The configured model is what a run asks for; when it is overloaded the
+        provider moves a request to a fallback model (GEMINI_FALLBACK_MODELS).
+        The count of answers per model goes on the result, so a run served
+        partly by a fallback says so instead of claiming one model.
+        """
+        served: Counter[str] = Counter()
+        token = MODELS_SERVED.set(served)
+        try:
+            result = self._analyze(
+                document_text,
+                document_name,
+                workspace_id,
+                frameworks=frameworks,
+                existing_results=existing_results,
+                dimension_callback=dimension_callback,
+                country=country,
+            )
+        finally:
+            MODELS_SERVED.reset(token)
+        if served:
+            result.generated_by["served_by"] = describe_models_served(served)
+        return result
+
+    def _analyze(
+        self,
+        document_text: str,
+        document_name: str,
+        workspace_id: str,
+        frameworks: list[str] | None = None,
+        existing_results: dict[str, GovernanceGap] | None = None,
+        dimension_callback: Callable | None = None,
+        country: str | None = None,
+    ) -> GapAnalysisResult:
         start_time = time.time()
         analysis_id = str(uuid.uuid4())
 
@@ -4266,6 +4308,7 @@ class GapAnalyzer:
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
                         pool.submit(
+                            copy_context().run,
                             self._analyze_one_dimension,
                             d,
                             workspace_id,

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import threading
 from abc import ABC, abstractmethod
+from collections import Counter
+from contextvars import ContextVar
 from typing import Any, TypeVar
 
 import structlog
@@ -59,6 +61,43 @@ DEFAULT_MAX_OUTPUT_TOKENS = 8192
 #: reduction in variance rather than a promise of none. Nothing downstream
 #: depends on it holding.
 GEMINI_SEED = int(os.getenv("GEMINI_SEED", "20260919"))
+
+# Models to try, in order, when the configured one reports it is overloaded.
+# Overload is per model and can last hours: on 2026-09-28 gemini-3.5-flash
+# refused every request for most of an afternoon while gemini-3.6-flash and
+# the flash-lite models answered. Without a fallback, every analysis, brief
+# and chat reply failed for that whole stretch. Only overload moves a request
+# on; a quota refusal, a safety block or a bad request is the router's to
+# handle. Set GEMINI_FALLBACK_MODELS to an empty string to pin one model.
+GEMINI_FALLBACK_MODELS = [
+    m.strip()
+    for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3.6-flash,gemini-3.5-flash-lite").split(
+        ","
+    )
+    if m.strip()
+]
+
+# "The model is overloaded", as opposed to "you may not". Both a 503 and a
+# server-side deadline mean the request never got model time.
+_OVERLOAD_MARKERS = ("503", "unavailable", "high demand", "overloaded", "504", "deadline_exceeded")
+
+
+def is_overload(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _OVERLOAD_MARKERS)
+
+
+# Which models actually answered, counted for whoever set a Counter here (an
+# analysis run, a brief). A ContextVar rather than state on the shared
+# provider, so two runs in flight at once never mix their counts; callers
+# that fan out to worker threads copy the context into each task.
+MODELS_SERVED: ContextVar[Counter[str] | None] = ContextVar("models_served", default=None)
+_served_lock = threading.Lock()
+
+
+def describe_models_served(served: Counter[str]) -> str:
+    """ "gemini-3.5-flash ×7, gemini-3.6-flash ×2", most-used first."""
+    return ", ".join(f"{model} ×{n}" for model, n in served.most_common())
 
 
 class QuotaExceededError(Exception):
@@ -263,12 +302,32 @@ class GeminiProvider(LLMProvider):
             config_kwargs["response_mime_type"] = "application/json"
             config_kwargs["response_schema"] = schema
 
-        response = client.models.generate_content(
-            model=self.model_name_str,
-            contents=prompt,
-            config=types.GenerateContentConfig(**config_kwargs),
-        )
-        return _response_text(response), None
+        models = [self.model_name_str] + [
+            m for m in GEMINI_FALLBACK_MODELS if m != self.model_name_str
+        ]
+        for position, model in enumerate(models):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+            except Exception as exc:
+                if position + 1 < len(models) and is_overload(exc):
+                    logger.warning(
+                        "gemini_model_overloaded_trying_next",
+                        model=model,
+                        next_model=models[position + 1],
+                        error=str(exc)[:120],
+                    )
+                    continue
+                raise
+            served = MODELS_SERVED.get()
+            if served is not None:
+                with _served_lock:
+                    served[model] += 1
+            return _response_text(response), model
+        raise AssertionError("unreachable: the last model either answers or raises")
 
     def generate_structured(
         self,

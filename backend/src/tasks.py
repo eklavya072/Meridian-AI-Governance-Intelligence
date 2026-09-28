@@ -554,6 +554,7 @@ async def run_full_analysis_pipeline(
             # a verdict without needing to know which build was deployed.
             provenance = build_provenance(
                 llm_model=(getattr(result, "generated_by", None) or {}).get("provider"),
+                served_by=(getattr(result, "generated_by", None) or {}).get("served_by"),
                 llm_calls=result.llm_call_count,
             )
             analysis_dict["provenance"] = provenance
