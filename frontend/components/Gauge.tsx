@@ -102,7 +102,18 @@ export default function Gauge({
       ease: EASE.out,
       onUpdate: (latest) => setDisplay(latest),
     });
-    return () => controls.stop();
+    // animate() advances on animation frames, and a page the browser is not
+    // painting (a background tab) gets none, so the number sat at 0.0. The
+    // count is decoration; the value must arrive regardless — the same rule
+    // StatsBand follows.
+    const settle = window.setTimeout(() => {
+      controls.stop();
+      setDisplay(numericTarget);
+    }, 1400);
+    return () => {
+      controls.stop();
+      window.clearTimeout(settle);
+    };
   }, [entered, numericTarget, reduced]);
 
   const shown = useMemo(() => {

@@ -10,8 +10,13 @@ from types import SimpleNamespace
 from main import _failed_dimensions, _is_provisional, _preferred_analysis
 
 
-def _run(name, *gaps):
-    return SimpleNamespace(id=name, governance_gaps=list(gaps))
+def _run(name, *gaps, documents=()):
+    return SimpleNamespace(
+        id=name,
+        governance_gaps=list(gaps),
+        ragas_metrics={"evaluated_documents": list(documents)},
+        document_name=None,
+    )
 
 
 OK = {"dimension": "Privacy"}
@@ -42,3 +47,21 @@ def test_failed_dimensions_are_named():
 
 def test_no_runs_means_nothing_to_prefer():
     assert _preferred_analysis([]) is None
+
+
+def test_a_newer_run_over_fewer_documents_does_not_displace_the_full_set():
+    # Japan keeps a run over its guidelines alone next to the run over the
+    # guidelines and both statutes. Re-scoring the guidelines alone must not
+    # turn the country's page into a one-document assessment.
+    guidelines_only = _run("new", OK, documents=["AI Guidelines for Business.pdf"])
+    full_set = _run(
+        "old", OK, documents=["AI Guidelines for Business.pdf", "APPI 2003.pdf", "AI Act.pdf"]
+    )
+
+    assert _preferred_analysis([guidelines_only, full_set]).id == "old"
+
+
+def test_the_newest_wins_among_runs_over_the_same_documents():
+    newer, older = _run("new", OK, documents=["a.pdf"]), _run("old", OK, documents=["a.pdf"])
+
+    assert _preferred_analysis([newer, older]).id == "new"

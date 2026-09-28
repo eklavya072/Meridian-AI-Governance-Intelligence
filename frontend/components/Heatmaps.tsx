@@ -40,12 +40,21 @@ const COVERAGE_FILL: Record<string, string> = {
   "Insufficient Evidence": "#B07E2B",
 };
 
-function analysisDocuments(a: Analysis): string[] {
+export function analysisDocuments(a: Analysis): string[] {
   return a.evaluated_documents?.length
     ? a.evaluated_documents
     : a.document_name
     ? [a.document_name]
     : [];
+}
+
+/** Runs in the order a workspace's document set grew: fewer documents first
+ *  (a strategy alone), then more (the strategy with its statute). Date only
+ *  breaks ties. A stage re-scored later must still read as the earlier
+ *  stage, or the trajectory runs backwards. */
+export function byStage(a: Analysis, b: Analysis): number {
+  const size = analysisDocuments(a).length - analysisDocuments(b).length;
+  return size !== 0 ? size : (a.created_at || "").localeCompare(b.created_at || "");
 }
 
 interface ComparisonCell {
@@ -67,11 +76,8 @@ function buildComparisonMatrix(analyses: Analysis[]): {
   columns: ComparisonColumn[];
   cells: Map<string, ComparisonCell>; // key `${dimension}::${analysis_id}`
 } {
-  // Chronological, oldest first — a trajectory reads left to right the way
-  // the runs actually happened.
-  const sorted = [...analyses].sort(
-    (a, b) => (a.created_at || "").localeCompare(b.created_at || "")
-  );
+  // Stage order, left to right: each column adds an instrument.
+  const sorted = [...analyses].sort(byStage);
 
   let previousDocs = new Set<string>();
   const columns: ComparisonColumn[] = sorted.map((a, i) => {

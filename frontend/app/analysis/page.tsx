@@ -33,7 +33,7 @@ import {
   DepthGauge,
   StageHistogram,
 } from "@/components/DashboardCharts";
-import { RunComparisonHeatmap } from "@/components/Heatmaps";
+import { RunComparisonHeatmap, analysisDocuments, byStage } from "@/components/Heatmaps";
 import ProvisionChecklist from "@/components/ProvisionChecklist";
 import {
   RadarChart,
@@ -46,7 +46,6 @@ import {
 import { useChat } from "@/components/ChatProvider";
 import CitationAccordion from "@/components/CitationAccordion";
 import { resolveFrameworkLinks } from "@/lib/frameworkLinks";
-import { localTime } from "@/lib/utils";
 import {
   EASE,
   DUR,
@@ -1260,10 +1259,7 @@ function DecisionAnalyticsCard({
   // trajectory into a future run the reader hasn't gotten to yet.
   const isBaselineRun = useMemo(() => {
     if (analyses.length < 2) return true;
-    const sorted = [...analyses].sort(
-      (a, b) => (a.created_at || "").localeCompare(b.created_at || "")
-    );
-    return sorted[0]?.analysis_id === currentAnalysisId;
+    return [...analyses].sort(byStage)[0]?.analysis_id === currentAnalysisId;
   }, [analyses, currentAnalysisId]);
   const radar = useMemo(() => {
     const values: Record<string, number> = {};
@@ -1809,48 +1805,20 @@ export default function AnalysisPage() {
       {analyses.length > 1 && (
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-sm font-semibold text-navy-950">Documents evaluated:</span>
-          {analyses.map((a) => {
-            // Label by what was actually evaluated, not by run order/time —
-            // a multi-document workspace (e.g. India: DPDPA, then DPDPA +
-            // AI Governance Guidelines added) reads far more clearly as
-            // "DPDPA" / "DPDPA, AI Governance Guidelines" than as
-            // "Run 1" / "Latest run" with a timestamp.
-            //
-            // That only distinguishes runs whose document set CHANGED.
-            // Re-scoring a country produces runs over the same files, and
-            // the UK showed three identical chips whose only difference was
-            // a tooltip. Where the label would repeat, the date is appended
-            // — on those runs it is the thing that actually differs.
-            const docs = a.evaluated_documents?.length
-              ? a.evaluated_documents
-              : a.document_name
-              ? [a.document_name]
-              : [];
+          {[...analyses].sort(byStage).map((a) => {
+            // Labelled by what was evaluated, in the order the document set
+            // grew. A workspace keeps one run per document set, so the labels
+            // are distinct without a date.
+            const docs = analysisDocuments(a);
             const base = docs.length > 0 ? docs.join(" + ") : "Untitled run";
-            const repeated =
-              analyses.filter((other) => {
-                const d = other.evaluated_documents?.length
-                  ? other.evaluated_documents
-                  : other.document_name
-                  ? [other.document_name]
-                  : [];
-                return (d.length > 0 ? d.join(" + ") : "Untitled run") === base;
-              }).length > 1;
-            // Minute resolution, not just the date: re-scoring twice in one
-            // day is the normal case, and two chips reading "· 2026-09-18"
-            // are no more distinguishable than two reading neither.
-            const when =
-              repeated && a.created_at
-                ? `${base} · ${localTime(a.created_at)}`
-                : base;
             // Kept selectable, never hidden — but a reader comparing runs has
             // to know which of them is missing dimensions.
             const failedCount = a.failed_dimensions?.length ?? 0;
             const label = failedCount
-              ? `${when} · ${failedCount} of ${a.governance_gaps.length} not assessed`
+              ? `${base} · ${failedCount} of ${a.governance_gaps.length} not assessed`
               : a.provisional
-              ? `${when} · provisional`
-              : when;
+              ? `${base} · provisional`
+              : base;
             return (
               <button
                 key={a.analysis_id}
@@ -1858,7 +1826,6 @@ export default function AnalysisPage() {
                   setSelectedAnalysisId(a.analysis_id);
                   setAnalysis(a);
                 }}
-                title={a.created_at ? localTime(a.created_at) : undefined}
                 className={`pressable px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                   a.analysis_id === selectedAnalysisId
                     ? "bg-undp-blue text-white border-undp-blue"

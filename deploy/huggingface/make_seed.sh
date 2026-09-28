@@ -7,10 +7,11 @@
 # <out-dir>/seed.sql and <out-dir>/chroma. Stop the API first: the index is
 # copied as files, and a process writing to it would tear the copy.
 #
-# The seed holds the eight showcase workspaces, each with ONLY the run the
-# study reports (older runs came from earlier builds of the scorer), and the
-# briefs written from those runs. Chats, upload logs, the quota ledger and
-# every local file path are left out.
+# The local database is the curated set: one run per country and document
+# set (the study's run over the full set, plus a run over the first document
+# alone where a country's set grew). The seed keeps every COMPLETE run, the
+# briefs, and the workspaces that own them. Chats, upload logs, the quota
+# ledger and every local file path are left out.
 set -eu
 
 OUT="${1:?usage: make_seed.sh <out-dir>}"
@@ -18,9 +19,6 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PG="-h localhost -U aura"
 export PGPASSWORD="${PGPASSWORD:-aura}"
 SEED_DB=meridian_seed
-
-# The run per country the study reports, by id prefix.
-PREFERRED="'8edf3aca','c7e27689','a4b4831b','45870080','f58a2856','62fbc554','a3fd11f3','ffb0518c'"
 
 mkdir -p "$OUT"
 dropdb $PG --if-exists "$SEED_DB"
@@ -32,9 +30,11 @@ DELETE FROM chat_messages;
 DELETE FROM chat_sessions;
 DELETE FROM upload_logs;
 DELETE FROM provider_health;
-DELETE FROM reports WHERE workspace_id NOT IN (
-    SELECT workspace_id FROM analyses WHERE left(id::text, 8) IN ($PREFERRED));
-DELETE FROM analyses WHERE left(id::text, 8) NOT IN ($PREFERRED);
+-- A run that lost dimensions to the provider is not an example.
+DELETE FROM analyses a WHERE EXISTS (
+    SELECT 1 FROM json_array_elements(a.governance_gaps) g
+    WHERE coalesce(g->>'analysis_error', '') <> '');
+DELETE FROM reports WHERE workspace_id NOT IN (SELECT workspace_id FROM analyses);
 DELETE FROM workspaces WHERE id NOT IN (SELECT workspace_id FROM analyses);
 
 -- No local paths in a public image. The showcase is read-only, so the
@@ -46,17 +46,21 @@ UPDATE workspaces SET
         SELECT json_agg(json_build_object('file_path', '', 'file_name', d->>'file_name'))
         FROM json_array_elements(pending_documents) d);
 
--- Status text from the run on show, not from whichever retry came last.
+-- Status text from the run on show (the one over the most documents), not
+-- from whichever retry came last.
 UPDATE workspaces w SET status_detail = format(
     'Analysis complete. %s/%s citations verified.', c.verified, c.total)
 FROM (
-    SELECT a.workspace_id,
-           count(*) AS total,
-           count(*) FILTER (WHERE (e->>'verified')::bool) AS verified
-    FROM analyses a,
-         json_array_elements(a.governance_gaps) g,
-         json_array_elements(g->'evidence') e
-    GROUP BY a.workspace_id) c
+    SELECT DISTINCT ON (a.workspace_id) a.workspace_id,
+           (SELECT count(*) FROM json_array_elements(a.governance_gaps) g,
+                   json_array_elements(g->'evidence') e) AS total,
+           (SELECT count(*) FROM json_array_elements(a.governance_gaps) g,
+                   json_array_elements(g->'evidence') e
+             WHERE (e->>'verified')::bool) AS verified
+    FROM analyses a
+    ORDER BY a.workspace_id,
+             json_array_length(coalesce(a.ragas_metrics->'evaluated_documents', '[]')) DESC,
+             a.created_at DESC) c
 WHERE c.workspace_id = w.id;
 SQL
 

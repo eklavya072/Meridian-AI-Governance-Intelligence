@@ -12,13 +12,3 @@ export function cn(...inputs: ClassValue[]) {
 export function parseServerTime(iso: string): number {
   return Date.parse(/(Z|[+-]\d\d:?\d\d)$/i.test(iso) ? iso : `${iso}Z`)
 }
-
-// A server timestamp in the reader's own time, "YYYY-MM-DD HH:MM". Printing
-// the string as it came showed a 15:33 IST run as "10:03".
-export function localTime(iso: string): string {
-  const t = parseServerTime(iso)
-  if (Number.isNaN(t)) return iso.slice(0, 16).replace("T", " ")
-  const d = new Date(t)
-  const p = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}

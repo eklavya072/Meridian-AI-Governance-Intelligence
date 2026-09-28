@@ -1063,22 +1063,30 @@ def _is_provisional(analysis) -> bool:
     )
 
 
+def _documents_covered(analysis) -> int:
+    metrics = getattr(analysis, "ragas_metrics", None) or {}
+    documents = metrics.get("evaluated_documents") or []
+    return len(documents) or (1 if getattr(analysis, "document_name", None) else 0)
+
+
 def _preferred_analysis(analyses: list):
     """The run to show, brief from and answer about when none is named.
 
-    The newest COMPLETE run, not simply the newest. A run that lost dimensions
-    to the provider is still saved — on a first run it is all there is — but
-    taking analyses[0] let one displace a finished result everywhere at once:
-    a Japan run with all eight dimensions failed became the page, the brief
-    and the chat context the moment it landed. Falls back to the newest run
-    only when nothing complete exists.
+    The complete run over the MOST documents, newest first among equals. A
+    workspace keeps one run per stage of its document set — a strategy alone,
+    then the strategy with the statute that followed it — and the fullest
+    stage is the assessment of the country; the earlier stage is there to show
+    what the statute added. A run that lost dimensions to the provider is
+    never preferred over a complete one; it is used only when nothing
+    complete exists, because on a first run it is all there is.
     """
     if not analyses:
         return None
-    return next(
-        (a for a in analyses if not _failed_dimensions(a) and not _is_provisional(a)),
-        analyses[0],
-    )
+    complete = [a for a in analyses if not _failed_dimensions(a) and not _is_provisional(a)]
+    if not complete:
+        return analyses[0]
+    # Analyses arrive newest first, and max() keeps the first of equals.
+    return max(complete, key=_documents_covered)
 
 
 @app.get("/api/v1/analyze/{workspace_id}")
