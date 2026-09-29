@@ -12,6 +12,7 @@ from src.brief_synthesis import (
     BriefSynthesis,
     assemble_brief,
     build_dimension_digest,
+    build_precedents,
     build_relevant_precedent,
     render_brief_markdown,
 )
@@ -99,10 +100,42 @@ class TestDeterministicSections:
         assert "future strengthening opportunities" in digest.lower()
         assert "Cross-border data flow code" in digest
 
+    def test_precedents_carry_what_happened_and_the_lesson(self):
+        gaps = [
+            {
+                "dimension": "Fairness",
+                "module_4": {
+                    "incident_matches": [
+                        {
+                            "incident_name": "SyRI",
+                            "source": "SyRI Judgment",
+                            "what_happened": "A welfare-fraud risk model was struck down. "
+                            "The court found it opaque.",
+                            "lessons_learned": "Publish the model's criteria.",
+                        }
+                    ]
+                },
+            },
+            {
+                "dimension": "Transparency",
+                "module_4": {"incident_matches": [{"incident_name": "SyRI"}]},
+            },
+        ]
+        [p] = build_precedents(gaps)
+        # One entry per incident, naming every dimension it bears on.
+        assert p["incident"] == "SyRI"
+        assert p["dimensions"] == ["Fairness", "Transparency"]
+        assert p["what_happened"].startswith("A welfare-fraud risk model")
+        assert p["lesson"] == "Publish the model's criteria."
+        assert p["source"] == "SyRI Judgment"
+
     def test_precedent_deduplicates(self, gaps):
-        assert "Algorithmic bias in credit scoring" in build_relevant_precedent(gaps)
+        names = [p["incident"] for p in build_precedents(gaps)]
+        assert names == ["Algorithmic bias in credit scoring"]
+        assert "one real-world incident" in build_relevant_precedent(gaps)
         no_incidents = [g for g in gaps if "module_4" not in g]
         assert build_relevant_precedent(no_incidents) is None
+        assert build_precedents(no_incidents) == []
 
 
 class TestAssembly:

@@ -3124,7 +3124,10 @@ class GapAnalyzer:
         # How much this particular cell is worth, from the same counters the
         # verdict was computed on — so the two can never disagree.
         _prof = (determined or {}).get("profile")
-        _confidence_band, _confidence_reason = verdict_confidence(
+        # The band is shown; the counts sentence behind it is not stored: the
+        # owner asked for it off the analysis page, and risk_basis already
+        # states the same counts in a reader's words.
+        _confidence_band, _ = verdict_confidence(
             n_scored=getattr(_prof, "n_scored", 0),
             n_binding=getattr(_prof, "n_binding", 0),
             n_enforceable=getattr(_prof, "n_enforceable", 0),
@@ -3152,7 +3155,6 @@ class GapAnalyzer:
             priority_gaps=rank_absent(dimension, _mech_absent),
             framework_corpus_size=framework_count(),
             evidence_confidence=_confidence_band,
-            evidence_confidence_reason=_confidence_reason,
             mechanism_adjudication=getattr(_mech, "adjudication", "") or "",
             implementation_depth=depth,
             depth_reasoning=depth_reasoning,

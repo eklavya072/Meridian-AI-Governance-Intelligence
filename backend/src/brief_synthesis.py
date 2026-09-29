@@ -108,8 +108,11 @@ def build_dimension_digest(gaps: list[dict[str, Any]]) -> str:
             lines.append(f"  Implementation depth: {m1['implementation_depth']}")
         # What the verdict rests on, and what is missing, so the summary can
         # say what kind of instrument this is from counts rather than guess.
-        if g.get("evidence_confidence_reason"):
-            lines.append(f"  Evidence: {g['evidence_confidence_reason']}")
+        # Stored runs carry the counts sentence; newer ones state the same
+        # counts in risk_basis.
+        evidence = g.get("evidence_confidence_reason") or g.get("risk_basis")
+        if evidence:
+            lines.append(f"  Evidence: {evidence}")
         missing = _absent_mechanisms(g)[:3]
         if missing:
             lines.append("  Mechanisms not established: " + "; ".join(missing))
@@ -180,8 +183,8 @@ def build_brief_prompt(
 
 
 def build_relevant_precedent(gaps: list[dict[str, Any]]) -> str | None:
-    """1-2 sentence note on matched Module 4 incidents (illustrative context
-    only — never the full case-study treatment). Deterministic: reads the
+    """The one-sentence lead for the precedent section; the incidents
+    themselves are listed by build_precedents. Deterministic: reads the
     already-verified incident matches."""
     incident_names: list[str] = []
     for g in gaps:
@@ -194,15 +197,59 @@ def build_relevant_precedent(gaps: list[dict[str, Any]]) -> str | None:
         return None
     if len(incident_names) == 1:
         return (
-            f"The analysis matched one real-world incident as illustrative "
-            f"context ({incident_names[0]}); the full report carries the "
-            "case-study detail."
+            "The analysis matched one real-world incident that shows where a gap "
+            "like this can lead. It is context for the verdict, not a finding "
+            "about the document."
         )
     return (
-        f"The analysis matched {len(incident_names)} real-world incidents as "
-        f"illustrative context ({', '.join(incident_names)}); the full report "
-        "carries the case-study detail."
+        f"The analysis matched {len(incident_names)} real-world incidents that "
+        "show where gaps like these can lead. They are context for the verdicts, "
+        "not findings about the document."
     )
+
+
+def _first_sentences(text: str, limit: int = 260) -> str:
+    """The opening sentence or two of a passage, within `limit` characters."""
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = cut.rfind(". ")
+    if end >= 80:
+        return cut[: end + 1]
+    return cut[: cut.rfind(" ")].rstrip(",;:") + "\u2026"
+
+
+def build_precedents(gaps: list[dict[str, Any]], limit: int = 4) -> list[dict[str, Any]]:
+    """The matched incidents themselves: what happened, which dimensions it
+    bears on, and the lesson, each in a sentence or two, with its source.
+
+    The section used to be one sentence naming the incidents, which told a
+    minister that precedents exist but not what any of them was. Everything
+    here is already stored with the match; nothing is written for the brief.
+    """
+    order: list[str] = []
+    found: dict[str, dict[str, Any]] = {}
+    for g in gaps:
+        m4 = g.get("module_4") or {}
+        for inc in m4.get("incident_matches") or []:
+            name = (inc.get("incident_name") or "").strip()
+            if not name:
+                continue
+            dim = g.get("dimension") or ""
+            if name in found:
+                if dim and dim not in found[name]["dimensions"]:
+                    found[name]["dimensions"].append(dim)
+                continue
+            order.append(name)
+            found[name] = {
+                "incident": name,
+                "dimensions": [dim] if dim else [],
+                "what_happened": _first_sentences(inc.get("what_happened") or ""),
+                "lesson": _first_sentences(inc.get("lessons_learned") or ""),
+                "source": (inc.get("source") or "").strip(),
+            }
+    return [found[n] for n in order[:limit]]
 
 
 def build_dimension_assessment(
@@ -519,6 +566,21 @@ def _evidence_source(e: dict[str, Any]) -> str:
     return f"{name}, p. {page}" if name and page and page != "None" else name
 
 
+def precedent_lines(p: dict[str, Any]) -> list[str]:
+    """One precedent as lines of text, identical in every rendering."""
+    head = p["incident"]
+    if p.get("dimensions"):
+        head += f" ({', '.join(p['dimensions'])})"
+    out = [head]
+    if p.get("what_happened"):
+        out.append(f"What happened: {p['what_happened']}")
+    if p.get("lesson"):
+        out.append(f"Lesson: {p['lesson']}")
+    if p.get("source"):
+        out.append(f"Source: {p['source']}")
+    return out
+
+
 def key_provision_line(k: dict[str, str]) -> str:
     """A dimension's quoted provision, identical in every rendering."""
     source = f" ({k['source']})" if k.get("source") else ""
@@ -655,6 +717,7 @@ def assemble_brief(
         "analysis_failed": sum(1 for g in gaps if g.get("analysis_error")),
     }
     precedent = build_relevant_precedent(gaps)
+    precedents = build_precedents(gaps)
     dimension_assessment = build_dimension_assessment(gaps, documents)
     implementation_roadmap = build_implementation_roadmap(gaps)
     evidence_base = build_evidence_base(
@@ -706,6 +769,7 @@ def assemble_brief(
             "implementation_roadmap": implementation_roadmap,
             "evidence_base": evidence_base,
             "relevant_precedent": precedent,
+            "precedents": precedents,
             "scope_and_methodology": scope_and_methodology,
         },
         # Deterministic analytics for dashboards / research (same shape as
@@ -866,6 +930,9 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
         lines.append("")
         lines.append("## RELEVANT PRECEDENT")
         lines.append(s["relevant_precedent"])
+        for p in s.get("precedents") or []:
+            lines.append("")
+            lines.extend(precedent_lines(p))
     lines.append("")
     lines.append("## SCOPE & METHODOLOGY")
     lines.append(s["scope_and_methodology"])

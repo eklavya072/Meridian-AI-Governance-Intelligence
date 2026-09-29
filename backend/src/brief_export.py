@@ -17,7 +17,7 @@ import re
 from io import BytesIO
 from typing import Any
 
-from src.brief_synthesis import format_evidence_quote, key_provision_line
+from src.brief_synthesis import format_evidence_quote, key_provision_line, precedent_lines
 from src.provenance import render_provenance_lines
 
 # Design tokens — mirrors the frontend palette (app/globals.css).
@@ -245,6 +245,16 @@ def render_docx(brief: dict[str, Any]) -> bytes:
     if s.get("relevant_precedent"):
         heading("RELEVANT PRECEDENT")
         body(s["relevant_precedent"])
+        for prec in s.get("precedents") or []:
+            first, *rest = precedent_lines(prec)
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after = Pt(2)
+            run = p.add_run(first)
+            run.font.bold = True
+            run.font.color.rgb = ink
+            for line in rest:
+                bullet(line)
 
     heading("SCOPE & METHODOLOGY")
     for para in s["scope_and_methodology"].split("\n\n"):
@@ -454,6 +464,11 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
     if s.get("relevant_precedent"):
         _h1("RELEVANT PRECEDENT")
         _body(s["relevant_precedent"])
+        for prec in s.get("precedents") or []:
+            first, *rest = precedent_lines(prec)
+            _h2(first)
+            if rest:
+                _bullets(rest)
 
     _h1("SCOPE & METHODOLOGY")
     for para in s["scope_and_methodology"].split("\n\n"):
