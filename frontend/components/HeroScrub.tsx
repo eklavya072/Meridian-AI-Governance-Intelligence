@@ -114,8 +114,14 @@ function videoTimeAt(p: number) {
 const VIDEO_URL = "/hero/hero-scrub.mp4";
 const POSTER_URL = "/hero/hero-poster.jpg";
 /* The fallback when Content-Length is missing, so the ring is honest either
-   way. Update this if the encode is replaced. */
-const VIDEO_BYTES = 5679479;
+   way. Update this if the encode is replaced.
+
+   Encoded all-intra (every frame a keyframe, x264 CRF 26, no B-frames). A
+   scrub seeks on every frame it draws, and with a keyframe only every
+   seventh frame each seek decoded up to six frames first, which is where
+   the stutter under a fast scroll came from. Every-frame keyframes cost 16%
+   in size and make any seek a single decode. */
+const VIDEO_BYTES = 6589395;
 
 /* The five conditions that get the composed static hero instead of the
    scrub. These strings are the single source of truth: the stylesheet reads
@@ -208,6 +214,7 @@ export default function HeroScrub() {
     /* ── drive state ─────────────────────────────────────────────────── */
     let target = 0;
     let shown = 0;
+    let velocity = 0;
     let rafId: number | null = null;
     let lastTick = 0;
     /* Wall-clock stamp of the last tick that actually ran, so the poll below
@@ -299,53 +306,65 @@ export default function HeroScrub() {
         k = Math.round(k * 1000) / 1000;
 
         const c = cache[i];
-        if (Math.abs(op - c.op) > 0.002) {
+        if (Math.abs(op - c.op) > 0.001) {
           c.op = op;
           el.style.opacity = String(op);
           el.style.visibility = op < 0.004 ? "hidden" : "visible";
         }
-        if (Math.abs(k - c.k) > 0.008) {
+        if (Math.abs(k - c.k) > 0.002) {
           c.k = k;
           el.style.setProperty("--k", String(k));
         }
-        if (Math.abs(x - c.x) > 0.008) {
+        if (Math.abs(x - c.x) > 0.002) {
           c.x = x;
           el.style.setProperty("--x", String(x));
+          /* Blur only while a beat is leaving. A filter left on the band at
+             blur(0) still makes the browser re-rasterise it every frame. */
+          el.style.filter = x > 0.002 ? `blur(${(x * 4).toFixed(2)}px)` : "none";
         }
       });
     };
 
+    /* One smoothed progress drives the footage AND the words, so they move
+       as one surface. The captions used to follow the raw scroll while the
+       video followed a lerp of it: a wheel scrolls in 100px steps, so the
+       words jumped a step at a time while the image glided behind them, and
+       the two never quite agreed.
+
+       The smoothing is a critically damped spring rather than a plain lerp.
+       A lerp starts at full speed the instant the target moves, which reads
+       as a jolt at the start of every flick; the spring picks up speed and
+       lays it down again, with no overshoot. OMEGA sets how closely it
+       follows: about a third of a second to settle. */
+    const OMEGA = 11;
     const tick = (now: number) => {
-      const dt = Math.min(100, now - (lastTick || now));
+      const dt = Math.min(0.05, (now - (lastTick || now)) / 1000);
       lastTick = now;
       lastTickAt = Date.now();
-      const kSm = 0.16;
-      shown += (target - shown) * (1 - Math.pow(1 - kSm, dt / 16.667));
-      if (Math.abs(target - shown) < 0.0005) {
+      const off = shown - target;
+      const decay = Math.exp(-OMEGA * dt);
+      const next = (off + (velocity + OMEGA * off) * dt) * decay;
+      velocity = (velocity - OMEGA * (velocity + OMEGA * off) * dt) * decay;
+      shown = target + next;
+      if (Math.abs(next) < 0.00015 && Math.abs(velocity) < 0.0005) {
         shown = target;
+        velocity = 0;
         rafId = null;
         lastTick = 0;
       } else {
         rafId = requestAnimationFrame(tick);
       }
+      updateBands(shown);
       if (video.duration) requestSeek(videoTimeAt(shown));
     };
 
-    /* Captions track the SCROLL, not the lerped video time.
-       The lerp exists to smooth seeking, which is expensive; a caption is
-       two cheap DOM writes and has no reason to lag the reader's thumb.
-       More importantly, `shown` only advances inside requestAnimationFrame
-       — so driving the bands from it made the words dependent on the frame
-       loop, and a stalled compositor left bands two and three at opacity
-       zero for good. Measured: at progress 0.50 the opening band was still
-       the one on screen.
-
-       Scroll events and the interval below both write captions; only the
-       video seek rides the rAF. That is the whole rule of this route in one
-       split. */
+    /* The frame loop is where the words move now, so the rule this route is
+       built on (no readable content may depend on it) is kept by the
+       interval further down: if no frame has run for a third of a second,
+       it writes the captions from the raw scroll position itself. A stalled
+       compositor costs the glide, never the words. */
     const onScroll = () => {
       target = heroProgress();
-      updateBands(target);
       if (rafId === null && onScreen) rafId = requestAnimationFrame(tick);
     };
 
@@ -376,6 +395,8 @@ export default function HeroScrub() {
         el.style.visibility = "visible";
         el.style.setProperty("--k", "1");
         el.style.setProperty("--x", "0");
+        el.style.filter = "none";
+        cache[i].x = -1;
       });
     };
 
@@ -493,23 +514,17 @@ export default function HeroScrub() {
         setInterval(() => {
           if (!scrubOn) return;
           const p = heroProgress();
-          updateBands(p);
-          /* If the frame loop is not running, the lerp never advances and
-             the footage sits on whatever frame it stopped at. Seeking is
-             the one thing here that legitimately rides rAF — it needs the
-             smoothing — but riding it should cost smoothness, not the
-             image. When no tick has landed for a second and the video is
-             still behind, jump it straight to the scroll position. */
-          if (
-            Date.now() - lastTickAt > 1000 &&
-            video.duration &&
-            Math.abs(p - shown) > 0.01
-          ) {
+          /* If the frame loop is not running, the spring never advances.
+             When no frame has landed for a third of a second and the page is
+             behind the scroll, jump words and footage straight to it. */
+          if (Date.now() - lastTickAt > 330 && Math.abs(p - shown) > 0.001) {
             shown = p;
             target = p;
-            requestSeek(videoTimeAt(p));
+            velocity = 0;
+            updateBands(p);
+            if (video.duration) requestSeek(videoTimeAt(p));
           }
-        }, 500),
+        }, 250),
       );
     };
 

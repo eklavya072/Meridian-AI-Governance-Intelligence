@@ -64,13 +64,13 @@ body:has(.landing) main {
      from size and weight, which is what the references do anyway. */
   /* Measured, not picked by eye. #C9AF7A sat at low chroma with the hue
      pulled toward red — a tan, which on a dark ground reads as dull brown
-     rather than as metal. #E6BC55 lifts the chroma and swings the hue back
-     toward yellow, and it MEASURES BETTER too: 9.41:1 on ink and 10.89:1
-     on void, against 7.96 and 9.22 before. Brighter and more saturated at
-     once, which is the direction gold actually lives in. */
-  --key: #E6BC55;
-  --key-soft: rgba(230, 188, 85, 0.15);
-  --key-line: rgba(230, 188, 85, 0.55);
+     rather than as metal. #E6BC55 swung the hue back toward yellow but
+     went too bright: on near-black it read as a toy's gold. #CEA850 keeps
+     that hue (42°) with less chroma and lightness (S56 L56 against S74
+     L62), an aged brass, and still measures 7.5:1 on ink. */
+  --key: #CEA850;
+  --key-soft: rgba(206, 168, 80, 0.15);
+  --key-line: rgba(206, 168, 80, 0.55);
 
   /* ── Type scale ────────────────────────────────────────────────────────
      Hierarchy comes from SCALE, not from weight — the thing every one of
@@ -236,13 +236,13 @@ body:has(.landing) main {
   --accent-hover: #FFFFFF;
   /* Measured, not picked by eye. #C9AF7A sat at low chroma with the hue
      pulled toward red — a tan, which on a dark ground reads as dull brown
-     rather than as metal. #E6BC55 lifts the chroma and swings the hue back
-     toward yellow, and it MEASURES BETTER too: 9.41:1 on ink and 10.89:1
-     on void, against 7.96 and 9.22 before. Brighter and more saturated at
-     once, which is the direction gold actually lives in. */
-  --key: #E6BC55;
-  --key-soft: rgba(230, 188, 85, 0.16);
-  --key-line: rgba(230, 188, 85, 0.55);
+     rather than as metal. #E6BC55 swung the hue back toward yellow but
+     went too bright: on near-black it read as a toy's gold. #CEA850 keeps
+     that hue (42°) with less chroma and lightness (S56 L56 against S74
+     L62), an aged brass, and still measures 7.5:1 on ink. */
+  --key: #CEA850;
+  --key-soft: rgba(206, 168, 80, 0.16);
+  --key-line: rgba(206, 168, 80, 0.55);
   /* No shadow on the glyphs. The old value stacked three black layers, the
      widest a 44px halo at half alpha — and because every word is its own
      inline-block with a gap beside it, that halo pooled PER WORD rather than
@@ -308,14 +308,14 @@ body:has(.landing) main {
      A true metallic gold cannot exist at 4.5:1 on near-white — the floor
      forces the luminance down, and a dark yellow is an olive-bronze by
      definition. That is physics, not taste. What IS available is which way
-     the hue leans: #6E5522 leant red and read as mud. #7D5E0A leans yellow
+     the hue leans: #6E5522 leant red and read as mud. #6C5513 leans yellow
      and reads as the dark end of the same gold running on the dark
-     surfaces. Measured on the two light surfaces this route actually uses:
-     5.16:1 on parchment, 4.62:1 on the mid tone — both clear of the floor
-     for the 11px numerals that are the smallest thing wearing it. */
-  --key: #7D5E0A;
-  --key-soft: rgba(125, 94, 10, 0.15);
-  --key-line: rgba(125, 94, 10, 0.55);
+     surfaces, a shade graver than the #7D5E0A it replaced. Measured on the
+     parchment this route uses: 6.1:1, clear of the floor for the 11px
+     numerals that are the smallest thing wearing it. */
+  --key: #6C5513;
+  --key-soft: rgba(108, 85, 19, 0.15);
+  --key-line: rgba(108, 85, 19, 0.55);
   /* A shadow on type is a device for reading over video. On paper it is
      dirt, so the mechanism switches off on every light surface. */
   --tshadow: none;
@@ -915,6 +915,15 @@ body:has(.landing) main {
   color: var(--ink-2);
 }
 .l-band-cta { margin-top: 2.5rem; }
+/* The two calls to action, as one row with room between them. The hero's
+   pair had no rule at all and sat a single word-space apart. */
+.l-cta,
+.l-close-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem 1.25rem;
+}
 
 /* Every band's type carries the shadow; the buttons never do, where a
    shadowed label reads as grime. */
@@ -923,7 +932,8 @@ body:has(.landing) main {
    arriving one are two crisp lines overlapping, which the eye reads as two
    objects rather than one handover. Bounded to 5px: heavy blur is expensive
    and this is running under a video scrub. */
-.l-band { filter: blur(calc(var(--x, 0) * 5px)); }
+/* The exit blur is written by HeroScrub only while a beat is leaving: a
+   filter held at blur(0) still re-rasterises the band on every frame. */
 .l-band .l-btn { text-shadow: none; }
 
 /* ── The assembly, driven by --k ─────────────────────────────────────────
@@ -996,11 +1006,17 @@ body:has(.landing) main {
      Entry blur is smaller than exit blur (3px against 5px). A line arriving
      wants to resolve quickly and be read; a line leaving can afford to
      dissolve. */
+  /* Opacity and transform only. Each word carried its own blur(), which
+     made the browser repaint every word on every frame of the scrub; with
+     transform and opacity alone a word is a compositor layer and moving it
+     costs nothing. The band as a whole softens as it leaves. */
   opacity: calc(var(--kc) * (1 - var(--xc)));
-  transform: translateY(calc((1 - var(--kc)) * 110% - var(--xc) * 30%))
+  transform: translate3d(0, calc((1 - var(--kc)) * 110% - var(--xc) * 30%), 0)
     scale(calc(1 - (1 - var(--kc)) * 0.028 - var(--xc) * 0.045));
-  filter: blur(calc((1 - var(--kc)) * 3px + var(--xc) * 5px));
   transform-origin: 50% 100%;
+}
+.l-stage:not(.is-static) .l-sw-in {
+  will-change: transform, opacity;
 }
 /* Three beats, three entrances, each echoing what the footage is doing
    under it. One: words rise from the mask edge as the light arrives from
@@ -1400,7 +1416,7 @@ body:has(.landing) main {
    ink they are sitting on. */
 .l-stats {
   position: relative;
-  margin: 0 0 clamp(0.9rem, 1.8vh, 1.3rem);
+  margin: 0 0 clamp(1.5rem, 4.5vh, 3.25rem);
 }
 
 
@@ -1429,8 +1445,8 @@ body:has(.landing) main {
   color: var(--ink);
   display: grid;
   align-content: start;
-  gap: 0.4rem;
-  padding: clamp(0.75rem, 1.5vh, 1rem) clamp(1rem, 1.5vw, 1.25rem);
+  gap: 0.5rem;
+  padding: clamp(1rem, 2.2vh, 1.6rem) clamp(1.15rem, 1.7vw, 1.5rem);
 }
 /* The display family, tabular, so the four roll in place without the row
    reflowing under them while the count runs. */
@@ -1438,7 +1454,7 @@ body:has(.landing) main {
   margin: 0;
   font-family: var(--grotesk);
   font-weight: 600;
-  font-size: clamp(1.7rem, 2.7vw, 2.25rem);
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
   line-height: 1;
   letter-spacing: -0.032em;
   color: var(--ink);
@@ -1852,7 +1868,7 @@ body:has(.landing) main {
 .l-close-line { display: block; }
 .l-close-h { text-align: center; }
 .l-close-turn { color: var(--key); }
-.l-close-cta { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: center; margin-top: 1.6rem; }
+.l-close-cta { margin-top: 1.6rem; }
 
 /* ── The last line ───────────────────────────────────────────────────────
    Small and thin, deliberately. A footer that competes with the close
@@ -2116,26 +2132,33 @@ body:has(.landing) main {
    sentence and the source it came from. */
 .l-ink {
   position: relative;
-  /* One screen at a laptop height. This ran 1223px against a 900px
-     viewport, so the chapter could never be seen whole — you arrived at
-     figures and left before the rules, or the reverse. Every interval below
-     is cut, none of the type is. */
-  padding: clamp(1.6rem, 3.1vh, 2.25rem) var(--gutter) clamp(1.35rem, 2.7vh, 1.9rem);
+  /* Exactly one screen: the chapter fills the viewport and centres in it,
+     so it is seen whole, figures and rules together. It first ran 1223px
+     against a 900px window; cutting every interval to fit left it a
+     cramped strip. The spacing and type now scale with the window's
+     HEIGHT (vh), which is what has to be filled: about 900px of content on
+     a laptop, and centred with room around it on a taller screen. */
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  padding: clamp(1.75rem, 5vh, 4.5rem) var(--gutter);
 }
 .l-ink-inner {
+  width: 100%;
   max-width: var(--measure);
   margin: 0 auto;
 }
 .l-ink-head {
-  max-width: 46rem;
-  margin: 0 0 clamp(0.9rem, 1.9vh, 1.4rem);
+  max-width: 60rem;
+  margin: 0 0 clamp(1.25rem, 3.8vh, 2.75rem);
 }
 /* The dark chapters speak in the hero's voice, not the paper sections' —
    they are the same register as the film, one step quieter. */
 .l-ink-h {
   font-family: var(--grotesk);
   font-weight: 600;
-  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-size: clamp(2rem, 3.4vw, 2.9rem);
   line-height: 1.06;
   letter-spacing: var(--tr-h1);
   margin: 0;
@@ -2146,11 +2169,11 @@ body:has(.landing) main {
 .l-ink-lede {
   margin: var(--s-5) 0 0;
   font-family: var(--sans);
-  font-size: clamp(0.98rem, 1.25vw, 1.12rem);
+  font-size: clamp(1.02rem, 1.35vw, 1.2rem);
   line-height: 1.6;
   letter-spacing: 0.006em;
   color: var(--ink-2);
-  max-width: 52ch;
+  max-width: 64ch;
 }
 
 /* ── Proof: the interlocking grid ──────────────────────────────────────── */
@@ -2237,13 +2260,13 @@ body:has(.landing) main {
 .l-ink-rules {
   display: grid;
   gap: 0;
-  max-width: 58rem;
+  max-width: 64rem;
 }
 .l-ink-rule {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.3rem 2.5rem;
-  padding: clamp(0.5rem, 1.1vh, 0.78rem) 0;
+  gap: 0.35rem 2.75rem;
+  padding: clamp(0.85rem, 2.4vh, 1.6rem) 0;
   border-top: 1px solid var(--hairline);
   opacity: 0;
   transform: translateY(14px);
@@ -2255,12 +2278,26 @@ body:has(.landing) main {
 .l-ink-rule:last-child { border-bottom: 1px solid var(--hairline); }
 @media (min-width: 760px) {
   .l-ink-rule {
-    grid-template-columns: 7.5rem minmax(0, 1fr);
+    grid-template-columns: 8.5rem minmax(0, 1fr);
     align-items: baseline;
   }
   .l-ink-rule-n { grid-row: span 2; }
 }
 .l-ink.is-on .l-ink-rule { opacity: 1; transform: none; }
+/* On a wide screen the ledger runs in two columns, two rules a side: the
+   chapter then fits one screen with its type at full size, and the four
+   rules sit as a balanced block under the figures instead of a column
+   hanging down one side. */
+@media (min-width: 1100px) {
+  .l-ink-rules {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: clamp(2.5rem, 4vw, 4rem);
+    max-width: none;
+  }
+  .l-ink-rule { grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 1.75rem; }
+  .l-ink-rule:nth-last-child(-n + 2) { border-bottom: 1px solid var(--hairline); }
+  .l-ink-rule-b { max-width: none; }
+}
 /* The identifier is set as a figure, not as a label: this is the one place
    on the route where monospace is carrying an actual reference — R1, R2, a
    numeric range, a measured percentage — rather than wearing monospace as a
@@ -2268,7 +2305,7 @@ body:has(.landing) main {
    column exactly. */
 .l-ink-rule-n {
   font-family: var(--code);
-  font-size: 0.98rem;
+  font-size: 1.05rem;
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--key);
@@ -2279,7 +2316,7 @@ body:has(.landing) main {
   margin: 0;
   font-family: var(--grotesk);
   font-weight: 600;
-  font-size: clamp(1.05rem, 1.35vw, 1.2rem);
+  font-size: clamp(1.12rem, 1.5vw, 1.34rem);
   line-height: 1.25;
   letter-spacing: -0.022em;
   color: var(--ink);
@@ -2288,15 +2325,16 @@ body:has(.landing) main {
 .l-ink-rule-b {
   margin: 0;
   font-family: var(--sans);
-  font-size: 0.98rem;
+  font-size: 1.02rem;
   line-height: 1.62;
   letter-spacing: 0.004em;
   color: var(--ink-2);
   /* Measured, not declared. A `68ch` cap resolved to 83.2 characters here
      because `ch` is the width of the zero glyph, not of an average one — at
      15.68px Public Sans that is a 22% under-count. 30rem measures 61
-     characters at this size, inside the 45-75 band. */
-  max-width: 30rem;
+     characters at this size; 36rem, at the larger size the full-screen
+     chapter sets, stays inside the 45-75 band. */
+  max-width: 36rem;
 }
 @media (prefers-reduced-motion: reduce) {
   .l-ink-cell, .l-ink-rule {
@@ -2323,18 +2361,18 @@ body:has(.landing) main {
   border-radius: 2px;
 }
 html:has(.landing) {
-  scrollbar-color: rgba(125, 94, 10, 0.38) transparent;
+  scrollbar-color: rgba(108, 85, 19, 0.38) transparent;
   scrollbar-width: thin;
 }
 .landing ::-webkit-scrollbar { width: 10px; height: 10px; }
 .landing ::-webkit-scrollbar-track { background: transparent; }
 .landing ::-webkit-scrollbar-thumb {
-  background: rgba(125, 94, 10, 0.34);
+  background: rgba(108, 85, 19, 0.34);
   border-radius: 99px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
-.landing ::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: rgba(125, 94, 10, 0.55); }
+.landing ::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: rgba(108, 85, 19, 0.55); }
 
 /* ── The hero voice, one scale ───────────────────────────────────────────
    The five beats were five separate type decisions that happened to look
