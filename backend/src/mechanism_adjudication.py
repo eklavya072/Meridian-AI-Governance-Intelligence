@@ -136,33 +136,79 @@ def _repair_split_words(text: str) -> str:
     return text
 
 
+#: A provision that states a norm: a duty, a right, a prohibition, or, in
+#: guidelines, what an actor should do. Only such a provision can ESTABLISH a
+#: mechanism, which is the one question the model is asked.
+_NORM_RE = re.compile(
+    r"\b(?:shall|must|should|is required to|are required to|has the right|have the right|"
+    r"is entitled|are entitled|may request|shall not|may not|is prohibited|are prohibited)\b",
+    re.IGNORECASE,
+)
+
+#: A table-of-contents line: "Article 23 – Right to erasure ..........".
+_CONTENTS_RE = re.compile(r"(?:\.\s*){5,}|\u2026{2,}")
+
+#: Shorter than this, a cue hit is a bare list item ("data subject rights;"),
+#: never a provision. Kept low on purpose: "High-risk systems shall be
+#: registered." is a complete duty in 38 characters.
+MIN_CANDIDATE_CHARS = 25
+
+
 def _rank_candidates(sentences: list[Any], pattern: re.Pattern[str]) -> list[Any]:
-    """Cue hits worth offering, most specific first.
+    """Cue hits worth offering: the most on-topic, and the provisions.
 
     NOT by tier. Ranking by force is the same bias that produced the problem:
-    it puts the penalty clause at the top of every list. Ranking by how much of
-    the sentence is the cue match favours a provision ABOUT the mechanism over
-    a long clause that mentions it in passing.
+    it puts the penalty clause at the top of every list.
+
+    Density — how much of the sentence the cue match is — finds what a
+    sentence is ABOUT, but on its own it favours whatever is shortest.
+    "Data subject" is a third of "monitoring of data subjects on a large
+    scale;" and a tenth of "Article 20 – Right to personal data portability:
+    The data subject has the right to request...". All eight of Rwanda's slots
+    went to fragments like the first; the model rightly answered that none
+    established data subject rights, and a data-protection statute was
+    reported to lack them.
+
+    Ranking every norm-stating sentence first was measured and rejected: a
+    long "shall" clause that merely contains the cue word ("notified bodies
+    shall have the capability...") then displaced the on-point sentence ("such
+    information should include the capabilities and limitations of the
+    system"), and the EU AI Act lost mechanisms it plainly has.
+
+    So the slots are split. Half go to the densest hits, as before; the rest
+    to the densest hits that state a norm; anything left over is filled by
+    density. Contents lines and bare fragments are never offered.
     """
-    scored = []
+    eligible = []
     for s in sentences:
         text = getattr(s, "text", "") or ""
+        if len(text.strip()) < MIN_CANDIDATE_CHARS or _CONTENTS_RE.search(text):
+            continue
         hits = pattern.findall(text)
         if not hits:
             continue
         matched = sum(len(h if isinstance(h, str) else "".join(h)) for h in hits)
-        density = matched / max(len(text), 1)
-        scored.append((density, s))
-    scored.sort(key=lambda x: -x[0])
-    out, seen = [], set()
-    for _, s in scored:
+        eligible.append((matched / max(len(text), 1), s))
+    eligible.sort(key=lambda x: -x[0])
+
+    by_density: list[Any] = []
+    seen: set[str] = set()
+    for _, s in eligible:
         key = (getattr(s, "text", "") or "")[:60]
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(s)
-        if len(out) >= CANDIDATES_PER_MECHANISM:
-            break
+        if key not in seen:
+            seen.add(key)
+            by_density.append(s)
+    normative = [
+        s for s in by_density if _NORM_RE.search(_repair_split_words(getattr(s, "text", "") or ""))
+    ]
+
+    out: list[Any] = by_density[: CANDIDATES_PER_MECHANISM // 2]
+    for pool in (normative, by_density):
+        for s in pool:
+            if len(out) >= CANDIDATES_PER_MECHANISM:
+                return out
+            if s not in out:
+                out.append(s)
     return out
 
 

@@ -1286,7 +1286,21 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
     "Privacy": {
         "consent": ("consent", "opt-in", "permission"),
         "data minimisation": ("minimis", "minimiz", "only the data", "necessary data"),
-        "purpose limitation": ("purpose limitation", "specified purpose", "compatible purpose"),
+        # Statutes name these rights and duties in their own terms: Japan's
+        # APPI never says "data subject" or "purpose limitation" — it says
+        # "purpose of use" and lets the "identifiable person" request
+        # disclosure, correction or deletion. With only the GDPR vocabulary
+        # here, a statute that establishes both was reported to establish
+        # neither.
+        "purpose limitation": (
+            "purpose limitation",
+            "specified purpose",
+            "compatible purpose",
+            "purpose of use",
+            "purpose of utiliz",
+            "purpose of utilis",
+            "specify the purpose",
+        ),
         "anonymisation / PETs": (
             "anonymis",
             "anonymiz",
@@ -1302,6 +1316,14 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
             "rectification",
             "access their",
             "portab",
+            "right of access",
+            "right to access",
+            "right to object",
+            "right to correction",
+            "request disclosure",
+            "request correction",
+            "request deletion",
+            "request erasure",
         ),
         "privacy by design": ("privacy by design", "data protection by design", "by default"),
         "impact assessment": ("impact assessment", "dpia", "privacy assessment"),

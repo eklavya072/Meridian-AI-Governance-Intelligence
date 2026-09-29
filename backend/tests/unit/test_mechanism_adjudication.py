@@ -134,6 +134,88 @@ class TestCandidateRanking:
         assert ranked[0] is short_on_point, "the on-point provision must outrank the penalty clause"
 
 
+class TestProvisionsBeforeFragments:
+    """Density alone favoured whatever was shortest, so every slot went to a
+    fragment and a statute was reported to lack the rights it grants."""
+
+    @staticmethod
+    def _pattern():
+        import re
+
+        return re.compile(r"\bdata\s*subject", re.IGNORECASE)
+
+    @staticmethod
+    def _fragments(n=10):
+        # Denser than any provision: "data subject" is most of each line.
+        return [_Sent(f"the data subject in category {i} of the annex;") for i in range(n)]
+
+    def test_a_right_is_offered_even_when_denser_fragments_fill_the_list(self):
+        right = _Sent(
+            "Article 20 – Right to personal data portability. The data subject has the right "
+            "to request the data controller to resend the personal data concerning him or her."
+        )
+
+        ranked = _rank_candidates([*self._fragments(), right], self._pattern())
+
+        assert right in ranked
+
+    def test_the_most_on_topic_hits_still_lead(self):
+        # Norm-first alone let a long "shall" clause that merely mentions the
+        # cue displace the sentence actually about it.
+        on_point = _Sent("Such information should include the data subject categories involved.")
+        passing_duty = _Sent(
+            "Notified bodies shall have documented procedures covering every activity they "
+            "perform, including where a data subject is concerned in any way at all."
+        )
+
+        ranked = _rank_candidates([passing_duty, on_point], self._pattern())
+
+        assert ranked[0] is on_point
+
+    def test_contents_lines_and_short_fragments_are_never_offered(self):
+        contents = _Sent("Article 23 – Right of the data subject to erasure ...............  12")
+        tiny = _Sent("data subject rights;")
+
+        assert _rank_candidates([contents, tiny], self._pattern()) == []
+
+    def test_a_split_modal_still_counts_as_a_duty(self):
+        # "shal l" is how PDF extraction often delivers "shall".
+        duty = _Sent("The controller shal l inform the data subject of every recipient in writing.")
+
+        assert duty in _rank_candidates([*self._fragments(), duty], self._pattern())
+
+
+class TestStatutoryVocabulary:
+    """Japan's APPI never says "data subject" or "purpose limitation"."""
+
+    @pytest.mark.parametrize(
+        "mechanism,sentence",
+        [
+            (
+                "purpose limitation",
+                "A business handling personal information must specify as much as possible "
+                'the purpose for which it uses that information (the "purpose of use").',
+            ),
+            (
+                "data subject rights",
+                "An identifiable person may request disclosure of retained personal data "
+                "that can identify the person.",
+            ),
+            ("data subject rights", "Everyone has the right of access to data concerning them."),
+        ],
+    )
+    def test_a_statutes_own_wording_is_a_candidate(self, mechanism, sentence):
+        import re
+
+        from src.evidence_strength import DIMENSION_MECHANISMS
+        from src.mechanism_matching import _cue_pattern
+
+        cues = DIMENSION_MECHANISMS["Privacy"][mechanism]
+        pattern = re.compile("|".join(_cue_pattern(c) for c in cues), re.IGNORECASE)
+
+        assert pattern.search(sentence)
+
+
 class TestSplitWordRepair:
     """The model reads raw text; the cue matcher does not.
 
