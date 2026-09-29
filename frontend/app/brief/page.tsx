@@ -6,8 +6,7 @@ import { motion } from "motion/react";
 import { EASE } from "@/lib/motion";
 import { api, API_UNREACHABLE, Workspace, BriefDocument } from "@/lib/api";
 import AnimatedSelect from "@/components/AnimatedSelect";
-import ShineButton from "@/components/ShineButton";
-import InkReveal from "@/components/InkReveal";
+import Button from "@/components/Button";
 import { byCountryOrder } from "@/lib/countryOrder";
 
 import palette from "@/lib/palette.json";
@@ -162,7 +161,16 @@ export default function BriefPage() {
     <div className="space-y-8">
       <PageHeader
         title="Executive Brief"
-        animated={<InkReveal text="Executive Brief" />}
+        animated={
+          <motion.span
+            className="inline-block"
+            initial={{ opacity: 0, y: 14, filter: "blur(6px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.7, ease: EASE.out }}
+          >
+            Executive Brief
+          </motion.span>
+        }
         subtitle="A concise synthesis of the analysis."
       />
 
@@ -191,14 +199,14 @@ export default function BriefPage() {
                 }))}
             />
           </div>
-          {/* The black shine button generates, and regenerates once a brief
-              exists (an example workspace keeps the brief it ships with).
-              generate() no-ops without a selection, so it is disabled only
-              while a call is in flight. */}
+          {/* Generates, and regenerates once a brief exists (an example
+              workspace keeps the brief it ships with). generate() no-ops
+              without a selection, so it is disabled only while a call is in
+              flight. Sized to match the two downloads beside it. */}
           {brief && workspaces.find((w) => w.id === selectedWs)?.locked ? null : (
-            <ShineButton disabled={loading} onClick={generate}>
+            <Button disabled={loading} onClick={generate} className="py-[13px] text-[15px]">
               {loading ? "Generating..." : brief ? "Regenerate Brief" : "Generate Brief"}
-            </ShineButton>
+            </Button>
           )}
           {brief &&
             (["pdf", "docx"] as const).map((fmt) => (
@@ -397,9 +405,13 @@ export default function BriefPage() {
                       )}
                       {item.phases.map((ph, pi) => (
                         <div key={pi} className="mt-2 border-l-2 border-grey-950/15 pl-3">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-grey-600">
+                          <p className="text-sm font-bold text-grey-950">
                             {ph.phase}
-                            {ph.timeline ? ` · ${ph.timeline}` : ""}
+                            {ph.timeline && (
+                              <span className="ml-2 font-semibold text-grey-700">
+                                {ph.timeline}
+                              </span>
+                            )}
                           </p>
                           {ph.objective && (
                             <p className="text-sm text-grey-900">{ph.objective}</p>
@@ -460,6 +472,44 @@ export default function BriefPage() {
                 <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
                   {s.relevant_precedent}
                 </p>
+                {(s.precedents?.length ?? 0) > 0 && (
+                  <div className="mt-4 grid max-w-3xl gap-3">
+                    {s.precedents!.map((p, pi) => (
+                      <motion.article
+                        key={p.incident}
+                        initial={{ opacity: 0, y: 10 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={IN_VIEW}
+                        transition={{ duration: 0.45, ease: EASE.out, delay: pi * 0.06 }}
+                        className="rounded-xl border border-black/[0.08] bg-grey-50/60 px-4 py-3.5 transition-colors duration-200 hover:border-black/[0.16] hover:bg-white"
+                      >
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          <h3 className="text-sm font-bold text-grey-950">{p.incident}</h3>
+                          {p.dimensions.length > 0 && (
+                            <span className="text-xs font-semibold text-grey-600">
+                              {p.dimensions.join(", ")}
+                            </span>
+                          )}
+                        </div>
+                        {p.what_happened && (
+                          <p className="mt-1.5 text-[13px] leading-relaxed text-grey-800">
+                            <span className="font-semibold text-grey-950">What happened.</span>{" "}
+                            {p.what_happened}
+                          </p>
+                        )}
+                        {p.lesson && (
+                          <p className="mt-1 text-[13px] leading-relaxed text-grey-800">
+                            <span className="font-semibold text-grey-950">Lesson.</span>{" "}
+                            {p.lesson}
+                          </p>
+                        )}
+                        {p.source && (
+                          <p className="mt-1.5 text-xs text-grey-600">Source: {p.source}</p>
+                        )}
+                      </motion.article>
+                    ))}
+                  </div>
+                )}
               </>
             )}
 

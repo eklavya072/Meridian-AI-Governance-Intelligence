@@ -169,10 +169,10 @@ function FrameworksContent() {
         >
           {frameworks.map((fw) => (
             <motion.div key={fw.name} variants={staggerChild} className="h-full">
-            <TiltCard className="h-full">
+            <TiltCard className="h-full rounded-xl" strength="strong">
             <div
               id={`framework-${slugify(fw.name)}`}
-              className="h-full bg-white rounded-xl shadow-sm border border-grey-100 p-6"
+              className="h-full bg-white rounded-xl border border-grey-100 p-6 transition-colors duration-200 hover:border-grey-300"
             >
               <div className="flex items-start justify-between mb-3 gap-3">
                 <h2 className="font-semibold text-grey-950">{fw.name}</h2>

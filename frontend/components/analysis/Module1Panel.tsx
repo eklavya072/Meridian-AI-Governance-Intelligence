@@ -81,11 +81,6 @@ export function Module1Panel({ gap }: { gap: GovernanceGap }) {
           <div>
             <p className="module-label mb-1.5">Evidence Behind This Verdict</p>
             <p className="module-value capitalize">{gap.evidence_confidence}</p>
-            {gap.evidence_confidence_reason && (
-              <p className="text-[11px] text-grey-600 mt-1">
-                {gap.evidence_confidence_reason}
-              </p>
-            )}
           </div>
         )}
         <div>

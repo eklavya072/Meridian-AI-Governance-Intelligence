@@ -376,6 +376,14 @@ export interface BriefSections {
   /** Verified-citation counts plus representative passages. */
   evidence_base?: BriefEvidenceBase;
   relevant_precedent: string | null;
+  /** The matched incidents: what happened, the dimensions, the lesson. */
+  precedents?: {
+    incident: string;
+    dimensions: string[];
+    what_happened: string;
+    lesson: string;
+    source: string;
+  }[];
   scope_and_methodology: string;
 }
 
