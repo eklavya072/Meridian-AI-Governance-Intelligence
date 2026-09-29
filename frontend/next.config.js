@@ -6,6 +6,10 @@ const nextConfig = {
   // container is the whole application, as on the hosted demo. Nothing here
   // needs a server: every page is a client component reading the API.
   output: process.env.NEXT_OUTPUT === "export" ? "export" : "standalone",
+  // The export build works in its own folder. Sharing .next with a running
+  // `next dev` replaced the dev server's chunks mid-session, and every page
+  // on localhost:3000 stopped hydrating (its scripts returned 404).
+  distDir: process.env.NEXT_OUTPUT === "export" ? ".next-export" : ".next",
   images: { unoptimized: true },
 };
 

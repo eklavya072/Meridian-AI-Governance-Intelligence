@@ -22,6 +22,7 @@ venv/
 # ── Node / Next.js ──────────────────────────────────────────────────────
 node_modules/
 .next/
+.next-export/
 out/
 npm-debug.log*
 *.tsbuildinfo

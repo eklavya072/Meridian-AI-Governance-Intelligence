@@ -115,6 +115,36 @@ export default function NavBar() {
 
   const hidden = scrolledHidden && !nearTop;
 
+  // Below `lg` the bar cannot fit every link, so the ones it drops (the AI
+  // Auditor, and Frameworks on phones) live in a small menu. Without it
+  // those pages had no way in on a phone except typing the address.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    const onPointer = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!menuRef.current?.contains(t) && !menuButtonRef.current?.contains(t)) setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [menuOpen]);
+  useEffect(() => {
+    if (hidden) setMenuOpen(false);
+  }, [hidden]);
+  useEffect(() => setMenuOpen(false), [pathname]);
+
   return (
     /* Full-width flex wrapper owns centering + the hide transform; it is
        pointer-events-none so the empty strip beside the pill never blocks
@@ -130,13 +160,17 @@ export default function NavBar() {
           its place by staying out of the way, and every pixel it takes is
           taken from the page it sits over. The base breakpoint stays tight
           so it never clips on narrow phones. */}
-      <div className="nav-pill pointer-events-auto flex items-center gap-1 sm:gap-2 rounded-full px-4 sm:px-6 py-[0.55rem] sm:py-3">
+      <div className="nav-pill pointer-events-auto relative flex items-center gap-1 sm:gap-2 rounded-full px-4 sm:px-6 py-[0.55rem] sm:py-3">
+        {/* The wordmark gives way to the mark alone on a phone: with the
+            More menu added, the full pill ran 24px past each edge of a
+            375px screen. */}
         <a
           href="/"
+          aria-label="Meridian home"
           className="flex items-center gap-2 font-brand text-[1.15rem] sm:text-xl font-semibold tracking-tight text-white pr-2 sm:pr-3"
         >
           <MeridianMark size={22} className="shrink-0 w-[1.1rem] h-[1.1rem] sm:w-[1.35rem] sm:h-[1.35rem]" />
-          Meridian
+          <span className="hidden sm:inline">Meridian</span>
         </a>
         <span className="hidden sm:block h-4 sm:h-5 w-px bg-white/15" aria-hidden />
         <div className="flex items-center gap-3 sm:gap-[1.15rem] lg:gap-6 text-[15px] font-display font-medium tracking-tight pl-2 sm:pl-3">
@@ -155,7 +189,41 @@ export default function NavBar() {
               />
             );
           })}
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-expanded={menuOpen}
+            aria-controls="nav-more-menu"
+            className="lg:hidden inline-flex items-center gap-1 rounded-full py-0.5 text-white font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+          >
+            More
+            <span aria-hidden className={`text-[10px] transition-transform ${menuOpen ? "rotate-180" : ""}`}>
+              ▾
+            </span>
+          </button>
         </div>
+        {menuOpen && (
+          <div
+            ref={menuRef}
+            id="nav-more-menu"
+            className="nav-pill pointer-events-auto absolute right-0 top-[calc(100%+0.5rem)] flex min-w-[11rem] flex-col gap-1 rounded-2xl p-2 text-[15px] font-display"
+          >
+            {LINKS.filter((link) => link.hideBelow).map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                onClick={() => setMenuOpen(false)}
+                aria-current={pathname.startsWith(link.href) ? "page" : undefined}
+                className={`rounded-xl px-3 py-2 text-white hover:bg-white/10 ${
+                  link.hideBelow === "md" ? "md:hidden" : ""
+                } ${pathname.startsWith(link.href) ? "font-semibold" : "font-medium"}`}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </nav>
   );
@@ -197,6 +265,7 @@ function NavLink({
       onMouseEnter={trackCursor}
       onMouseMove={trackCursor}
       onMouseLeave={resetOrigin}
+      aria-current={active ? "page" : undefined}
       className={`link-swipe relative py-0.5 transition-colors hover:text-white ${
         active ? "link-swipe-active text-white font-semibold" : "text-white font-medium"
       } ${responsiveClass}`}
