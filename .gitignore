@@ -93,3 +93,6 @@ backend/data/benchmarks/
 
 # ── Build output of the demo scripts ────────────────────────────────────
 dist/
+
+# Local design-tool state (impeccable critique snapshots)
+.impeccable/
