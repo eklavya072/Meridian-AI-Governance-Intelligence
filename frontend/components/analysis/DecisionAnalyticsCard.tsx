@@ -17,6 +17,7 @@ import {
   type RadarTooltip,
 } from "@/components/RadarChart";
 import { staggerContainer, staggerChild } from "@/lib/motion";
+import { ForceLadder } from "./ForceLadder";
 import palette from "@/lib/palette.json";
 
 // ── Dimension Radar — coverage tier → ring position ─────────────────────
@@ -194,14 +195,17 @@ export function DecisionAnalyticsCard({
       <div className="flex items-center justify-between mb-4">
         <motion.h2
           variants={staggerChild}
-          className="text-lg font-bold text-grey-950"
+          className="text-xl font-bold tracking-tight text-grey-950"
         >
           Decision Analytics
         </motion.h2>
-        <motion.span variants={staggerChild} className="eyebrow">
-          Dashboard-ready
-        </motion.span>
       </div>
+
+      {/* The force ladder leads: it is the idea the rest of the page grades
+          by. The coverage and depth charts follow it. */}
+      <motion.div variants={staggerChild} className="mb-4">
+        <ForceLadder gaps={gaps} />
+      </motion.div>
 
       {/* Row 1: the two charts side by side — coverage donut and depth
           gauge, both animating their fill on load. These are the visual

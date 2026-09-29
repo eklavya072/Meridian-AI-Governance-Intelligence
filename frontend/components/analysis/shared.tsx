@@ -12,6 +12,7 @@ import {
   Framework,
 } from "@/lib/api";
 import HighlightedText from "@/components/HighlightedText";
+import EvidenceThread from "@/components/EvidenceThread";
 import { verifiedSnap } from "@/lib/motion";
 import palette from "@/lib/palette.json";
 
@@ -214,24 +215,36 @@ export function CitationRow({ citation }: { citation: ModuleCitation }) {
           before the duty-bearer or the consequence. Provisions carry their
           force at the end, so the clamp is now generous enough to show one
           whole provision and only bites on a genuinely long extract. */}
-      {citation.claim && (
-        <p className="text-[13px] font-medium leading-snug text-grey-950">
-          {citation.claim}
-        </p>
-      )}
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm text-grey-900 line-clamp-[8] flex-1 italic">
-          “{citation.quote}”
-        </p>
-        {verified ? (
-          <VerifiedBadge />
+      {(() => {
+        const passage = (
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm text-grey-900 line-clamp-[8] flex-1 italic">
+              “{citation.quote}”
+            </p>
+            {verified ? (
+              <VerifiedBadge />
+            ) : (
+              <span className="dot-indicator shrink-0 !text-xs">
+                <span className="dot !w-1.5 !h-1.5" style={{ background: palette.status.red }} />
+                <span className="text-grey-950">Unverified</span>
+              </span>
+            )}
+          </div>
+        );
+        // With a claim, a thread ties it to the passage it rests on.
+        return citation.claim ? (
+          <EvidenceThread
+            claim={
+              <p className="text-[13px] font-medium leading-snug text-grey-950">
+                {citation.claim}
+              </p>
+            }
+            source={passage}
+          />
         ) : (
-          <span className="dot-indicator shrink-0 !text-xs">
-            <span className="dot !w-1.5 !h-1.5" style={{ background: palette.status.red }} />
-            <span className="text-grey-950">Unverified</span>
-          </span>
-        )}
-      </div>
+          passage
+        );
+      })()}
       <div className="flex flex-wrap gap-3 text-xs font-medium text-grey-900">
         {citation.document_name ? (
           <span className="text-grey-950 underline underline-offset-2">

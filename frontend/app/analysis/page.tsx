@@ -381,7 +381,7 @@ export default function AnalysisPage() {
           )}
 
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-grey-950">
+            <h2 className="text-xl font-bold tracking-tight text-grey-950">
               Governance Dimensions
             </h2>
             {analysis.governance_gaps.map((gap, i) => (

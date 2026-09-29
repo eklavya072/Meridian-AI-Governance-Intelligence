@@ -7,6 +7,8 @@ import { EASE } from "@/lib/motion";
 import { api, API_UNREACHABLE, Workspace, BriefDocument } from "@/lib/api";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import Button from "@/components/Button";
+import EvidenceThread from "@/components/EvidenceThread";
+import { serifVariable } from "@/lib/landingFonts";
 import { byCountryOrder } from "@/lib/countryOrder";
 
 import palette from "@/lib/palette.json";
@@ -42,7 +44,7 @@ function SectionHeading({ index, children }: { index: string; children: React.Re
       <motion.h2
         variants={{ hidden: { opacity: 0, y: 6 }, shown: { opacity: 1, y: 0 } }}
         transition={{ duration: 0.45, ease: EASE.out, delay: 0.05 }}
-        className="text-lg font-bold text-grey-950 tracking-tight"
+        className="font-serif text-[1.3rem] font-medium leading-tight tracking-[-0.01em] text-grey-950"
       >
         {children}
       </motion.h2>
@@ -176,7 +178,7 @@ export default function BriefPage() {
 
       {/* The brief is set as a document: one column the width of a page,
           the controls sitting on the same edges as the sheet below them. */}
-      <div className="mx-auto w-full max-w-[760px] space-y-6">
+      <div className={`mx-auto w-full max-w-[760px] space-y-6 ${serifVariable}`}>
       {/* Controls */}
       <div className="bg-white rounded-xl border border-black/[0.10] shadow-sm p-5">
         <div className="flex flex-wrap gap-3 items-end">
@@ -263,7 +265,7 @@ export default function BriefPage() {
               then what this document is. The label that used to sit above
               the title read as a kicker and measured 4.3:1. */}
           <div className="border-b border-black/[0.10] bg-gradient-to-b from-grey-950/[0.04] to-transparent px-6 py-10 text-center sm:px-14">
-            <h2 className="text-[clamp(1.75rem,4vw,2.25rem)] font-bold leading-tight tracking-tight text-grey-950">
+            <h2 className="font-serif text-[clamp(2rem,4.6vw,2.75rem)] font-medium leading-[1.08] tracking-[-0.015em] text-grey-950">
               {brief.country}
             </h2>
             <p className="mt-1.5 text-base font-medium text-grey-800">{brief.policy_title}</p>
@@ -325,10 +327,34 @@ export default function BriefPage() {
                           {r.depth ? ` · ${r.depth}` : ""}
                         </span>
                       </div>
-                      {r.basis && (
+                      {r.basis && !r.key_provision && (
                         <p className="mt-1 text-sm leading-relaxed text-grey-800">
                           {r.basis}
                         </p>
+                      )}
+                      {r.key_provision && (
+                        /* The finding and the provision it rests on, tied by
+                           the evidence thread. */
+                        <EvidenceThread
+                          className="mt-1.5"
+                          claim={
+                            <p className="text-sm leading-relaxed text-grey-800">
+                              {r.basis || "Key provision"}
+                            </p>
+                          }
+                          source={
+                            <blockquote>
+                              <p className="text-[13px] italic leading-relaxed text-grey-800">
+                                &ldquo;{r.key_provision.quote}&rdquo;
+                              </p>
+                              {r.key_provision.source && (
+                                <footer className="mt-0.5 text-xs text-grey-600">
+                                  {r.key_provision.source}
+                                </footer>
+                              )}
+                            </blockquote>
+                          }
+                        />
                       )}
                       {(r.in_place?.length ?? 0) > 0 && (
                         <p className="mt-1.5 text-xs leading-relaxed text-grey-700">
@@ -341,18 +367,6 @@ export default function BriefPage() {
                           <span className="font-semibold text-grey-950">Not addressed:</span>{" "}
                           {r.absent_mechanisms.join(", ")}
                         </p>
-                      )}
-                      {r.key_provision && (
-                        <blockquote className="mt-2 border-l-2 border-grey-950/20 pl-3">
-                          <p className="text-[13px] italic leading-relaxed text-grey-800">
-                            &ldquo;{r.key_provision.quote}&rdquo;
-                          </p>
-                          {r.key_provision.source && (
-                            <footer className="mt-0.5 text-xs text-grey-600">
-                              {r.key_provision.source}
-                            </footer>
-                          )}
-                        </blockquote>
                       )}
                     </motion.div>
                   ))}
