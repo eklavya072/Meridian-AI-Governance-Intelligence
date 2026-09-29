@@ -256,20 +256,28 @@ export default function WorkspacePage() {
           New Analysis
         </h2>
         <div className="grid md:grid-cols-2 gap-4 mb-4">
-          <SmoothInput
-            type="text"
-            placeholder="Country (e.g., India)"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            className="border border-grey-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-grey-950"
-          />
-          <SmoothInput
-            type="text"
-            placeholder="Policy Title (e.g., National AI Strategy)"
-            value={policyTitle}
-            onChange={(e) => setPolicyTitle(e.target.value)}
-            className="border border-grey-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-grey-950"
-          />
+          {/* Labelled, not placeholder-only: a placeholder disappears as
+              soon as you type, and a screen reader may not announce it. */}
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-grey-900">
+            Country
+            <SmoothInput
+              type="text"
+              placeholder="e.g., India"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              className="border border-grey-200 rounded-lg px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-grey-950"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-grey-900">
+            Policy title
+            <SmoothInput
+              type="text"
+              placeholder="e.g., National AI Strategy"
+              value={policyTitle}
+              onChange={(e) => setPolicyTitle(e.target.value)}
+              className="border border-grey-200 rounded-lg px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-grey-950"
+            />
+          </label>
         </div>
 
         <div className="mb-4 text-sm text-grey-600">

@@ -200,13 +200,33 @@ export default function ChatPanel() {
      framer-motion drops it again. Measured after trying the prop: the
      drawer still exposed 11 focusable controls. Set on the element. */
   const drawerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Whatever had focus when the drawer opened (usually the Ask button), so
+  // closing it puts the keyboard user back where they were.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const el = drawerRef.current;
     if (!el) return;
-    if (isOpen) el.removeAttribute("inert");
-    else el.setAttribute("inert", "");
+    if (isOpen) {
+      el.removeAttribute("inert");
+      returnFocusRef.current = document.activeElement as HTMLElement | null;
+      inputRef.current?.focus();
+    } else {
+      el.setAttribute("inert", "");
+      returnFocusRef.current?.focus?.();
+      returnFocusRef.current = null;
+    }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePanel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, closePanel]);
 
   useEffect(() => {
     if (isOpen && workspaceId) {
@@ -261,20 +281,25 @@ export default function ChatPanel() {
         animate={{ x: isOpen ? "0%" : "100%" }}
         transition={{ duration: DUR.slow, ease: EASE.outSoft }}
         ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chat-panel-title"
         aria-hidden={!isOpen || undefined}
         className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col"
       >
         {/* Header */}
         <div className="shrink-0 border-b border-grey-100 px-4 py-3">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-base font-semibold text-grey-950">
+            <h2 id="chat-panel-title" className="text-base font-semibold text-grey-950">
               {findingLabel ? `Ask about: ${findingLabel}` : "AI Rapporteur"}
             </h2>
-            <button
+<button
+              type="button"
               onClick={closePanel}
+              aria-label="Close chat"
               className="text-grey-600 hover:text-grey-700 text-xl leading-none"
             >
-              &times;
+              <span aria-hidden>&times;</span>
             </button>
           </div>
 
@@ -288,7 +313,7 @@ export default function ChatPanel() {
             >
               New chat
             </button>
-            <span className="text-grey-300">|</span>
+            <span aria-hidden className="text-grey-300">|</span>
             <button
               onClick={() => setShowSessions(!showSessions)}
               className="text-xs text-grey-600 hover:text-grey-950"
@@ -297,7 +322,7 @@ export default function ChatPanel() {
             </button>
             {findingLabel && (
               <>
-                <span className="text-grey-300">|</span>
+                <span aria-hidden className="text-grey-300">|</span>
                 <span className="text-xs text-grey-950 font-medium">
                   {findingLabel}
                 </span>
@@ -369,7 +394,9 @@ export default function ChatPanel() {
         <div className="shrink-0 border-t border-grey-100 px-4 py-3">
           <form onSubmit={handleSend} className="flex gap-2">
             <input
+              ref={inputRef}
               type="text"
+              aria-label="Your question"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about this analysis..."
