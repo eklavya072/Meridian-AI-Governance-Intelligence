@@ -64,7 +64,7 @@ const METHOD: Method[] = [
   },
   {
     n: "0",
-    title: "Verdicts set by the model",
+    title: "Verdicts the language model sets",
     body: "Coverage and depth are computed in code from counted, classified provisions. The language model is shown the verdict and explains it; it cannot set one, and cannot raise one.",
   },
   {

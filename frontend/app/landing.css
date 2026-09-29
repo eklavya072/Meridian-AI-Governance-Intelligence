@@ -87,7 +87,10 @@ body:has(.landing) main {
      the tracking are carrying the presence now, so the size does not have
      to — and a smaller display line leaves the FILM visible around it,
      which is the whole reason there is a film. */
-  --t-hero: clamp(1.85rem, 3.25vw, 2.95rem);
+  /* The hero line is the largest on the page: it sat at 47px under lines
+     of 48 and 56px further down, so the page's opening read as its
+     smallest statement. */
+  --t-hero: clamp(2.3rem, 4.3vw, 4rem);
   --t-display: clamp(2.6rem, 6.2vw, 5rem);
   --t-h2: clamp(1.95rem, 3.9vw, 3.15rem);
   --t-h3: clamp(1.45rem, 2.5vw, 2rem);
@@ -1560,11 +1563,14 @@ body:has(.landing) main {
   margin: 0 auto;
   padding: 0 var(--gutter);
   display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
   align-items: center;
   gap: clamp(2.5rem, 5vw, 5rem);
 }
-.l-pane.is-reverse { grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr); }
+.l-pane.is-reverse { grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr); }
+/* Inside the pinned track the product screens are the evidence, so they
+   get the room: a wider measure and most of it for the screen. */
+.l-track.is-horizontal .l-pane { max-width: 86rem; }
 .l-pane.is-reverse .l-pane-copy { order: 2; }
 .l-pane.is-reverse .l-pane-visual { order: 1; }
 
@@ -1574,7 +1580,7 @@ body:has(.landing) main {
   max-width: 44ch;
 }
 .l-pane-visual {
-  max-height: 66svh;
+  max-height: 72svh;
   display: flex;
   align-items: center;
 }
@@ -1893,8 +1899,10 @@ body:has(.landing) main {
 .l-close {
   text-align: center;
   border-top: 1px solid var(--hairline);
-  min-height: 34svh;
-  padding-block: clamp(2rem, 4vh, 3rem);
+  /* Two thirds of a screen: large enough to read as the page's last
+     statement rather than a strip, still short of a second hero. */
+  min-height: 62svh;
+  padding-block: clamp(3rem, 8vh, 6rem);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1907,8 +1915,8 @@ body:has(.landing) main {
      two-sentence statement across three ragged parts — the thing the
      explicit line break was supposed to prevent. The break is the <span>;
      the type has to be small enough to let it be the only one. */
-  font-size: clamp(1.5rem, 3.1vw, 2.45rem);
-  line-height: 1.12;
+  font-size: clamp(1.8rem, 3.5vw, 3.1rem);
+  line-height: 1.1;
   letter-spacing: var(--tr-h1);
   margin: 0 auto;
   max-width: 100%;
@@ -1922,7 +1930,7 @@ body:has(.landing) main {
 .l-close-line { display: block; }
 .l-close-h { text-align: center; }
 .l-close-turn { color: var(--key); }
-.l-close-cta { margin-top: 1.6rem; }
+.l-close-cta { margin-top: 2.25rem; }
 
 /* ── The last line ───────────────────────────────────────────────────────
    Small and thin, deliberately. A footer that competes with the close

@@ -26,11 +26,11 @@ import Link from "next/link";
    sticky stage itself occupies. Paced in vh, never in seconds: a scroll page
    is read in flicks. */
 /* Dwell is the point of a scrubbed hero; the assembly is only how it starts.
-   At 900vh a beat held for 576px — better than the 288 before it, still less
-   than a viewport, so a line was never simply THERE while you read it. At
-   1100vh a beat owns 1800px and holds for 900 of them: a full window of
-   scrolling with the words finished and perfectly still. */
-const HERO_VH = 1100;
+   At 1100vh a beat owned 1800px, and the hero took 56% of the page's
+   scroll for five captions, so a reader met the product late. At 800vh a
+   beat owns 140vh, about 1260px at a laptop height: a full window with
+   the words finished and still, and the product arrives a third sooner. */
+const HERO_VH = 800;
 
 /* ── The beat map ─────────────────────────────────────────────────────────
    Five beats, and the video HOLDS STILL on every one of them.
@@ -841,8 +841,7 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
           </ol>
           <p className="l-body l-band-note">
             Other tools check whether the words appear. We check what they
-            oblige anyone to do, on a five-rung ladder from a stated
-            aspiration to an enforceable duty.
+            oblige anyone to do, and what follows if nobody does.
           </p>
         </div>
 

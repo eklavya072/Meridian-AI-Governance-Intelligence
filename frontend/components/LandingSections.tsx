@@ -260,8 +260,7 @@ function Proof() {
           <strong>
             every answer comes back with the framework text it rests on
           </strong>
-          . A governance tool that cannot show its working is an opinion with
-          a score attached.
+          .
         </>
       }
       visual={<AuditorFrame active={frame.active} />}
