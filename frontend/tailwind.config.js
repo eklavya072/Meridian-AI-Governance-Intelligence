@@ -21,6 +21,8 @@ module.exports = {
         grey: palette.grey,
         status: palette.status,
         chart: palette.chart,
+        /* The two download formats, in the colours their readers know. */
+        file: palette.file,
       },
 
       /* ── Typography: Space Grotesk (display, distinctive grotesque) +

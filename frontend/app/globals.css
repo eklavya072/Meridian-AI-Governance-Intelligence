@@ -271,3 +271,10 @@ body {
 /* The page never scrolls sideways: a wide chart or a long citation
    scrolls inside its own box instead. */
 html, body { overflow-x: hidden; overflow-x: clip; }
+
+/* The shine button's own focus ring is a translucent version of its white
+   label, which vanishes on the light app pages. */
+.shine-button:focus-visible {
+  outline: 2px solid var(--black);
+  outline-offset: 3px;
+}

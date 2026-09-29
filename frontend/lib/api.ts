@@ -330,19 +330,16 @@ export interface BriefRecommendation {
   rationale: string;
 }
 
-export interface BriefRiskOverview {
-  paragraph: string;
-  high_priority_dimensions: string[];
-  distribution: Record<string, number>;
-}
-
 export interface BriefDimensionRow {
   dimension: string;
   coverage: string;
   depth: string;
   basis: string;
   absent_mechanisms: string[];
-  confidence: number | null;
+  /** Bodies, registers and articles the document names for the dimension. */
+  in_place?: string[];
+  /** One verified provision from the document, with "<document>, p. N". */
+  key_provision?: { quote: string; source: string } | null;
 }
 
 export interface BriefRoadmapPhase {
@@ -371,7 +368,6 @@ export interface BriefSections {
   executive_summary: string;
   areas_of_strength: string[];
   areas_requiring_attention: string[];
-  risk_overview: BriefRiskOverview;
   /** Deterministic per-dimension detail — coverage, depth, evidence basis. */
   dimension_assessment?: BriefDimensionRow[];
   priority_recommendations: BriefRecommendation[];

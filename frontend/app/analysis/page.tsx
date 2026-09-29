@@ -6,6 +6,7 @@ import ProviderBadge from "@/components/ProviderBadge";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import { byCountryOrder } from "@/lib/countryOrder";
 import Button from "@/components/Button";
+import ShineButton from "@/components/ShineButton";
 import PageHeader from "@/components/PageHeader";
 import { analysisDocuments, byStage } from "@/components/Heatmaps";
 import { useChat } from "@/components/ChatProvider";
@@ -262,9 +263,9 @@ export default function AnalysisPage() {
           </div>
           {/* Always black and always clickable-looking — loadAnalysis()
               itself no-ops when no workspace is selected. */}
-          <Button disabled={loading} onClick={loadAnalysis}>
+          <ShineButton disabled={loading} onClick={loadAnalysis}>
             {loading ? "Loading..." : "View Analysis"}
-          </Button>
+          </ShineButton>
         </div>
       </div>
 

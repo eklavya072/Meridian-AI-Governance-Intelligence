@@ -4,10 +4,12 @@ type Variant = "primary" | "secondary";
 
 /** The button look, for a link that should read as a button. */
 export function buttonClasses(variant: Variant = "primary") {
+  /* A lift on hover: the button rises a pixel and its shadow deepens, so
+     it reads as something to press rather than a coloured box. */
   const look =
     variant === "primary"
-      ? "bg-black text-white hover:bg-grey-800"
-      : "border border-black/20 text-black hover:bg-black/5";
+      ? "bg-black text-white shadow-sm hover:-translate-y-px hover:bg-grey-800 hover:shadow-md"
+      : "border border-black/20 text-black hover:-translate-y-px hover:border-black/40 hover:bg-black/5 hover:shadow-sm";
   return `pressable inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-50 ${look}`;
 }
 

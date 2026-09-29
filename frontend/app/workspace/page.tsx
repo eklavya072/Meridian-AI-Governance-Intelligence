@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { api, Workspace } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import TiltCard from "@/components/TiltCard";
-import Button from "@/components/Button";
+import ShineButton from "@/components/ShineButton";
+import EditorialReveal from "@/components/EditorialReveal";
 import SmoothInput from "@/components/SmoothInput";
 import { parseServerTime } from "@/lib/utils";
 import { byCountryOrder } from "@/lib/countryOrder";
@@ -237,6 +238,7 @@ export default function WorkspacePage() {
     <div className="space-y-8">
       <PageHeader
         title="Country Office Workspace"
+        animated={<EditorialReveal text="Country Office Workspace" />}
         subtitle="Create a workspace to analyze a national policy document against reference frameworks."
       />
 
@@ -285,9 +287,9 @@ export default function WorkspacePage() {
           governance dimension and the document's region.
         </div>
         {/* createWorkspace() no-ops until both fields are filled. */}
-        <Button disabled={creating} onClick={createWorkspace}>
+        <ShineButton disabled={creating} onClick={createWorkspace}>
           {creating ? "Creating..." : "Create Workspace"}
-        </Button>
+        </ShineButton>
 
         {/* Hidden picker for the freshly-created workspace (see createWorkspace). */}
         <input

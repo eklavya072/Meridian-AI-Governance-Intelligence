@@ -7,7 +7,8 @@ import { api, Framework } from "@/lib/api";
 import TiltCard from "@/components/TiltCard";
 import UnderlineLink from "@/components/UnderlineLink";
 import PageHeader from "@/components/PageHeader";
-import { staggerContainer, staggerChild } from "@/lib/motion";
+import WarpText from "@/components/WarpText";
+import { EASE, staggerContainer, staggerChild } from "@/lib/motion";
 
 import palette from "@/lib/palette.json";
 // URL-safe id for a framework card, matched by the analysis page's deep link
@@ -120,6 +121,30 @@ function FrameworksContent() {
     <div className="space-y-8">
       <PageHeader
         title="Framework Library"
+        art={
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: EASE.out }}
+          >
+            {/* The canvas is absolutely positioned and WarpText only shrinks
+                text to fit, so a collapsed container would rasterise the
+                heading tiny: 110px clears the largest size (4rem / 0.78
+                plus padding). */}
+            <WarpText
+              text="Framework Library"
+              color={palette.black}
+              fontSize="clamp(2.5rem, 7vw, 4rem)"
+              fontWeight={800}
+              letterSpacing="-0.03em"
+              lineHeight={0.95}
+              speed={0.5}
+              warpStrength={0.09}
+              refraction={0.012}
+              style={{ minHeight: 110 }}
+            />
+          </motion.div>
+        }
         subtitle="Reference frameworks used for analysis. Sources are config-driven."
       />
 

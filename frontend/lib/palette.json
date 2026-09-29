@@ -18,7 +18,7 @@
   "status": {
     "green": "#3F7A52",
     "green-tint": "#EAF1EC",
-    "amber": "#B07E2B",
+    "amber": "#A2762F",
     "amber-tint": "#F7F0E2",
     "amber-line": "#E4D5B5",
     "amber-ink": "#7A5B1E",
@@ -28,8 +28,16 @@
   },
   "chart": {
     "covered": "#3F7A52",
-    "partial": "#C9AF7A",
+    "partial": "#BDA16B",
     "missing": "#A8483F",
     "neutral": "#8A8A8A"
+  },
+  "file": {
+    "pdf": "#9A3F37",
+    "pdf-tint": "#F7EDEC",
+    "pdf-line": "#E6CBC7",
+    "docx": "#2E5A8C",
+    "docx-tint": "#EBF0F7",
+    "docx-line": "#C8D5E6"
   }
 }

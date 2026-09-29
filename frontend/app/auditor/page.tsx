@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { api, ChatCitation, ChatSessionInfo } from "@/lib/api";
 import { EASE, DUR } from "@/lib/motion";
 import PageHeader from "@/components/PageHeader";
+import SplitText from "@/components/SplitText";
 import MarkdownLite from "@/components/MarkdownLite";
 import { chatFailureText } from "@/components/ChatProvider";
 
@@ -315,6 +316,20 @@ export default function AuditorPage() {
           <PageHeader
             compact
             title="AI Auditor"
+            animated={
+              <SplitText
+                tag="span"
+                text="AI Auditor"
+                splitType="chars"
+                delay={45}
+                duration={0.6}
+                ease="power3.out"
+                from={{ opacity: 0, y: 40 }}
+                to={{ opacity: 1, y: 0 }}
+                textAlign="left"
+                playOnMount
+              />
+            }
             subtitle="One assistant for AI policy assessment — ask about governance dimensions and the international frameworks."
           />
         </div>

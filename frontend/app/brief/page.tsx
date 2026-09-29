@@ -1,22 +1,58 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FileDown, FileText } from "lucide-react";
+import { motion } from "motion/react";
+import { EASE } from "@/lib/motion";
 import { api, API_UNREACHABLE, Workspace, BriefDocument } from "@/lib/api";
-import Button from "@/components/Button";
 import AnimatedSelect from "@/components/AnimatedSelect";
+import ShineButton from "@/components/ShineButton";
+import InkReveal from "@/components/InkReveal";
 import { byCountryOrder } from "@/lib/countryOrder";
 
 import palette from "@/lib/palette.json";
 import PageHeader from "@/components/PageHeader";
+
+/* The two downloads, each in the colour its format is known by, so the
+   pair reads at a glance and neither is mistaken for the primary action. */
+const DOWNLOAD_LOOK = {
+  pdf: "border-file-pdf-line bg-file-pdf-tint text-file-pdf hover:border-file-pdf/50 hover:shadow-[0_6px_18px_-8px_rgba(154,63,55,0.45)]",
+  docx: "border-file-docx-line bg-file-docx-tint text-file-docx hover:border-file-docx/50 hover:shadow-[0_6px_18px_-8px_rgba(46,90,140,0.45)]",
+} as const;
+/* Scroll reveals in the brief play once, a little before the element is
+   fully in view, so reading down never waits on them. */
+const IN_VIEW = { once: true, margin: "0px 0px -8% 0px" } as const;
+
+/* A section heading whose rule draws out from the title as it comes into
+   view, the way a ruled document is set. */
 function SectionHeading({ index, children }: { index: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 mt-10 mb-4">
-      <span className="text-[11px] font-bold tracking-[0.14em] text-grey-950/40 tabular-nums">
+    <motion.div
+      className="flex items-center gap-3 mt-10 mb-4"
+      initial="hidden"
+      whileInView="shown"
+      viewport={IN_VIEW}
+    >
+      <motion.span
+        variants={{ hidden: { opacity: 0, y: 6 }, shown: { opacity: 1, y: 0 } }}
+        transition={{ duration: 0.4, ease: EASE.out }}
+        className="text-[11px] font-bold tracking-[0.14em] text-grey-950/40 tabular-nums"
+      >
         {index}
-      </span>
-      <h2 className="text-lg font-bold text-grey-950 tracking-tight">{children}</h2>
-      <div className="h-px flex-1 bg-black/[0.10]" />
-    </div>
+      </motion.span>
+      <motion.h2
+        variants={{ hidden: { opacity: 0, y: 6 }, shown: { opacity: 1, y: 0 } }}
+        transition={{ duration: 0.45, ease: EASE.out, delay: 0.05 }}
+        className="text-lg font-bold text-grey-950 tracking-tight"
+      >
+        {children}
+      </motion.h2>
+      <motion.div
+        variants={{ hidden: { scaleX: 0 }, shown: { scaleX: 1 } }}
+        transition={{ duration: 0.8, ease: EASE.out, delay: 0.12 }}
+        className="h-px flex-1 origin-left bg-black/[0.10]"
+      />
+    </motion.div>
   );
 }
 
@@ -124,7 +160,11 @@ export default function BriefPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Executive Brief" subtitle="A concise synthesis of the analysis." />
+      <PageHeader
+        title="Executive Brief"
+        animated={<InkReveal text="Executive Brief" />}
+        subtitle="A concise synthesis of the analysis."
+      />
 
       {/* Controls */}
       <div className="bg-white rounded-xl border border-black/[0.10] shadow-sm p-5">
@@ -151,36 +191,36 @@ export default function BriefPage() {
                 }))}
             />
           </div>
-          {/* Primary action until a brief exists, then a secondary one beside
-              the downloads. generate() no-ops without a selection, so it is
-              disabled only while a call is in flight. */}
-          {brief && workspaces.find((w) => w.id === selectedWs)?.locked ? null : brief ? (
-            <Button variant="secondary" onClick={generate} disabled={loading}>
-              {loading ? "Generating..." : "Regenerate Brief"}
-            </Button>
-          ) : (
-            <Button disabled={loading} onClick={generate}>
-              {loading ? "Generating..." : "Generate Brief"}
-            </Button>
+          {/* The black shine button generates, and regenerates once a brief
+              exists (an example workspace keeps the brief it ships with).
+              generate() no-ops without a selection, so it is disabled only
+              while a call is in flight. */}
+          {brief && workspaces.find((w) => w.id === selectedWs)?.locked ? null : (
+            <ShineButton disabled={loading} onClick={generate}>
+              {loading ? "Generating..." : brief ? "Regenerate Brief" : "Generate Brief"}
+            </ShineButton>
           )}
-          {brief && (
-            <>
-              <Button
-                variant="secondary"
-                onClick={() => download("pdf")}
+          {brief &&
+            (["pdf", "docx"] as const).map((fmt) => (
+              <button
+                key={fmt}
+                type="button"
+                onClick={() => download(fmt)}
                 disabled={exporting !== null}
+                className={`pressable inline-flex items-center gap-2 rounded-xl border px-5 py-[13px] text-[15px] font-semibold transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-50 ${DOWNLOAD_LOOK[fmt]}`}
               >
-                {exporting === "pdf" ? "Preparing..." : "Download PDF"}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => download("docx")}
-                disabled={exporting !== null}
-              >
-                {exporting === "docx" ? "Preparing..." : "Download DOCX"}
-              </Button>
-            </>
-          )}
+                {fmt === "pdf" ? (
+                  <FileDown aria-hidden className="h-4 w-4" />
+                ) : (
+                  <FileText aria-hidden className="h-4 w-4" />
+                )}
+                {exporting === fmt
+                  ? "Preparing..."
+                  : fmt === "pdf"
+                    ? "Download PDF"
+                    : "Download Word"}
+              </button>
+            ))}
         </div>
         {cached && !info && (
           <p className="mt-3 text-xs text-grey-600">
@@ -201,7 +241,13 @@ export default function BriefPage() {
 
       {/* Brief preview */}
       {brief && s && (
-        <div className="bg-white rounded-xl border border-black/[0.10] shadow-sm overflow-hidden">
+        <motion.div
+          key={brief.workspace_id}
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: EASE.out }}
+          className="bg-white rounded-xl border border-black/[0.10] shadow-sm overflow-hidden"
+        >
           {/* Title block */}
           <div className="border-b border-black/[0.10] bg-gradient-to-b from-grey-950/5 to-transparent px-8 py-8 text-center">
             <p className="text-[11px] font-bold tracking-[0.18em] text-grey-600 uppercase">
@@ -240,31 +286,20 @@ export default function BriefPage() {
               </div>
             </div>
 
-            {/* RISK OVERVIEW */}
-            <SectionHeading index={nextIndex()}>Risk Overview</SectionHeading>
-            <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
-              {s.risk_overview.paragraph}
-            </p>
-            {s.risk_overview.high_priority_dimensions.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {s.risk_overview.high_priority_dimensions.map((d) => (
-                  <span
-                    key={d}
-                    className="text-[11px] font-semibold text-white bg-grey-950 rounded-full px-3 py-1"
-                  >
-                    {d}
-                  </span>
-                ))}
-              </div>
-            )}
-
             {/* DIMENSION ASSESSMENT — deterministic per-dimension detail */}
             {(s.dimension_assessment?.length ?? 0) > 0 && (
               <>
                 <SectionHeading index={nextIndex()}>Dimension Assessment</SectionHeading>
                 <div className="max-w-3xl divide-y divide-grey-950/10">
-                  {s.dimension_assessment!.map((r) => (
-                    <div key={r.dimension} className="py-3 first:pt-0">
+                  {s.dimension_assessment!.map((r, ri) => (
+                    <motion.div
+                      key={r.dimension}
+                      initial={{ opacity: 0, y: 10 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={IN_VIEW}
+                      transition={{ duration: 0.45, ease: EASE.out, delay: (ri % 4) * 0.04 }}
+                      className="-mx-3 rounded-lg px-3 py-3 transition-colors duration-200 hover:bg-grey-950/[0.025]"
+                    >
                       <div className="flex flex-wrap items-baseline gap-x-2">
                         <span className="text-sm font-semibold text-grey-950">
                           {r.dimension}
@@ -279,12 +314,31 @@ export default function BriefPage() {
                           {r.basis}
                         </p>
                       )}
-                      {r.absent_mechanisms.length > 0 && (
-                        <p className="mt-1 text-xs text-grey-600">
-                          Not addressed: {r.absent_mechanisms.join(", ")}
+                      {(r.in_place?.length ?? 0) > 0 && (
+                        <p className="mt-1.5 text-xs leading-relaxed text-grey-700">
+                          <span className="font-semibold text-grey-950">Named in the document:</span>{" "}
+                          {r.in_place!.join("; ")}
                         </p>
                       )}
-                    </div>
+                      {r.absent_mechanisms.length > 0 && (
+                        <p className="mt-1 text-xs leading-relaxed text-grey-700">
+                          <span className="font-semibold text-grey-950">Not addressed:</span>{" "}
+                          {r.absent_mechanisms.join(", ")}
+                        </p>
+                      )}
+                      {r.key_provision && (
+                        <blockquote className="mt-2 border-l-2 border-grey-950/20 pl-3">
+                          <p className="text-[13px] italic leading-relaxed text-grey-800">
+                            &ldquo;{r.key_provision.quote}&rdquo;
+                          </p>
+                          {r.key_provision.source && (
+                            <footer className="mt-0.5 text-xs text-grey-600">
+                              {r.key_provision.source}
+                            </footer>
+                          )}
+                        </blockquote>
+                      )}
+                    </motion.div>
                   ))}
                 </div>
               </>
@@ -299,7 +353,14 @@ export default function BriefPage() {
             ) : (
               <ol className="space-y-3 max-w-3xl">
                 {s.priority_recommendations.map((r, i) => (
-                  <li key={i} className="flex gap-3">
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, x: -10 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={IN_VIEW}
+                    transition={{ duration: 0.45, ease: EASE.out, delay: i * 0.07 }}
+                    className="flex gap-3"
+                  >
                     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-grey-950 text-[11px] font-bold text-white">
                       {i + 1}
                     </span>
@@ -313,7 +374,7 @@ export default function BriefPage() {
                         </p>
                       )}
                     </div>
-                  </li>
+                  </motion.li>
                 ))}
               </ol>
             )}
@@ -423,7 +484,7 @@ export default function BriefPage() {
               </p>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {!brief && selectedWs && !loading && (
