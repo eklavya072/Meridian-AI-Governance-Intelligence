@@ -34,7 +34,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     const key = `${keyPrefix}-i${i++}`;
     if (tok.startsWith("**")) {
       out.push(
-        <strong key={key} className="font-semibold text-navy-950">
+        <strong key={key} className="font-semibold text-grey-950">
           {tok.slice(2, -2)}
         </strong>
       );
@@ -110,7 +110,7 @@ export default function MarkdownLite({ text, className }: Props) {
       {blocks.map((b, bi) => {
         if (b.kind === "h") {
           return (
-            <p key={bi} className="font-semibold text-navy-950">
+            <p key={bi} className="font-semibold text-grey-950">
               {renderInline(b.line, `b${bi}`)}
             </p>
           );

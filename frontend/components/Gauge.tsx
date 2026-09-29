@@ -26,6 +26,7 @@ import { animate, motion, useReducedMotion } from "motion/react";
 import { EASE } from "@/lib/motion";
 import { useInViewOnce } from "@/lib/useInViewOnce";
 
+import palette from "@/lib/palette.json";
 // Gauge geometry: start bottom-left (230° clockwise from top), sweep 260°
 // clockwise through the top to bottom-right (130°) — the classic
 // speedometer arc. 230°/130° is symmetric about 12 o'clock: the left and
@@ -158,8 +159,8 @@ export default function Gauge({
             x2={p1.x}
             y2={p1.y}
           >
-            <stop offset="0%" stopColor="#737373" />
-            <stop offset="100%" stopColor="#0A0A0A" />
+            <stop offset="0%" stopColor={palette.grey["600"]} />
+            <stop offset="100%" stopColor={palette.black} />
           </linearGradient>
         )}
       </defs>
@@ -168,7 +169,7 @@ export default function Gauge({
       <path
         d={arcPath(cx, cy, radius, START, SWEEP)}
         fill="none"
-        stroke="#0A0A0A"
+        stroke={palette.black}
         strokeOpacity={inactiveFillOpacity}
         strokeWidth={14}
         strokeLinecap="round"
@@ -183,7 +184,7 @@ export default function Gauge({
         <motion.path
           d={arcPath(cx, cy, radius, START, valueSweep)}
           fill="none"
-          stroke={useGradient ? `url(#${gradId})` : "#262626"}
+          stroke={useGradient ? `url(#${gradId})` : palette.grey["900"]}
           strokeWidth={14}
           strokeLinecap="round"
           pathLength={1}
@@ -208,7 +209,7 @@ export default function Gauge({
           textAnchor="middle"
           fontSize={centerFontSize}
           fontWeight={700}
-          fill="#0A0A0A"
+          fill={palette.black}
           style={{ fontVariantNumeric: "tabular-nums" }}
         >
           {shown}
@@ -219,7 +220,7 @@ export default function Gauge({
             y={cy + 20}
             textAnchor="middle"
             fontSize={10}
-            fill="#737373"
+            fill={palette.grey["600"]}
             letterSpacing="0.04em"
             style={{ textTransform: "uppercase", fontFamily: "inherit" }}
           >

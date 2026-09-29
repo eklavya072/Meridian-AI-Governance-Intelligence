@@ -39,20 +39,20 @@ export default function CitationAccordion({
   if (total === 0) return null;
 
   return (
-    <div className={`border-t border-gray-100 pt-2 ${className ?? ""}`}>
+    <div className={`border-t border-grey-50 pt-2 ${className ?? ""}`}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="pressable w-full flex items-center justify-between gap-3 py-1.5 text-left group"
       >
-        <span className="text-sm font-semibold text-navy-950 group-hover:opacity-70 transition-opacity">
+        <span className="text-sm font-semibold text-grey-950 group-hover:opacity-70 transition-opacity">
           {open ? `Hide ${label}` : `Show ${label} (${total} ${total === 1 ? "source" : "sources"})`}
         </span>
         <span className="flex items-center gap-2 shrink-0">
-          {summary && <span className="text-xs font-medium text-navy-900">{summary}</span>}
+          {summary && <span className="text-xs font-medium text-grey-900">{summary}</span>}
           <motion.span
             animate={{ rotate: open ? 180 : 0 }}
             transition={{ duration: DUR.fast, ease: EASE.out }}
-            className="text-navy-950 text-sm inline-block"
+            className="text-grey-950 text-sm inline-block"
             aria-hidden
           >
             ▼

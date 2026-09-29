@@ -39,6 +39,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { EASE } from "@/lib/motion";
 import { useInViewOnce } from "@/lib/useInViewOnce";
 
+import palette from "@/lib/palette.json";
 export interface RadarMetric {
   key: string;
   label: string;
@@ -162,7 +163,7 @@ export function RadarGrid({ levels = [0.33, 0.66, 1] }: { levels?: number[] }) {
   // Grey ring tokens — the same values as globals.css grey-300 (#D4D4D4)
   // and teal-100 (#E5E5E5); the dark series colour comes from the datum.
   return (
-    <g stroke="#D4D4D4" strokeWidth={1}>
+    <g stroke={palette.grey["200"]} strokeWidth={1}>
       {levels.map((level, li) => {
         const points = metrics
           .map((_, mi) => pointFor(mi, level).map((v) => v.toFixed(2)).join(","))
@@ -198,7 +199,7 @@ export function RadarAxis() {
             y1={cy}
             x2={x}
             y2={y}
-            stroke={isHover ? "#0A0A0A" : "#E5E5E5"}
+            stroke={isHover ? palette.black : palette.grey["200"]}
             strokeWidth={isHover ? 1.6 : 1}
             style={{
               transition: "stroke 150ms ease-out, stroke-width 150ms ease-out",
@@ -241,7 +242,7 @@ export function RadarLabels({
             y={y}
             textAnchor={anchor}
             dominantBaseline="middle"
-            fill={isHover ? "#0A0A0A" : "#737373"}
+            fill={isHover ? palette.black : palette.grey["600"]}
             fontWeight={isHover ? 600 : 400}
             style={{
               fontFamily: "inherit",
@@ -367,7 +368,7 @@ export function RadarArea({
                 cx={t.x}
                 cy={t.y}
                 r={isHover ? 5 : 3}
-                fill="#FFFFFF"
+                fill={palette.white}
                 stroke={datum.color}
                 strokeWidth={1.6}
                 initial={false}
@@ -439,7 +440,7 @@ export function RadarArea({
                     y={chipY + 14}
                     fontSize={10}
                     fontWeight={600}
-                    fill="#FFFFFF"
+                    fill={palette.white}
                   >
                     {metric.label}
                   </text>

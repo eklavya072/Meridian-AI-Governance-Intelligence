@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+const palette = require("./lib/palette.json");
+
 module.exports = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
@@ -6,82 +8,19 @@ module.exports = {
   ],
   theme: {
     extend: {
-      /* ── Color system: black + white + grey, full stop. The old navy/teal
-             tokens are REMAPPED (not removed) so every existing component
-             resolves to the monochrome scale by construction — no leftover
-             blue anywhere. ─────────────────────────────────────────────── */
+      /* ── Colour: one palette, lib/palette.json ─────────────────────────
+             Black, white and one neutral grey scale, plus the three muted
+             status colours (verdicts, verification) and the chart tokens.
+             Components read the same file for inline colours, so a value
+             lives in exactly one place. The old navy/teal/undp aliases, which
+             had long since been remapped onto greys, are gone. */
       colors: {
-        black: "#0A0A0A",
-        /* ── Grey scale — the prompt's canonical tokens ─────────────── */
-        grey: {
-          900: "#1A1A1A",
-          700: "#404040",
-          500: "#737373",
-          300: "#D4D4D4",
-          100: "#F5F5F5",
-          /* intermediate steps for smooth structure */
-          950: "#121212",
-          800: "#262626",
-          600: "#595959",
-          400: "#A3A3A3",
-          200: "#E5E5E5",
-          50: "#FAFAFA",
-        },
-        /* navy scale — REMAPPED to greys. Keeps class names working. */
-        navy: {
-          50: "#F7F7F7",
-          100: "#EDEDED",
-          200: "#DEDEDE",
-          300: "#C4C4C4",
-          400: "#A3A3A3",
-          500: "#8A8A8A",
-          600: "#737373",
-          700: "#595959",
-          800: "#404040",
-          900: "#262626",
-          950: "#0A0A0A",
-        },
-        /* teal scale — REMAPPED to greys (light-grey accents on dark,
-           pale-grey tints on light). Keeps class names working. */
-        teal: {
-          50: "#F2F2F2",
-          100: "#E5E5E5",
-          200: "#D4D4D4",
-          300: "#C4C4C4",
-          400: "#A3A3A3",
-          500: "#8A8A8A",
-          600: "#737373",
-          700: "#595959",
-          800: "#404040",
-          900: "#262626",
-        },
-        surface: "#F5F5F5",
-        /* Muted status colors — the one functional exception to the
-           monochrome rule (coverage verdicts, risk levels, verification).
-           Desaturated so they sit within the grey system. */
-        status: {
-          green: "#3F7A52", // muted forest green — covered / verified
-          amber: "#B07E2B", // muted amber — partial / caution
-          red: "#A8483F", // muted red — missing / error
-        },
-        /* Chart tokens — muted, used by the dashboard charts so Recharts
-           never falls back to its own saturated default palette. Coverage
-           distribution uses the muted status colors; everything else grey. */
-        chart: {
-          covered: "#3F7A52",
-          partial: "#C9AF7A", // soft gold — softer than amber against red/green
-          missing: "#A8483F",
-          neutral: "#8A8A8A",
-        },
-        /* Legacy UNDP aliases — mapped onto the monochrome scale. */
-        undp: {
-          blue: "#0A0A0A",
-          "blue-light": "#404040",
-          teal: "#8A8A8A",
-          green: "#3F7A52",
-          red: "#A8483F",
-          yellow: "#B07E2B",
-        },
+        black: palette.black,
+        white: palette.white,
+        surface: palette.surface,
+        grey: palette.grey,
+        status: palette.status,
+        chart: palette.chart,
       },
 
       /* ── Typography: Space Grotesk (display, distinctive grotesque) +

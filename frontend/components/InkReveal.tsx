@@ -26,6 +26,7 @@
 
 import { motion, useReducedMotion } from "motion/react";
 
+import palette from "@/lib/palette.json";
 // ── Timing constants (seconds) — tune the feel in one place ─────────────
 const WORD_STAGGER = 0.14; // gap between each word starting its wipe
 const WIPE_DURATION = 0.55; // how long a single word takes to rise
@@ -37,8 +38,8 @@ const WIPE_EASE = [0.22, 1, 0.36, 1] as const;
 export default function InkReveal({
   text,
   className = "",
-  ink = "#0A0A0A",
-  sheen = "#7C8DB1",
+  ink = palette.black,
+  sheen = palette.grey["500"],
 }: {
   text: string;
   className?: string;

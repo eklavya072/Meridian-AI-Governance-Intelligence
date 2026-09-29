@@ -260,7 +260,7 @@ const SmoothInput = ({
         />
         <motion.div
           aria-hidden
-          className="bg-undp-blue pointer-events-none col-start-1 col-end-2 row-start-1 row-end-2 h-[0.9em] w-0.5 self-center"
+          className="bg-grey-950 pointer-events-none col-start-1 col-end-2 row-start-1 row-end-2 h-[0.9em] w-0.5 self-center"
           style={{ x: springCaretX, opacity: caretOpacity }}
         />
       </div>

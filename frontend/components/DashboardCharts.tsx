@@ -19,15 +19,16 @@ import {
 } from "@/components/PieChart";
 import Gauge from "@/components/Gauge";
 
+import palette from "@/lib/palette.json";
 // ── Coverage donut ──────────────────────────────────────────────────────
 
 // Muted chart tokens — the exact values from globals.css. The coverage
 // distribution is the one chart that carries the Covered/Partial/Missing
 // semantic, so it uses the muted status colors; everything else is grey.
-const CHART_COVERED = "#3F7A52"; // muted forest green
-const CHART_PARTIAL = "#C9AF7A"; // soft gold — softer than amber against red/green
-const CHART_MISSING = "#A8483F"; // muted red
-const CHART_NEUTRAL = "#8A8A8A"; // grey — not assessed
+const CHART_COVERED = palette.status.green; // muted forest green
+const CHART_PARTIAL = palette.chart.partial; // soft gold — softer than amber against red/green
+const CHART_MISSING = palette.status.red; // muted red
+const CHART_NEUTRAL = palette.grey["500"]; // grey — not assessed
 const CHART_EMPTY = "rgba(10, 10, 10, 0.08)"; // --border, for zero-state slice
 
 export function CoverageDonut({
@@ -120,7 +121,7 @@ export function DepthGauge({
 
 // Fully greyscale ramp for the stage histogram — dark-grey steps, no
 // semantic color: the depth block stays strictly monochrome.
-const GAUGE_COLORS = ["#8A8A8A", "#6E6E6E", "#4A4A4A", "#262626", "#0A0A0A"];
+const GAUGE_COLORS = [palette.grey["500"], palette.grey["600"], palette.grey["800"], palette.grey["900"], palette.black];
 
 // ── Mini stage histogram (kept from the original card) ─────────────────
 // The gauge replaces the segmented bar, but the per-stage distribution is
@@ -144,7 +145,7 @@ export function StageHistogram({
       <div className="flex items-end gap-[3px] h-12">
         {counts.map((c, i) => (
           <div key={c.stage} className="flex-1 flex flex-col items-center gap-1">
-            <span className="text-[10px] font-semibold text-navy-800">
+            <span className="text-[10px] font-semibold text-grey-800">
               {c.count}
             </span>
             <div className="w-full rounded-t-sm overflow-hidden flex items-end flex-1">
@@ -165,7 +166,7 @@ export function StageHistogram({
         {counts.map((c) => (
           <span
             key={c.stage}
-            className="flex-1 text-center text-[9px] text-navy-600 leading-tight"
+            className="flex-1 text-center text-[9px] text-grey-600 leading-tight"
           >
             {c.stage}
           </span>

@@ -9,27 +9,27 @@ import MarkdownLite from "@/components/MarkdownLite";
 const INTENT_BADGES: Record<string, { label: string; color: string }> = {
   concept_explanation: {
     label: "Concept Explanation",
-    color: "bg-navy-100 text-navy-700",
+    color: "bg-grey-100 text-grey-700",
   },
   analysis_explanation: {
     label: "Analysis Explanation",
-    color: "bg-navy-100 text-navy-700",
+    color: "bg-grey-100 text-grey-700",
   },
   recommendation_explanation: {
     label: "Recommendation",
-    color: "bg-[#EAF1EC] text-[#3F7A52]",
+    color: "bg-status-green-tint text-status-green",
   },
   educational: {
     label: "Educational",
-    color: "bg-[#F7F0E2] text-[#7A5B1E]",
+    color: "bg-status-amber-tint text-status-amber-ink",
   },
   greeting: {
     label: "Greeting",
-    color: "bg-gray-100 text-gray-600",
+    color: "bg-grey-50 text-grey-700",
   },
   general: {
     label: "General",
-    color: "bg-navy-100 text-navy-700",
+    color: "bg-grey-100 text-grey-700",
   },
 };
 
@@ -49,7 +49,7 @@ function IntentBadge({ intent }: { intent?: string }) {
 function ProviderLabel({ provider }: { provider?: string }) {
   if (!provider || provider === "template") return null;
   return (
-    <span className="text-[10px] text-gray-500 italic">
+    <span className="text-[10px] text-grey-600 italic">
       Enriched by {provider}
     </span>
   );
@@ -62,7 +62,7 @@ function CitationBadge({ citations }: { citations: ChatMessage["citations"] }) {
   if (passed === 0) return null;
   return (
     <div className="flex gap-2 mt-2 text-[10px]">
-      <span className="text-[#3F7A52] bg-[#EAF1EC] px-1.5 py-0.5 rounded">
+      <span className="text-status-green bg-status-green-tint px-1.5 py-0.5 rounded">
         {passed} verified
       </span>
     </div>
@@ -85,10 +85,10 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       <div
         className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm ${
           isUser
-            ? "bg-undp-blue text-white rounded-br-md"
+            ? "bg-grey-950 text-white rounded-br-md"
             : isBlocked
-            ? "bg-[#F7F0E2] text-[#7A5B1E] border border-[#E4D5B5] rounded-bl-md"
-            : "bg-gray-100 text-gray-800 rounded-bl-md"
+            ? "bg-status-amber-tint text-status-amber-ink border border-status-amber-line rounded-bl-md"
+            : "bg-grey-50 text-grey-900 rounded-bl-md"
         }`}
       >
         {/* Intent badge + provider label */}
@@ -113,7 +113,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
         {/* Blocked reason */}
         {isBlocked && msg.reason && (
-          <p className="text-xs mt-1 text-[#8A6420] italic">
+          <p className="text-xs mt-1 text-status-amber-ink italic">
             Reason: {msg.reason}
           </p>
         )}
@@ -123,7 +123,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           <div className="mt-1">
             <button
               onClick={() => setShowCitations(!showCitations)}
-              className="text-[10px] text-gray-500 underline hover:text-gray-700"
+              className="text-[10px] text-grey-600 underline hover:text-grey-800"
             >
               {showCitations ? "Hide" : "Show"} citations
               ({msg.citations.filter((c) => c.verified).length})
@@ -146,11 +146,11 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
                       .map((cit, i) => (
                         <div
                           key={i}
-                          className="text-[10px] bg-white rounded p-1.5 border border-gray-200"
+                          className="text-[10px] bg-white rounded p-1.5 border border-grey-100"
                         >
-                          <span className="font-medium text-gray-700">{cit.source}:</span>{" "}
-                          <span className="text-gray-500">&ldquo;{cit.quote}&rdquo;</span>
-                          <span className="ml-1 text-[#3F7A52]">✓</span>
+                          <span className="font-medium text-grey-800">{cit.source}:</span>{" "}
+                          <span className="text-grey-600">&ldquo;{cit.quote}&rdquo;</span>
+                          <span className="ml-1 text-status-green">✓</span>
                         </div>
                       ))}
                   </div>
@@ -265,14 +265,14 @@ export default function ChatPanel() {
         className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col"
       >
         {/* Header */}
-        <div className="shrink-0 border-b border-gray-200 px-4 py-3">
+        <div className="shrink-0 border-b border-grey-100 px-4 py-3">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-base font-semibold text-undp-blue">
+            <h2 className="text-base font-semibold text-grey-950">
               {findingLabel ? `Ask about: ${findingLabel}` : "AI Rapporteur"}
             </h2>
             <button
               onClick={closePanel}
-              className="text-gray-500 hover:text-gray-600 text-xl leading-none"
+              className="text-grey-600 hover:text-grey-700 text-xl leading-none"
             >
               &times;
             </button>
@@ -284,21 +284,21 @@ export default function ChatPanel() {
                 newSession();
                 setShowSessions(false);
               }}
-              className="text-xs text-gray-500 hover:text-undp-blue"
+              className="text-xs text-grey-600 hover:text-grey-950"
             >
               New chat
             </button>
-            <span className="text-gray-300">|</span>
+            <span className="text-grey-300">|</span>
             <button
               onClick={() => setShowSessions(!showSessions)}
-              className="text-xs text-gray-500 hover:text-undp-blue"
+              className="text-xs text-grey-600 hover:text-grey-950"
             >
               {showSessions ? "Hide history" : `History (${sessions.length})`}
             </button>
             {findingLabel && (
               <>
-                <span className="text-gray-300">|</span>
-                <span className="text-xs text-undp-blue font-medium">
+                <span className="text-grey-300">|</span>
+                <span className="text-xs text-grey-950 font-medium">
                   {findingLabel}
                 </span>
               </>
@@ -307,7 +307,7 @@ export default function ChatPanel() {
           {showSessions && (
             <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
               {sessions.length === 0 && (
-                <p className="text-[11px] text-gray-500 italic">
+                <p className="text-[11px] text-grey-600 italic">
                   No previous sessions
                 </p>
               )}
@@ -318,7 +318,7 @@ export default function ChatPanel() {
                     switchSession(s.session_id);
                     setShowSessions(false);
                   }}
-                  className="block w-full text-left text-[11px] text-gray-600 hover:bg-gray-50 rounded px-2 py-1 truncate"
+                  className="block w-full text-left text-[11px] text-grey-700 hover:bg-grey-50 rounded px-2 py-1 truncate"
                 >
                   {s.title || "(untitled)"}
                 </button>
@@ -330,21 +330,21 @@ export default function ChatPanel() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           {messages.length === 0 && (
-            <div className="text-center text-gray-500 text-sm mt-8 space-y-4">
-              <p className="font-medium text-gray-500">AI Rapporteur</p>
+            <div className="text-center text-grey-600 text-sm mt-8 space-y-4">
+              <p className="font-medium text-grey-600">AI Rapporteur</p>
               <p>
                 Ask about this analysis — how each dimension was scored, the
                 evidence, recommendations, roadmap, and case intelligence.
               </p>
               <div className="text-xs space-y-1 text-left max-w-xs mx-auto">
-                <p className="font-medium text-gray-500 mt-4">
+                <p className="font-medium text-grey-600 mt-4">
                   Try asking:
                 </p>
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
                     onClick={() => sendMessage(s)}
-                    className="block w-full text-left text-undp-blue hover:bg-navy-50 rounded px-2 py-1"
+                    className="block w-full text-left text-grey-950 hover:bg-grey-50 rounded px-2 py-1"
                   >
                     {s}
                   </button>
@@ -357,7 +357,7 @@ export default function ChatPanel() {
           ))}
           {loading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100 rounded-xl rounded-bl-md px-4 py-2.5 text-sm text-gray-500">
+              <div className="bg-grey-50 rounded-xl rounded-bl-md px-4 py-2.5 text-sm text-grey-600">
                 <span className="animate-pulse">Thinking...</span>
               </div>
             </div>
@@ -366,7 +366,7 @@ export default function ChatPanel() {
         </div>
 
         {/* Input */}
-        <div className="shrink-0 border-t border-gray-200 px-4 py-3">
+        <div className="shrink-0 border-t border-grey-100 px-4 py-3">
           <form onSubmit={handleSend} className="flex gap-2">
             <input
               type="text"
@@ -374,12 +374,12 @@ export default function ChatPanel() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about this analysis..."
               disabled={loading}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-undp-blue disabled:opacity-50"
+              className="flex-1 border border-grey-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-grey-950 disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!input.trim() || loading}
-              className="pressable bg-undp-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-undp-blue-light disabled:opacity-50 transition-colors"
+              className="pressable bg-grey-950 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-grey-800 disabled:opacity-50 transition-colors"
             >
               Send
             </button>

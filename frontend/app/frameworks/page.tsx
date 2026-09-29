@@ -9,6 +9,7 @@ import UnderlineLink from "@/components/UnderlineLink";
 import WarpText from "@/components/WarpText";
 import { EASE, staggerContainer, staggerChild } from "@/lib/motion";
 
+import palette from "@/lib/palette.json";
 // URL-safe id for a framework card, matched by the analysis page's deep link
 // /frameworks?framework=<name> (International Standard Reference links).
 function slugify(s: string): string {
@@ -59,8 +60,8 @@ function FrameworksContent() {
         window.clearInterval(timer);
         ringEl = el;
         const base = el.style.borderColor;
-        el.style.borderColor = "rgb(45, 101, 224)";
-        el.style.boxShadow = "0 0 0 3px rgba(45,101,224,0.18)";
+        el.style.borderColor = palette.black;
+        el.style.boxShadow = "0 0 0 3px rgba(10, 10, 10, 0.18)";
         clearRing = window.setTimeout(() => {
           el.style.borderColor = base;
           el.style.boxShadow = "";
@@ -137,7 +138,7 @@ function FrameworksContent() {
                 page headings (clamp 3.25rem → 4rem). */}
             <WarpText
               text="Framework Library"
-              color="#0A0A0A"
+              color={palette.black}
               fontSize="clamp(3.25rem, 7vw, 4rem)"
               fontWeight={800}
               letterSpacing="-0.03em"
@@ -153,22 +154,22 @@ function FrameworksContent() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: EASE.out, delay: 0.06 }}
-          className="text-navy-600 mt-2 max-w-2xl mx-auto text-center"
+          className="text-grey-600 mt-2 max-w-2xl mx-auto text-center"
         >
           Reference frameworks used for analysis. Sources are config-driven.
         </motion.p>
       </div>
 
       {error && (
-        <div className="bg-[#F6ECEB] border border-[#E4C9C6] text-[#A8483F] px-4 py-3 rounded-lg text-sm">
+        <div className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-500">Loading framework library...</p>
+        <p className="text-grey-600">Loading framework library...</p>
       ) : frameworks.length === 0 ? (
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-status-amber-tint border border-status-amber-line text-status-amber-ink px-4 py-3 rounded-lg text-sm">
           No frameworks indexed yet.
         </div>
       ) : (
@@ -183,17 +184,17 @@ function FrameworksContent() {
             <TiltCard className="h-full">
             <div
               id={`framework-${slugify(fw.name)}`}
-              className="h-full bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+              className="h-full bg-white rounded-xl shadow-sm border border-grey-100 p-6"
             >
               <div className="flex items-start justify-between mb-3 gap-3">
-                <h2 className="font-semibold text-gray-900">{fw.name}</h2>
+                <h2 className="font-semibold text-grey-950">{fw.name}</h2>
                 {/* Dot indicator: 8px dot + muted label, no filled pill. */}
                 <span className="dot-indicator shrink-0 !gap-1.5 !text-xs">
                   <span
                     className="dot !w-1.5 !h-1.5"
-                    style={{ background: fw.indexed ? "#3F7A52" : "#8A8A8A" }}
+                    style={{ background: fw.indexed ? palette.status.green : palette.grey["500"] }}
                   />
-                  <span className="text-navy-600">
+                  <span className="text-grey-600">
                     {fw.indexed ? "Indexed" : "Not Indexed"}
                   </span>
                 </span>
@@ -202,7 +203,7 @@ function FrameworksContent() {
                 <UnderlineLink
                   href={fw.website}
                   ariaLabel={`Official source for ${fw.name}`}
-                  className="mt-3 text-sm text-undp-blue"
+                  className="mt-3 text-sm text-grey-950"
                 >
                   Official Source
                   <span aria-hidden="true" className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">

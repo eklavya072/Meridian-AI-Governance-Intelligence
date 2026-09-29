@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ScreenPanel } from "@/components/ProductFrames";
 
+import palette from "@/lib/palette.json";
 /* Scroll-driven in-view detection, with a 500ms rect poll behind it. Some
    embedded webviews stop dispatching scroll events entirely, and an observer
    alone would leave every stage frozen at its start state. */
@@ -100,7 +101,7 @@ function IngestionVisual({ active }: { active: boolean }) {
           <span className="text-[11px] font-mono text-black/62 truncate">
             national-ai-strategy.pdf
           </span>
-          <span className="ml-auto text-[10px] font-mono uppercase tracking-[0.14em] text-[#3F7A52] border border-[#3F7A52]/40 rounded px-1.5 py-0.5">
+          <span className="ml-auto text-[10px] font-mono uppercase tracking-[0.14em] text-status-green border border-status-green/40 rounded px-1.5 py-0.5">
             Parsed
           </span>
         </div>
@@ -123,7 +124,7 @@ function IngestionVisual({ active }: { active: boolean }) {
                page has no shadows anywhere else; a permanently animating one
                inside a product screen was the most conspicuous place to
                break that. The line reads fine as a line. */
-            className="pointer-events-none absolute left-4 right-4 h-[2px] rounded-full bg-[#0B0C0E] animate-[stage-scan_3.2s_ease-in-out_infinite]"
+            className="pointer-events-none absolute left-4 right-4 h-[2px] rounded-full bg-black animate-[stage-scan_3.2s_ease-in-out_infinite]"
           />
         )}
       </div>
@@ -247,7 +248,7 @@ function AnalysisVisual({ active }: { active: boolean }) {
               {i === 0 && (
                 <div className="flex items-center gap-4 mb-4 text-[11px] text-black/60">
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full" style={{ background: "#C9AF7A" }} />
+                    <span className="w-2 h-2 rounded-full" style={{ background: palette.chart.partial }} />
                     Partially covered
                   </span>
                   <span className="inline-flex items-center gap-1.5">

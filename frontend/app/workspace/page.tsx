@@ -9,7 +9,9 @@ import SpecularButton from "@/components/SpecularButton";
 import EditorialReveal from "@/components/EditorialReveal";
 import SmoothInput from "@/components/SmoothInput";
 import { parseServerTime } from "@/lib/utils";
+import { byCountryOrder } from "@/lib/countryOrder";
 
+import palette from "@/lib/palette.json";
 export default function WorkspacePage() {
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -106,8 +108,8 @@ export default function WorkspacePage() {
       <label
         className={`text-sm px-4 py-2 rounded-lg cursor-pointer transition-colors ${
           canAttach(ws)
-            ? "border border-undp-blue text-undp-blue hover:bg-undp-blue/5"
-            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            ? "border border-grey-950 text-grey-950 hover:bg-grey-950/5"
+            : "bg-grey-50 text-grey-600 cursor-not-allowed"
         }`}
       >
         {uploadingId === ws.id
@@ -154,7 +156,8 @@ export default function WorkspacePage() {
       // Queued workspaces DO belong here: that is where a workspace sits
       // while it collects documents, and hiding it would strand the Run
       // Analysis button the moment the page reloaded.
-      setWorkspaces(data.filter((w) => w.status !== "chat_only"));
+      // Same order as the country pickers on the Analysis and Brief pages.
+      setWorkspaces(data.filter((w) => w.status !== "chat_only").sort(byCountryOrder));
       setError(null);
     } catch (e) {
       setError("Failed to load workspaces");
@@ -177,6 +180,11 @@ export default function WorkspacePage() {
       setCountry("");
       setPolicyTitle("");
       await loadWorkspaces();
+      // The list is in country order, so a new workspace can land anywhere
+      // in it; bring its card into view rather than leave it off-screen.
+      requestAnimationFrame(() =>
+        document.getElementById(`ws-${ws.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+      );
       // Open the picker straight away — one less click in the common case.
       // The new workspace's own card is the fallback if the browser blocks
       // this programmatic click.
@@ -232,28 +240,28 @@ export default function WorkspacePage() {
             screens — larger than the old fixed 52px everywhere a real
             monitor can take it, without the heading wrapping to three
             ragged lines on smaller windows. */}
-        <h1 className="text-[clamp(3.25rem,7vw,4rem)] leading-[1.05] font-extrabold text-undp-blue tracking-tight">
+        <h1 className="text-[clamp(3.25rem,7vw,4rem)] leading-[1.05] font-extrabold text-grey-950 tracking-tight">
           <EditorialReveal text="Country Office Workspace" />
         </h1>
-        <p className="text-gray-600 mt-3 max-w-2xl mx-auto">
+        <p className="text-grey-700 mt-3 max-w-2xl mx-auto">
           Create a workspace to analyze a national policy document against
           reference frameworks.
         </p>
       </div>
 
       {error && (
-        <div className="bg-[#F6ECEB] border border-[#E4C9C6] text-[#A8483F] px-4 py-3 rounded-lg text-sm">
+        <div className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
       {notice && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-status-amber-tint border border-status-amber-line text-status-amber-ink px-4 py-3 rounded-lg text-sm">
           {notice}
         </div>
       )}
 
-      <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-undp-blue mb-4">
+      <section className="bg-white rounded-xl shadow-sm border border-grey-100 p-6">
+        <h2 className="text-lg font-semibold text-grey-950 mb-4">
           New Analysis
         </h2>
         <div className="grid md:grid-cols-2 gap-4 mb-4">
@@ -262,18 +270,18 @@ export default function WorkspacePage() {
             placeholder="Country (e.g., India)"
             value={country}
             onChange={(e) => setCountry(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-undp-blue"
+            className="border border-grey-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-grey-950"
           />
           <SmoothInput
             type="text"
             placeholder="Policy Title (e.g., National AI Strategy)"
             value={policyTitle}
             onChange={(e) => setPolicyTitle(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-undp-blue"
+            className="border border-grey-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-grey-950"
           />
         </div>
 
-        <div className="mb-4 text-sm text-gray-500">
+        <div className="mb-4 text-sm text-grey-600">
           Reference frameworks are selected automatically based on each
           governance dimension and the document's region.
         </div>
@@ -289,12 +297,12 @@ export default function WorkspacePage() {
           size="md"
           className="specular-button--compact"
           radius={12}
-          tint="#0A0A0A"
+          tint={palette.black}
           tintOpacity={1}
           blur={0}
-          textColor="#ffffff"
-          lineColor="#ffffff"
-          baseColor="#0A0A0A"
+          textColor={palette.white}
+          lineColor={palette.white}
+          baseColor={palette.black}
           intensity={1.2}
           shineSize={10}
           shineFade={40}
@@ -329,13 +337,13 @@ export default function WorkspacePage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-undp-blue mb-4">
+        <h2 className="text-lg font-semibold text-grey-950 mb-4">
           Recent Workspaces
         </h2>
         {loading ? (
-          <p className="text-gray-500">Loading...</p>
+          <p className="text-grey-600">Loading...</p>
         ) : workspaces.length === 0 ? (
-          <p className="text-gray-500 text-sm">
+          <p className="text-grey-600 text-sm">
             No workspaces yet. Create one above.
           </p>
         ) : (
@@ -344,13 +352,13 @@ export default function WorkspacePage() {
                 utility hides it). */}
             <div className="no-scrollbar max-h-[56vh] space-y-3 overflow-y-auto pb-2 pt-1 pr-1">
             {workspaces.map((ws) => (
-              <TiltCard key={ws.id} className="rounded-lg">
+              <TiltCard key={ws.id} className="rounded-lg" id={`ws-${ws.id}`}>
               <div
-                className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between shadow-sm hover:shadow-lg transition-shadow"
+                className="bg-white rounded-lg border border-grey-100 p-4 flex items-center justify-between shadow-sm hover:shadow-lg transition-shadow"
               >
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-3">
-                    <h3 className="font-medium text-gray-900">
+                    <h3 className="font-medium text-grey-950">
                       {ws.country} — {ws.policy_title}
                     </h3>
                     <StatusBadge
@@ -361,16 +369,16 @@ export default function WorkspacePage() {
                       }
                     />
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-grey-600">
                     Frameworks: auto-selected per dimension &amp; region
                   </p>
                   {ws.status_detail && (
-                    <p className="text-xs text-gray-400 italic">
+                    <p className="text-xs text-grey-600 italic">
                       {ws.status_detail}
                     </p>
                   )}
                   {(ws.pending_documents?.length ?? 0) > 0 && (
-                    <p className="text-xs text-gray-500 truncate">
+                    <p className="text-xs text-grey-600 truncate">
                       Attached: {ws.pending_documents.join(", ")}
                     </p>
                   )}
@@ -379,7 +387,7 @@ export default function WorkspacePage() {
                       there would count up against nothing. */}
                   {(ws.status === "processing" ||
                     ws.status === "generating_report") && (
-                    <p className="text-xs text-undp-blue font-medium">
+                    <p className="text-xs text-grey-950 font-medium">
                       {estimateLine(ws)}
                     </p>
                   )}
@@ -396,14 +404,14 @@ export default function WorkspacePage() {
                   {ws.status === "complete" && (
                     <button
                       onClick={() => router.push(`/analysis?workspace=${ws.id}`)}
-                      className="pressable text-sm px-4 py-2 rounded-lg transition-colors bg-undp-blue text-white hover:bg-undp-blue-light"
+                      className="pressable text-sm px-4 py-2 rounded-lg transition-colors bg-grey-950 text-white hover:bg-grey-800"
                     >
                       View Analysis
                     </button>
                   )}
                   {ws.locked ? (
                     <span
-                      className="self-center text-xs text-gray-500"
+                      className="self-center text-xs text-grey-600"
                       title="A finished example. Create a workspace of your own to upload and run."
                     >
                       Example · read-only
@@ -415,10 +423,10 @@ export default function WorkspacePage() {
                         <button
                           onClick={() => handleRunAnalysis(ws.id)}
                           disabled={startingId === ws.id || uploadingId === ws.id}
-                          className={`pressable text-sm px-4 py-2 rounded-lg transition-colors disabled:bg-gray-100 disabled:text-gray-400 ${
+                          className={`pressable text-sm px-4 py-2 rounded-lg transition-colors disabled:bg-grey-50 disabled:text-grey-400 ${
                             ws.status === "complete"
-                              ? "border border-undp-blue text-undp-blue hover:bg-undp-blue/5"
-                              : "bg-undp-blue text-white hover:bg-undp-blue-light"
+                              ? "border border-grey-950 text-grey-950 hover:bg-grey-950/5"
+                              : "bg-grey-950 text-white hover:bg-grey-800"
                           }`}
                         >
                           {startingId === ws.id

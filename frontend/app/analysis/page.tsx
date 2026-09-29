@@ -54,6 +54,7 @@ import {
   verifiedSnap,
 } from "@/lib/motion";
 
+import palette from "@/lib/palette.json";
 // Framework Library entries, loaded once on the analysis page. Module 2's
 // International Standard Reference uses them to render clickable links to the
 // Framework Library page; an empty list simply leaves the reference as text.
@@ -70,10 +71,10 @@ const COVERAGE_LABEL: Record<string, string> = {
 // it softens the red-vs-green contrast at the tier that sits between them,
 // for a calmer, more elegant read than the harsher stock traffic-light amber.
 const TIER_DOT: Record<string, string> = {
-  Covered: "#3F7A52", // --chart-covered (muted forest green)
-  Partial: "#C9AF7A", // --chart-partial (soft gold)
-  Missing: "#A8483F", // --chart-missing (muted red)
-  "Insufficient Evidence": "#B07E2B", // cannot tell — caution amber
+  Covered: palette.status.green, // --chart-covered (muted forest green)
+  Partial: palette.chart.partial, // --chart-partial (soft gold)
+  Missing: palette.status.red, // --chart-missing (muted red)
+  "Insufficient Evidence": palette.status.amber, // cannot tell — caution amber
 };
 
 // ── Dimension Radar — coverage tier → ring position ─────────────────────
@@ -94,9 +95,9 @@ const RADAR_DISPLAY: Record<string, string> = {
 };
 
 const RADAR_TIER_LEGEND = [
-  { label: "Missing", color: "#A8483F" },
-  { label: "Partially Covered", color: "#C9AF7A" },
-  { label: "Fully Covered", color: "#3F7A52" },
+  { label: "Missing", color: palette.status.red },
+  { label: "Partially Covered", color: palette.chart.partial },
+  { label: "Fully Covered", color: palette.status.green },
 ] as const;
 
 // Hover tooltip on the radar — reverse-maps the 0-100 ring position back
@@ -104,15 +105,15 @@ const RADAR_TIER_LEGEND = [
 // Partial, 100 = Fully Covered), in the same muted status colours as the
 // legend and donut.
 const radarTooltip = (value: number): RadarTooltip => {
-  if (value >= 100) return { label: "Fully Covered", color: "#3F7A52" };
-  if (value >= 66) return { label: "Partially Covered", color: "#C9AF7A" };
-  if (value >= 33) return { label: "Missing", color: "#A8483F" };
-  return { label: "Not assessed", color: "#8A8A8A" };
+  if (value >= 100) return { label: "Fully Covered", color: palette.status.green };
+  if (value >= 66) return { label: "Partially Covered", color: palette.chart.partial };
+  if (value >= 33) return { label: "Missing", color: palette.status.red };
+  return { label: "Not assessed", color: palette.grey["500"] };
 };
 
 function RadarRingLegend({ label, color }: { label: string; color: string }) {
   return (
-    <span className="flex items-center gap-1.5 text-sm font-medium text-navy-950">
+    <span className="flex items-center gap-1.5 text-sm font-medium text-grey-950">
       <span
         className="w-2.5 h-2.5 rounded-full border-2 shrink-0"
         style={{ borderColor: color }}
@@ -175,7 +176,7 @@ function CoverageIndicator({ coverage }: { coverage: string }) {
     <span className="dot-indicator">
       <span
         className="dot"
-        style={{ background: TIER_DOT[coverage] || "#0A0A0A" }}
+        style={{ background: TIER_DOT[coverage] || palette.black }}
       />
       <span>{COVERAGE_LABEL[coverage] || coverage}</span>
     </span>
@@ -251,13 +252,13 @@ function VerifiedBadge() {
     <motion.span {...verifiedSnap} className="dot-indicator shrink-0 !text-xs">
       <motion.span
         className="dot !w-1.5 !h-1.5"
-        style={{ background: "#3F7A52" }}
+        style={{ background: palette.status.green }}
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: 0.08, duration: 0.2 }}
         aria-hidden
       />
-      <span className="text-navy-950">Verified</span>
+      <span className="text-grey-950">Verified</span>
     </motion.span>
   );
 }
@@ -276,13 +277,13 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
   // Explicit "model declined to fabricate" state — NOT a failed verification.
   if (noCitation) {
     return (
-      <div className="border rounded-lg p-3 bg-gray-50/70">
+      <div className="border rounded-lg p-3 bg-grey-50/70">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-medium text-navy-900 italic">
+          <p className="text-sm font-medium text-grey-900 italic">
             No supporting passage was found in the retrieved context — the
             model declined to fabricate a citation.
           </p>
-          <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded bg-navy-950 text-white">
+          <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded bg-grey-950 text-white">
             No citation
           </span>
         </div>
@@ -291,7 +292,7 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
   }
 
   return (
-    <div className="border rounded-lg p-3 space-y-1.5 bg-gray-50/70">
+    <div className="border rounded-lg p-3 space-y-1.5 bg-grey-50/70">
       {/* The claim first, then the passage under it. A quote alone makes the
           reader reverse-engineer what it was offered to prove; naming the
           finding turns the card into an argument they can disagree with.
@@ -300,26 +301,26 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
           force at the end, so the clamp is now generous enough to show one
           whole provision and only bites on a genuinely long extract. */}
       {citation.claim && (
-        <p className="text-[13px] font-medium leading-snug text-navy-950">
+        <p className="text-[13px] font-medium leading-snug text-grey-950">
           {citation.claim}
         </p>
       )}
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm text-navy-900 line-clamp-[8] flex-1 italic">
+        <p className="text-sm text-grey-900 line-clamp-[8] flex-1 italic">
           “{citation.quote}”
         </p>
         {verified ? (
           <VerifiedBadge />
         ) : (
           <span className="dot-indicator shrink-0 !text-xs">
-            <span className="dot !w-1.5 !h-1.5" style={{ background: "#A8483F" }} />
-            <span className="text-navy-950">Unverified</span>
+            <span className="dot !w-1.5 !h-1.5" style={{ background: palette.status.red }} />
+            <span className="text-grey-950">Unverified</span>
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-3 text-xs font-medium text-navy-900">
+      <div className="flex flex-wrap gap-3 text-xs font-medium text-grey-900">
         {citation.document_name ? (
-          <span className="text-navy-950 underline underline-offset-2">
+          <span className="text-grey-950 underline underline-offset-2">
             Document: {citation.document_name}
           </span>
         ) : (
@@ -328,7 +329,7 @@ function CitationRow({ citation }: { citation: ModuleCitation }) {
         {citation.page_number && <span>Page {citation.page_number}</span>}
       </div>
       {citation.verification && !verified && (
-        <p className="text-xs font-medium text-navy-900 italic">
+        <p className="text-xs font-medium text-grey-900 italic">
           {String(
             (citation.verification as Record<string, unknown>)?.failure_reason || ""
           )}
@@ -379,7 +380,7 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
           <p className="module-label mb-1.5">Coverage</p>
           <CoverageIndicator coverage={gap.coverage} />
           {COVERAGE_GLOSS[gap.coverage] && (
-            <p className="text-[11px] leading-[1.5] text-navy-600 mt-1.5">
+            <p className="text-[11px] leading-[1.5] text-grey-600 mt-1.5">
               {COVERAGE_GLOSS[gap.coverage]}
               {mechanismTally && ` ${mechanismTally}`}
             </p>
@@ -389,7 +390,7 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
           <p className="module-label font-bold mb-1.5">Implementation Depth</p>
           <DepthBadge level={depth} />
           {depth && DEPTH_GLOSS[depth] && (
-            <p className="text-[11px] leading-[1.5] text-navy-600 mt-1.5">
+            <p className="text-[11px] leading-[1.5] text-grey-600 mt-1.5">
               {DEPTH_GLOSS[depth]}
             </p>
           )}
@@ -404,7 +405,7 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
             <p className="module-label mb-1.5">Evidence Behind This Verdict</p>
             <p className="module-value capitalize">{gap.evidence_confidence}</p>
             {gap.evidence_confidence_reason && (
-              <p className="text-[11px] text-navy-600 mt-1">
+              <p className="text-[11px] text-grey-600 mt-1">
                 {gap.evidence_confidence_reason}
               </p>
             )}
@@ -476,9 +477,9 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
           of the reader made correct work look unreliable. It is still recorded
           on the gap and logged server-side. */}
       {(gap.fabricated_citations?.length ?? 0) > 0 && (
-        <div className="rounded-lg border border-[#E4C9C6] bg-[#F9F1F0] px-3 py-2">
-          <p className="module-heading mb-1 text-[#A8483F]">Citation caveat</p>
-          <p className="module-body text-[#A8483F]">
+        <div className="rounded-lg border border-status-red-line bg-status-red-tint px-3 py-2">
+          <p className="module-heading mb-1 text-status-red">Citation caveat</p>
+          <p className="module-body text-status-red">
             Not found anywhere in the uploaded document —{" "}
             {gap.fabricated_citations!.join(", ")}. Treat as unreliable.
           </p>
@@ -531,10 +532,10 @@ function Module1Panel({ gap }: { gap: GovernanceGap }) {
 // ── Section 2: Recommendations & Alignment ───────────────────────────────
 
 const PRIORITY_DOT: Record<string, string> = {
-  Critical: "#A8483F", // muted red
-  High: "#A8483F", // muted red
-  Medium: "#B07E2B", // muted amber
-  Low: "#3F7A52", // muted forest green
+  Critical: palette.status.red, // muted red
+  High: palette.status.red, // muted red
+  Medium: palette.status.amber, // muted amber
+  Low: palette.status.green, // muted forest green
 };
 
 // ── Fully Covered tier: Best Practices panel (replaces Recommendations) ─
@@ -577,7 +578,7 @@ function BestPracticesPanel({ gap }: { gap: GovernanceGap }) {
               <div key={i} className="border rounded-lg p-3.5 bg-white/70 space-y-2">
                 <p className="module-body"><HighlightedText text={ex.practice} /></p>
                 {ex.alignment && (
-                  <p className="module-body text-navy-800">
+                  <p className="module-body text-grey-800">
                     <span className="font-semibold">Relation to this policy: </span>
                     {ex.alignment}
                   </p>
@@ -651,7 +652,7 @@ function Module2Panel({ gap }: { gap: GovernanceGap }) {
           <span className="dot-indicator">
             <span
               className="dot"
-              style={{ background: PRIORITY_DOT[priority] || "#0A0A0A" }}
+              style={{ background: PRIORITY_DOT[priority] || palette.black }}
             />
             <span>{priority}</span>
           </span>
@@ -667,7 +668,7 @@ function Module2Panel({ gap }: { gap: GovernanceGap }) {
             the instrument that expects it. Saying so converts the list from
             advice a reader has to trust into advice they can check. */}
         {recommendations.length > 0 && (
-          <p className="text-[11px] leading-[1.5] text-navy-600 mb-2">
+          <p className="text-[11px] leading-[1.5] text-grey-600 mb-2">
             Each action extends something already in this document rather than proposing a new
             regime, and names the international instrument that expects it — so both ends of the
             recommendation can be checked against a source.
@@ -697,12 +698,12 @@ function Module2Panel({ gap }: { gap: GovernanceGap }) {
                     href={`/frameworks?framework=${encodeURIComponent(
                       seg.framework.name
                     )}`}
-                    // A real highlight, not just a color swap: `text-undp-blue`
+                    // A real highlight, not just a color swap: `text-grey-950`
                     // resolves to the same near-black as ordinary body text
                     // (the palette killed blue), so underline alone read as a
                     // stray line under plain prose rather than a link. The
                     // background carries the "clickable" signal color cannot.
-                    className="font-semibold text-navy-950 underline decoration-navy-950/50 underline-offset-2 bg-navy-950/[0.06] hover:bg-navy-950/[0.11] rounded px-1 py-0.5 -mx-1 transition-colors"
+                    className="font-semibold text-grey-950 underline decoration-grey-950/50 underline-offset-2 bg-grey-950/[0.06] hover:bg-grey-950/[0.11] rounded px-1 py-0.5 -mx-1 transition-colors"
                     title={`Open ${seg.framework.name} in the Framework Library`}
                   >
                     {seg.text}
@@ -740,9 +741,9 @@ function Module2Panel({ gap }: { gap: GovernanceGap }) {
 // coverage-tier design: don't dwell on what's fine, focus on what needs work.
 
 const AGENCY_GROUNDING_DOT: Record<string, string> = {
-  document_named: "#3F7A52", // named in document — muted green
-  document_implied: "#B07E2B", // implied — muted amber
-  none_identified: "#A8483F", // none — muted red
+  document_named: palette.status.green, // named in document — muted green
+  document_implied: palette.status.amber, // implied — muted amber
+  none_identified: palette.status.red, // none — muted red
 };
 
 function Module3Panel({ gap }: { gap: GovernanceGap }) {
@@ -764,7 +765,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
           note says where they come from so the "why 0-10 months" question is
           answered before it is asked. */}
       {m3.phases.length > 0 && (
-        <p className="text-[11px] leading-[1.5] text-navy-600">
+        <p className="text-[11px] leading-[1.5] text-grey-600">
           Phase timelines are calculated from this dimension&apos;s own profile — its coverage
           tier, depth stage, how many mechanisms the document already operates, and whether it
           names a responsible agency. Each phase carries the reasoning that produced its range.
@@ -775,11 +776,11 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
           {m3.phases.map((ph, i) => (
             <div key={i} className="border rounded-lg p-4 bg-white/70">
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm font-bold text-navy-900">
+                <p className="text-sm font-bold text-grey-900">
                   {ph.phase || `Phase ${i + 1}`}
                 </p>
                 {ph.timeline && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-navy-950 text-white">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-grey-950 text-white">
                     {ph.timeline}
                   </span>
                 )}
@@ -791,7 +792,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
                 <ol className="mt-3 space-y-2.5">
                   {ph.steps.map((s, j) => (
                     <li key={j} className="module-body flex gap-2.5">
-                      <span className="font-bold text-navy-950 shrink-0 tabular-nums">
+                      <span className="font-bold text-grey-950 shrink-0 tabular-nums">
                         {j + 1}.
                       </span>
                       <span><HighlightedText text={s} /></span>
@@ -811,9 +812,9 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
           <span className="dot-indicator !gap-1.5 !text-xs">
             <span
               className="dot !w-1.5 !h-1.5"
-              style={{ background: AGENCY_GROUNDING_DOT[grounding] || "#A8483F" }}
+              style={{ background: AGENCY_GROUNDING_DOT[grounding] || palette.status.red }}
             />
-            <span className="text-navy-950">
+            <span className="text-grey-950">
               {grounding === "document_named"
                 ? "Named in document"
                 : grounding === "document_implied"
@@ -822,7 +823,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
             </span>
           </span>
           {grounding === "none_identified" && (
-            <span className="text-[11px] font-medium text-navy-900 italic">
+            <span className="text-[11px] font-medium text-grey-900 italic">
               No invented agency — implementation responsibility is for the
               adopting government to assign.
             </span>
@@ -851,7 +852,7 @@ function Module3Panel({ gap }: { gap: GovernanceGap }) {
           <ul className="space-y-2.5">
             {m3.monitoring_checklist.map((m, i) => (
               <li key={i} className="module-body flex items-start gap-2.5">
-                <span className="font-bold text-navy-950 mt-0.5 shrink-0 text-sm leading-relaxed">☐</span>
+                <span className="font-bold text-grey-950 mt-0.5 shrink-0 text-sm leading-relaxed">☐</span>
                 <span><HighlightedText text={m} /></span>
               </li>
             ))}
@@ -890,7 +891,7 @@ function Module4Panel({ gap }: { gap: GovernanceGap }) {
             one. The lead-in says so, because a documented failure printed
             under a dimension implies a forecast unless something states the
             opposite — and this instrument reads documents, not futures. */}
-        <p className="text-[11px] leading-[1.5] text-navy-600">
+        <p className="text-[11px] leading-[1.5] text-grey-600">
           These are documented incidents from the curated case library that turned on the
           governance this dimension is missing. They are shown to make the gap concrete — what
           has already gone wrong elsewhere when this control was absent — not as a prediction
@@ -913,7 +914,7 @@ function Module4Panel({ gap }: { gap: GovernanceGap }) {
               className="border rounded-lg p-4 bg-white/70 space-y-2.5 hover:shadow-md transition-shadow"
             >
               <div className="flex items-start justify-between gap-2 flex-wrap">
-                <p className="text-sm font-bold text-navy-950">
+                <p className="text-sm font-bold text-grey-950">
                   {inc.incident_name}
                 </p>
                 {inc.source && (
@@ -981,18 +982,18 @@ function AnalysisFailedPanel({ gap }: { gap: GovernanceGap }) {
     <div className="rounded-xl border border-[color:var(--border)] bg-white p-4 space-y-3">
       <div className="flex items-center gap-2">
         <span className="dot-indicator !gap-1.5 !text-xs">
-          <span className="dot !w-1.5 !h-1.5" style={{ background: "#A8483F" }} />
-          <span className="font-semibold text-navy-950">Analysis failed</span>
+          <span className="dot !w-1.5 !h-1.5" style={{ background: palette.status.red }} />
+          <span className="font-semibold text-grey-950">Analysis failed</span>
         </span>
-        <span className="text-xs font-bold text-navy-950">
+        <span className="text-xs font-bold text-grey-950">
           This dimension was NOT assessed — no coverage verdict exists.
         </span>
       </div>
-      <p className="text-sm font-medium text-navy-950">
+      <p className="text-sm font-medium text-grey-950">
         The analysis service did not return a result for this dimension on
         this run, so nothing here is a finding about the document.
       </p>
-      <p className="text-xs font-medium text-navy-900 italic">
+      <p className="text-xs font-medium text-grey-900 italic">
         Use Re-run above to assess it. Dimensions that completed are kept, so
         only this one is redone.
       </p>
@@ -1033,18 +1034,18 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
         : "Recommendations & Alignment",
       meta: isBestPractices ? (
         <span className="dot-indicator !gap-1.5 !text-xs">
-          <span className="dot !w-1.5 !h-1.5" style={{ background: "#3F7A52" }} />
-          <span className="text-navy-950">No critical gaps</span>
+          <span className="dot !w-1.5 !h-1.5" style={{ background: palette.status.green }} />
+          <span className="text-grey-950">No critical gaps</span>
         </span>
       ) : gap.module_2?.priority ? (
         <span className="dot-indicator !gap-1.5 !text-xs">
           <span
             className="dot !w-1.5 !h-1.5"
             style={{
-              background: PRIORITY_DOT[gap.module_2.priority] || "#0A0A0A",
+              background: PRIORITY_DOT[gap.module_2.priority] || palette.black,
             }}
           />
-          <span className="text-navy-950">{gap.module_2.priority}</span>
+          <span className="text-grey-950">{gap.module_2.priority}</span>
         </span>
       ) : undefined,
       content: <Module2Panel gap={gap} />,
@@ -1065,8 +1066,8 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
             title: "Case Intelligence",
             meta: (
               <span className="dot-indicator !gap-1.5 !text-xs">
-                <span className="dot !w-1.5 !h-1.5" style={{ background: "#0A0A0A" }} />
-                <span className="text-navy-950">Curated incident match</span>
+                <span className="dot !w-1.5 !h-1.5" style={{ background: palette.black }} />
+                <span className="text-grey-950">Curated incident match</span>
               </span>
             ),
             content: <Module4Panel gap={gap} />,
@@ -1085,7 +1086,7 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
       // opened-then-scrolled-past card never re-plays the entrance.
       viewport={{ once: true, amount: 0.2 }}
       className={`bg-white rounded-xl shadow-sm border ${
-        failed ? "border-[#E4C9C6]" : "border-[color:var(--border)]"
+        failed ? "border-status-red-line" : "border-[color:var(--border)]"
       }`}
       transition={{
         layout: { duration: DUR.slow, ease: EASE.outSoft },
@@ -1099,13 +1100,13 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
         onClick={() => setOpen((v) => !v)}
         className={`pressable w-full flex items-center justify-between gap-3 px-5 py-4 text-left transition-colors ${
           open ? "rounded-t-xl" : "rounded-xl"
-        } ${failed ? "hover:bg-[#F6ECEB]/60" : "hover:bg-gray-50/70"}`}
+        } ${failed ? "hover:bg-status-red-tint/60" : "hover:bg-grey-50/70"}`}
       >
         <div className="flex items-center gap-3 flex-wrap">
-          <h3 className="font-bold text-lg text-navy-950">{gap.dimension}</h3>
+          <h3 className="font-bold text-lg text-grey-950">{gap.dimension}</h3>
           {failed ? (
             <span className="dot-indicator">
-              <span className="dot" style={{ background: "#A8483F" }} />
+              <span className="dot" style={{ background: palette.status.red }} />
               <span>Analysis failed</span>
             </span>
           ) : (
@@ -1150,7 +1151,7 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
         <motion.span
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ duration: DUR.fast, ease: EASE.out }}
-          className="text-navy-950 text-sm shrink-0 inline-block"
+          className="text-grey-950 text-sm shrink-0 inline-block"
           aria-hidden
         >
           ▼
@@ -1180,7 +1181,7 @@ function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: number }) {
 
               {gap.evidence.length > 0 && (
                 <motion.details variants={staggerChild} className="border-t pt-3">
-                  <summary className="text-sm font-semibold text-navy-950 cursor-pointer hover:opacity-70 transition-opacity">
+                  <summary className="text-sm font-semibold text-grey-950 cursor-pointer hover:opacity-70 transition-opacity">
                     Retrieved passages ({gap.evidence.length})
                   </summary>
                   <div className="mt-3 space-y-3">
@@ -1282,7 +1283,7 @@ function DecisionAnalyticsCard({
     [gaps]
   );
   const radarSeries = useMemo(
-    () => [{ label: "Coverage", color: "#0A0A0A", values: radar.values }],
+    () => [{ label: "Coverage", color: palette.black, values: radar.values }],
     [radar.values]
   );
 
@@ -1326,7 +1327,7 @@ function DecisionAnalyticsCard({
       <div className="flex items-center justify-between mb-4">
         <motion.h2
           variants={staggerChild}
-          className="text-lg font-bold text-navy-950"
+          className="text-lg font-bold text-grey-950"
         >
           Decision Analytics
         </motion.h2>
@@ -1369,7 +1370,7 @@ function DecisionAnalyticsCard({
           <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
             <p className="eyebrow">Dimension Radar</p>
             {radar.notAssessed > 0 && (
-              <p className="text-[11px] font-medium text-navy-900 italic">
+              <p className="text-[11px] font-medium text-grey-900 italic">
                 {radar.notAssessed} dimension
                 {radar.notAssessed > 1 ? "s" : ""} not assessed (centre)
               </p>
@@ -1392,7 +1393,7 @@ function DecisionAnalyticsCard({
                 <RadarRingLegend key={tier.label} {...tier} />
               ))}
             </div>
-            <p className="text-[11px] font-medium text-navy-900 mt-1.5 italic">
+            <p className="text-[11px] font-medium text-grey-900 mt-1.5 italic">
               Ring position = coverage tier
             </p>
           </div>
@@ -1414,14 +1415,14 @@ function DecisionAnalyticsCard({
               {weakestDimensions.map((d) => (
                 <span key={d} className="dot-indicator">                <span
                   className="dot"
-                  style={{ background: "#A8483F" }}
+                  style={{ background: palette.status.red }}
                 />
                   <span>{d}</span>
                 </span>
               ))}
             </div>
           ) : (
-            <p className="text-sm font-medium text-navy-950 mt-1">None flagged</p>
+            <p className="text-sm font-medium text-grey-950 mt-1">None flagged</p>
           )}
         </motion.div>
         <motion.div
@@ -1429,7 +1430,7 @@ function DecisionAnalyticsCard({
           className="rounded-xl border border-[color:var(--border)] bg-white p-4"
         >
           <p className="eyebrow mb-2">Strongest Dimension</p>
-          <p className="text-lg font-semibold text-navy-950 mt-1">
+          <p className="text-lg font-semibold text-grey-950 mt-1">
             {analytics.strongest_dimension || "—"}
           </p>
         </motion.div>
@@ -1451,7 +1452,7 @@ function DecisionAnalyticsCard({
           className="rounded-xl border border-[color:var(--border)] bg-white p-4 mt-4"
         >
           <p className="eyebrow mb-1">Priority Gaps</p>
-          <p className="text-[11px] text-navy-600 mb-3">
+          <p className="text-[11px] text-grey-600 mb-3">
             Mechanisms with no supporting provision in the evidence scored for
             their dimension, shown only where at least half of the{" "}
             {corpusSize || 43} indexed instruments expect them. Ordered by how
@@ -1468,12 +1469,12 @@ function DecisionAnalyticsCard({
                   className="h-1.5 rounded-full shrink-0"
                   style={{
                     width: `${Math.max(8, (g.expected_by / (corpusSize || 43)) * 84)}px`,
-                    background: "#A8483F",
+                    background: palette.status.red,
                   }}
                 />
-                <span className="font-medium text-navy-950">{g.mechanism}</span>
-                <span className="text-navy-600 text-[11px]">{g.dimension}</span>
-                <span className="ml-auto text-[11px] text-navy-600 tabular-nums">
+                <span className="font-medium text-grey-950">{g.mechanism}</span>
+                <span className="text-grey-600 text-[11px]">{g.dimension}</span>
+                <span className="ml-auto text-[11px] text-grey-600 tabular-nums">
                   expected by {g.expected_by} of {corpusSize || 43}
                 </span>
               </li>
@@ -1492,7 +1493,7 @@ function DecisionAnalyticsCard({
           className="rounded-xl border border-[color:var(--border)] bg-white p-4 mt-4"
         >
           <p className="eyebrow mb-1">Regulatory Trajectory</p>
-          <p className="text-[11px] text-navy-600 mb-3">
+          <p className="text-[11px] text-grey-600 mb-3">
             Coverage and depth stage per dimension, across every run in
             this workspace — what each added instrument actually moved.
           </p>
@@ -1712,10 +1713,10 @@ export default function AnalysisPage() {
           {/* Static heading — the previous BlurText reveal effect was
               removed at the user's request. Size, weight and colour
               (clamp 3.25rem → 4rem, 800, #0A0A0A) are unchanged. */}
-          <h1 className="text-[clamp(3.25rem,7vw,4rem)] leading-[1.05] font-extrabold text-undp-blue tracking-tight text-center">
+          <h1 className="text-[clamp(3.25rem,7vw,4rem)] leading-[1.05] font-extrabold text-grey-950 tracking-tight text-center">
             Governance Analysis
           </h1>
-          <p className="text-navy-950 font-medium mt-4 max-w-2xl mx-auto">
+          <p className="text-grey-950 font-medium mt-4 max-w-2xl mx-auto">
             Evidence-based gap analysis of the policy across eight governance
             dimensions.
           </p>
@@ -1732,7 +1733,7 @@ export default function AnalysisPage() {
               setMode("advisor");
               openPanel();
             }}
-            className="pressable shrink-0 bg-undp-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-undp-blue-light transition-colors"
+            className="pressable shrink-0 bg-grey-950 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-grey-800 transition-colors"
           >
             Ask AI
           </button>
@@ -1744,10 +1745,10 @@ export default function AnalysisPage() {
           Select Workspace card (same white surface, border, shadow,
           padding, and inner flex layout) so the two pages feel like one
           component. Only the action button differs. */}
-      <div className="bg-white rounded-xl border border-[rgba(10,10,10,0.10)] shadow-sm p-5">
+      <div className="bg-white rounded-xl border border-black/[0.10] shadow-sm p-5">
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[260px]">
-            <label className="block text-base font-semibold text-navy-950 mb-1.5">
+            <label className="block text-base font-semibold text-grey-950 mb-1.5">
               Select Workspace
             </label>
             <AnimatedSelect
@@ -1766,12 +1767,12 @@ export default function AnalysisPage() {
             size="md"
             className="specular-button--compact"
             radius={12}
-            tint="#0A0A0A"
+            tint={palette.black}
             tintOpacity={1}
             blur={0}
-            textColor="#ffffff"
-            lineColor="#ffffff"
-            baseColor="#0A0A0A"
+            textColor={palette.white}
+            lineColor={palette.white}
+            baseColor={palette.black}
             intensity={1.2}
             shineSize={10}
             shineFade={40}
@@ -1790,7 +1791,7 @@ export default function AnalysisPage() {
 
       {analyses.length > 1 && (
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-sm font-semibold text-navy-950">Documents evaluated:</span>
+          <span className="text-sm font-semibold text-grey-950">Documents evaluated:</span>
           {[...analyses].sort((a, b) => byStage(b, a)).map((a) => {
             // Labelled by what was evaluated: the full document set first
             // (the country's assessment, and the run the page opens on), then
@@ -1815,8 +1816,8 @@ export default function AnalysisPage() {
                 }}
                 className={`pressable px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                   a.analysis_id === selectedAnalysisId
-                    ? "bg-undp-blue text-white border-undp-blue"
-                    : "bg-white text-navy-950 border-navy-300 hover:border-undp-blue hover:text-undp-blue"
+                    ? "bg-grey-950 text-white border-grey-950"
+                    : "bg-white text-grey-950 border-grey-300 hover:border-grey-950 hover:text-grey-950"
                 }`}
               >
                 {label}
@@ -1840,12 +1841,12 @@ export default function AnalysisPage() {
           ? `${failedCount} of ${analysis.governance_gaps.length} dimensions were not assessed on this run. Re-running redoes only those.`
           : "Mechanism evidence could not be checked on this run, so implementation depth is provisional.";
         return (
-          <div className="bg-[#F7F0E2] border border-[#E4D5B5] text-[#7A5B1E] px-4 py-3 rounded-lg text-sm flex flex-wrap items-center gap-3">
+          <div className="bg-status-amber-tint border border-status-amber-line text-status-amber-ink px-4 py-3 rounded-lg text-sm flex flex-wrap items-center gap-3">
             <span className="flex-1 min-w-[240px]">{rerunError || message}</span>
             <button
               onClick={rerun}
               disabled={rerunStarting}
-              className="pressable text-sm px-4 py-1.5 rounded-lg bg-undp-blue text-white hover:bg-undp-blue-light disabled:bg-gray-100 disabled:text-gray-400"
+              className="pressable text-sm px-4 py-1.5 rounded-lg bg-grey-950 text-white hover:bg-grey-800 disabled:bg-grey-50 disabled:text-grey-400"
             >
               {rerunStarting ? "Starting..." : queued ? "Run analysis" : "Re-run"}
             </button>
@@ -1854,8 +1855,8 @@ export default function AnalysisPage() {
       })()}
 
       {isRunActive && (
-        <div className="bg-navy-100 border border-navy-200 text-navy-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2.5">
-          <span className="w-2 h-2 rounded-full bg-navy-500 status-dot shrink-0" />
+        <div className="bg-grey-100 border border-grey-200 text-grey-800 px-4 py-3 rounded-lg text-sm flex items-center gap-2.5">
+          <span className="w-2 h-2 rounded-full bg-grey-500 status-dot shrink-0" />
           <span>
             <span className="font-semibold">Analysis is currently running for this workspace.</span>{" "}
             {wsStatusDetail || "This can take a few minutes."}
@@ -1866,7 +1867,7 @@ export default function AnalysisPage() {
         </div>
       )}
 
-      {error && (            <div className="bg-[#F7F0E2] border border-[#E4D5B5] text-[#7A5B1E] px-4 py-3 rounded-lg text-sm">
+      {error && (            <div className="bg-status-amber-tint border border-status-amber-line text-status-amber-ink px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
@@ -1881,7 +1882,7 @@ export default function AnalysisPage() {
               about the documents supplied, and the EU's Privacy verdict,
               read from the AI Act without the GDPR, carried no caveat. */}
           {analysis.scope_disclaimer && (
-            <p className="text-[13px] leading-relaxed text-navy-800 border-l-2 border-navy-300 pl-3">
+            <p className="text-[13px] leading-relaxed text-grey-800 border-l-2 border-grey-300 pl-3">
               {analysis.scope_disclaimer}
             </p>
           )}
@@ -1896,7 +1897,7 @@ export default function AnalysisPage() {
           )}
 
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-undp-blue">
+            <h2 className="text-xl font-semibold text-grey-950">
               Governance Dimensions
             </h2>
             {analysis.governance_gaps.map((gap, i) => (

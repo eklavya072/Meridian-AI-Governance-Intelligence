@@ -25,8 +25,8 @@ import { GovernanceGap } from "@/lib/api";
 const FORCE_STATES = {
   binding: {
     label: "Binding duty",
-    dot: "bg-navy-950",
-    chip: "border-navy-950 bg-navy-950/[0.06] text-navy-950",
+    dot: "bg-grey-950",
+    chip: "border-grey-950 bg-grey-950/[0.06] text-grey-950",
   },
   // Darker than the original (/40 dot, /25 border) so it reads as a real
   // second state rather than disabled text, but pulled back from binding
@@ -34,8 +34,8 @@ const FORCE_STATES = {
   // gap is the signal here, not just the darkness of either end.
   stated: {
     label: "Stated commitment",
-    dot: "bg-navy-950/55",
-    chip: "border-navy-950/38 bg-navy-950/[0.02] text-navy-950/78",
+    dot: "bg-grey-950/55",
+    chip: "border-grey-950/38 bg-grey-950/[0.02] text-grey-950/78",
   },
 } as const;
 
@@ -85,7 +85,7 @@ export function ProvisionChecklist({ gap }: { gap: GovernanceGap }) {
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
         {(Object.keys(FORCE_STATES) as ForceState[]).map((k) => (
-          <span key={k} className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+          <span key={k} className="inline-flex items-center gap-1.5 text-[11px] text-grey-600">
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${FORCE_STATES[k].dot}`} />
             {FORCE_STATES[k].label}
           </span>

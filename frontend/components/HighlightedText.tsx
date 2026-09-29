@@ -172,7 +172,7 @@ export default function HighlightedText({ text }: { text: string }) {
   matches.forEach((m, i) => {
     if (m.start > cursor) parts.push(text.slice(cursor, m.start));
     parts.push(
-      <strong key={i} className="font-semibold text-navy-950">
+      <strong key={i} className="font-semibold text-grey-950">
         {text.slice(m.start, m.end)}
       </strong>
     );

@@ -47,6 +47,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { EASE } from "@/lib/motion";
 
+import palette from "@/lib/palette.json";
 /* ── Panel ─────────────────────────────────────────────────────────────
    The product surface itself, with rounded corners and a shadow. No bezel.
 
@@ -85,7 +86,7 @@ export function ScreenPanel({
          behind it softens at the boundary. Blur on its own is the
          decoration version of this effect; it is the ring and the cast that
          make it read as a physical object above a surface. */
-      className={`w-full overflow-hidden rounded-2xl border border-[rgba(10,10,10,0.08)] bg-[#F5F5F5] shadow-[0_1px_2px_rgba(16,18,22,0.07),0_8px_20px_-8px_rgba(16,18,22,0.13),0_32px_64px_-28px_rgba(16,18,22,0.20)] ring-1 ring-inset ring-white/45 backdrop-blur-[2px] ${className}`}
+      className={`w-full overflow-hidden rounded-2xl border border-black/[0.08] bg-surface shadow-[0_1px_2px_rgba(16,18,22,0.07),0_8px_20px_-8px_rgba(16,18,22,0.13),0_32px_64px_-28px_rgba(16,18,22,0.20)] ring-1 ring-inset ring-white/45 backdrop-blur-[2px] ${className}`}
     >
       {children}
     </div>
@@ -100,9 +101,9 @@ export function ScreenPanel({
    real /analysis draws Covered, Partial and Missing in green, gold and red;
    a recreation that draws them in three browns is a recreation of something
    that does not exist. Values are `--chart-*` verbatim. */
-const COVERED = "#3F7A52";
-const PARTIAL = "#B08114";
-const MISSING = "#A8483F";
+const COVERED = palette.status.green;
+const PARTIAL = palette.chart.partial;
+const MISSING = palette.status.red;
 
 function Dot({ color }: { color: string }) {
   return (
@@ -221,7 +222,7 @@ function CoverageDonut({ active }: { active: boolean }) {
           Here the geometry is whatever the step says it is, so the ring can
           never disagree with the numbers next to it. */}
       <svg viewBox="0 0 90 90" className="h-[74px] w-[74px] shrink-0 -rotate-90">
-        <circle cx="45" cy="45" r="34" fill="none" stroke="#E8E8E8" strokeWidth="13" />
+        <circle cx="45" cy="45" r="34" fill="none" stroke={palette.grey["100"]} strokeWidth="13" />
         {DONUT.map((d, i) => {
           const frac = d.value / total;
           const drawn = i < seg ? frac : 0;
@@ -256,11 +257,11 @@ function CoverageDonut({ active }: { active: boolean }) {
               opacity: i < seg ? 1 : 0,
               transition: "opacity 300ms cubic-bezier(0.22,1,0.36,1)",
             }}
-            className="flex items-center gap-2 text-[11px] font-medium text-[#0A0A0A]"
+            className="flex items-center gap-2 text-[11px] font-medium text-black"
           >
             <Dot color={d.color} />
             <span className="truncate">{d.label}</span>
-            <span className="ml-auto tabular-nums text-[#737373]">{d.value}</span>
+            <span className="ml-auto tabular-nums text-grey-600">{d.value}</span>
           </li>
         ))}
       </ul>
@@ -302,7 +303,7 @@ function DepthGauge({ active }: { active: boolean }) {
   return (
     <div className="flex items-center gap-4">
       <svg viewBox="0 0 100 60" className="h-[74px] w-[112px] shrink-0">
-        <path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="#E8E8E8" strokeWidth="8" strokeLinecap="round" />
+        <path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke={palette.grey["100"]} strokeWidth="8" strokeLinecap="round" />
         {/* The arc is drawn from the SAME value the readout prints, so the
             needle and the number are one quantity rather than two things
             animating separately toward the same answer. `shown` already
@@ -311,7 +312,7 @@ function DepthGauge({ active }: { active: boolean }) {
         <path
           d="M10 50 A40 40 0 0 1 90 50"
           fill="none"
-          stroke="#0A0A0A"
+          stroke={palette.black}
           strokeWidth="8"
           strokeLinecap="round"
           pathLength={1}
@@ -320,11 +321,11 @@ function DepthGauge({ active }: { active: boolean }) {
         />
       </svg>
       <div className="min-w-0">
-        <p className="font-display text-2xl font-bold leading-none tabular-nums text-[#0A0A0A]">
+        <p className="font-display text-2xl font-bold leading-none tabular-nums text-black">
           {shown.toFixed(1)}
         </p>
-        <p className="mt-1 text-[11px] font-medium text-[#404040]">of 100</p>
-        <p className="text-[10px] text-[#737373]">Mean of stage scores, 8 dimensions</p>
+        <p className="mt-1 text-[11px] font-medium text-grey-800">of 100</p>
+        <p className="text-[10px] text-grey-600">Mean of stage scores, 8 dimensions</p>
       </div>
     </div>
   );
@@ -340,7 +341,7 @@ export function AnalysisFrame({ active }: { active: boolean }) {
         <div className="flex items-center gap-3">
           <div aria-hidden className="w-12 shrink-0 sm:w-16" />
           <div className="min-w-0 flex-1 text-center">
-            <h3 className="font-display text-base font-extrabold tracking-tight text-[#0A0A0A] sm:text-xl">
+            <h3 className="font-display text-base font-extrabold tracking-tight text-black sm:text-xl">
               Governance Analysis
             </h3>
             {/* This read "Kenya. National AI Strategy 2025-2030" over a
@@ -351,33 +352,33 @@ export function AnalysisFrame({ active }: { active: boolean }) {
                 stated position is that nothing is asserted without a source.
                 The label is now unattributed and the frame is marked
                 illustrative in the UI, not only in a code comment. */}
-            <p className="mt-0.5 truncate text-[10px] font-medium text-[#404040] sm:text-[11px]">
+            <p className="mt-0.5 truncate text-[10px] font-medium text-grey-800 sm:text-[11px]">
               Sample analysis · figures from a recorded run
             </p>
           </div>
-          <span className="shrink-0 rounded-lg border border-[rgba(10,10,10,0.14)] px-2.5 py-1.5 text-[10px] font-medium text-[#404040] sm:text-[11px]">
+          <span className="shrink-0 rounded-lg border border-black/[0.14] px-2.5 py-1.5 text-[10px] font-medium text-grey-800 sm:text-[11px]">
             Illustrative
           </span>
         </div>
 
-        <div className="rounded-xl border border-[rgba(10,10,10,0.10)] bg-white p-3 sm:p-4">
+        <div className="rounded-xl border border-black/[0.10] bg-white p-3 sm:p-4">
           <div className="mb-3 flex items-center justify-between">
-            <p className="font-display text-[12px] font-bold text-[#0A0A0A] sm:text-sm">
+            <p className="font-display text-[12px] font-bold text-black sm:text-sm">
               Decision Analytics
             </p>
-            <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#737373]">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-grey-600">
               Dashboard-ready
             </span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-[rgba(10,10,10,0.10)] bg-white p-3">
-              <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#737373]">
+            <div className="rounded-lg border border-black/[0.10] bg-white p-3">
+              <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-grey-600">
                 Coverage Distribution
               </p>
               <CoverageDonut active={active} />
             </div>
-            <div className="hidden rounded-lg border border-[rgba(10,10,10,0.10)] bg-white p-3 sm:block">
-              <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#737373]">
+            <div className="hidden rounded-lg border border-black/[0.10] bg-white p-3 sm:block">
+              <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-grey-600">
                 Binding Force
               </p>
               <DepthGauge active={active} />
@@ -386,7 +387,7 @@ export function AnalysisFrame({ active }: { active: boolean }) {
         </div>
 
         <div className="space-y-2">
-          <p className="font-display text-[12px] font-semibold text-[#0A0A0A] sm:text-sm">
+          <p className="font-display text-[12px] font-semibold text-black sm:text-sm">
             Governance Dimensions
           </p>
           {ANALYSIS_ROWS.map((r, i) => (
@@ -399,19 +400,19 @@ export function AnalysisFrame({ active }: { active: boolean }) {
                   : { opacity: 0, y: 10, scale: 0.98 }
               }
               transition={{ duration: 0.32, ease: EASE.out }}
-              className="flex items-center gap-2.5 rounded-lg border border-[rgba(10,10,10,0.10)] bg-white px-3 py-2.5"
+              className="flex items-center gap-2.5 rounded-lg border border-black/[0.10] bg-white px-3 py-2.5"
             >
-              <span className="min-w-0 flex-1 truncate font-display text-[12px] font-bold text-[#0A0A0A] sm:text-[13px]">
+              <span className="min-w-0 flex-1 truncate font-display text-[12px] font-bold text-black sm:text-[13px]">
                 {r.dim}
               </span>
-              <span className="hidden items-center gap-1.5 text-[10px] font-medium text-[#404040] sm:flex">
+              <span className="hidden items-center gap-1.5 text-[10px] font-medium text-grey-800 sm:flex">
                 <Dot color={r.color} />
                 {r.tier}
               </span>
-              <span className="hidden rounded-full border border-[rgba(10,10,10,0.12)] px-2 py-0.5 text-[9px] font-medium text-[#404040] md:inline">
+              <span className="hidden rounded-full border border-black/[0.12] px-2 py-0.5 text-[9px] font-medium text-grey-800 md:inline">
                 {r.depth}
               </span>
-              <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-[#3F7A52]">
+              <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-status-green">
                 <CheckGlyph className="h-3 w-3" />
                 {r.cites}
               </span>
@@ -520,7 +521,7 @@ function AnswerText({ chars }: { chars: number }) {
         if (take === 0) return null;
         const slice = seg.t.slice(0, take);
         return seg.b ? (
-          <strong key={i} className="font-semibold text-[#0A0A0A]">
+          <strong key={i} className="font-semibold text-black">
             {slice}
           </strong>
         ) : (
@@ -540,11 +541,11 @@ export function AuditorFrame({ active }: { active: boolean }) {
     <ScreenPanel>
       <div className="flex flex-col gap-3 p-3.5 sm:p-5">
         <div className="flex items-center justify-between gap-2">
-          <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-[rgba(10,10,10,0.15)] bg-white px-2.5 py-1 text-[10px] font-medium text-[#404040]">
-            <DocGlyph className="h-3 w-3 shrink-0 text-[#737373]" />
+          <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-black/[0.15] bg-white px-2.5 py-1 text-[10px] font-medium text-grey-800">
+            <DocGlyph className="h-3 w-3 shrink-0 text-grey-600" />
             <span className="truncate">rwanda_national_ai_policy.pdf</span>
           </span>
-          <span className="shrink-0 text-[10px] font-medium text-[#5C5C5C]">
+          <span className="shrink-0 text-[10px] font-medium text-grey-700">
             AI Auditor
           </span>
         </div>
@@ -559,7 +560,7 @@ export function AuditorFrame({ active }: { active: boolean }) {
               transition={{ duration: 0.3, ease: EASE.out }}
               className="flex justify-end"
             >
-              <p className="max-w-[82%] rounded-2xl rounded-br-md bg-[#0A0A0A] px-3.5 py-2.5 text-[11px] leading-relaxed text-white sm:text-[12.5px]">
+              <p className="max-w-[82%] rounded-2xl rounded-br-md bg-black px-3.5 py-2.5 text-[11px] leading-relaxed text-white sm:text-[12.5px]">
                 {AUDITOR_Q}
               </p>
             </motion.div>
@@ -567,24 +568,24 @@ export function AuditorFrame({ active }: { active: boolean }) {
 
           {phase === THINKING && (
             <div className="flex justify-start">
-              <span className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-[rgba(10,10,10,0.10)] bg-white px-3.5 py-3">
+              <span className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-black/[0.10] bg-white px-3.5 py-3">
                 {/* A settling pulse, not a bounce. Tailwind's animate-bounce
                     rides a hard cubic-bezier(0.8,0,1,1) that reads as a toy
                     next to the rest of this page's motion. */}
-                <span className="l-think h-1.5 w-1.5 rounded-full bg-[#404040]" />
-                <span className="l-think h-1.5 w-1.5 rounded-full bg-[#404040] [animation-delay:180ms]" />
-                <span className="l-think h-1.5 w-1.5 rounded-full bg-[#404040] [animation-delay:360ms]" />
+                <span className="l-think h-1.5 w-1.5 rounded-full bg-grey-800" />
+                <span className="l-think h-1.5 w-1.5 rounded-full bg-grey-800 [animation-delay:180ms]" />
+                <span className="l-think h-1.5 w-1.5 rounded-full bg-grey-800 [animation-delay:360ms]" />
               </span>
             </div>
           )}
 
           {answered && (
             <div className="flex justify-start">
-              <div className="max-w-[88%] rounded-2xl rounded-bl-md border border-[rgba(10,10,10,0.10)] bg-white px-3.5 py-2.5">
-                <p className="text-[11px] leading-relaxed text-[#404040] sm:text-[12.5px]">
+              <div className="max-w-[88%] rounded-2xl rounded-bl-md border border-black/[0.10] bg-white px-3.5 py-2.5">
+                <p className="text-[11px] leading-relaxed text-grey-800 sm:text-[12.5px]">
                   <AnswerText chars={aChars} />
                   {phase === ANSWERING && (
-                    <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-[#0A0A0A]" />
+                    <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-black" />
                   )}
                 </p>
                 {showChip && (
@@ -592,7 +593,7 @@ export function AuditorFrame({ active }: { active: boolean }) {
                     initial={{ opacity: 0, scale: 0.7 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ type: "spring", stiffness: 480, damping: 26 }}
-                    className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[rgba(10,10,10,0.15)] bg-white px-2.5 py-1 text-[9.5px] font-medium text-[#404040]"
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-black/[0.15] bg-white px-2.5 py-1 text-[9.5px] font-medium text-grey-800"
                   >
                     <Dot color={COVERED} />
                     Show 3 verified sources
@@ -604,22 +605,22 @@ export function AuditorFrame({ active }: { active: boolean }) {
         </div>
 
         {/* Composer — the question is typed in here before it is sent. */}
-        <div className="flex items-center gap-2 rounded-[24px] border border-[rgba(10,10,10,0.15)] bg-white p-1.5 pl-3">
-          <PaperclipGlyph className="h-4 w-4 shrink-0 text-[#737373]" />
+        <div className="flex items-center gap-2 rounded-[24px] border border-black/[0.15] bg-white p-1.5 pl-3">
+          <PaperclipGlyph className="h-4 w-4 shrink-0 text-grey-600" />
           <span className="min-w-0 flex-1 truncate text-[11px] sm:text-[12.5px]">
             {qChars > 0 ? (
-              <span className="text-[#0A0A0A]">
+              <span className="text-black">
                 {AUDITOR_Q.slice(0, qChars)}
-                <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-[#0A0A0A]" />
+                <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-black" />
               </span>
             ) : (
-              <span className="text-[#737373]">Ask anything about this document…</span>
+              <span className="text-grey-600">Ask anything about this document…</span>
             )}
           </span>
           <motion.span
             animate={{ scale: qChars >= AUDITOR_Q.length ? [1, 0.9, 1] : 1 }}
             transition={{ duration: 0.3, ease: EASE.out }}
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#0A0A0A] text-white"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-black text-white"
           >
             <ArrowUpGlyph className="h-3.5 w-3.5" />
           </motion.span>
@@ -681,10 +682,10 @@ export function FrameworksFrame({ active }: { active: boolean }) {
       <div className="space-y-3 p-3.5 sm:space-y-4 sm:p-5">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="font-display text-base font-extrabold tracking-tight text-[#0A0A0A] sm:text-xl">
+            <h3 className="font-display text-base font-extrabold tracking-tight text-black sm:text-xl">
               Framework Library
             </h3>
-            <p className="mt-0.5 text-[10px] font-medium text-[#404040] sm:text-[11px]">
+            <p className="mt-0.5 text-[10px] font-medium text-grey-800 sm:text-[11px]">
               <span className="tabular-nums">{shown === FRAMEWORKS.length ? 44 : shown * 5}</span>{" "}
               instruments indexed, routed per dimension and region
             </p>
@@ -694,7 +695,7 @@ export function FrameworksFrame({ active }: { active: boolean }) {
               opacity: shown === FRAMEWORKS.length ? 1 : 0,
               transition: settled ? "none" : "opacity 300ms var(--ease-enter)",
             }}
-            className="hidden shrink-0 items-center gap-1.5 rounded-full border border-[rgba(10,10,10,0.12)] bg-white px-2.5 py-1 text-[10px] font-medium text-[#404040] sm:inline-flex"
+            className="hidden shrink-0 items-center gap-1.5 rounded-full border border-black/[0.12] bg-white px-2.5 py-1 text-[10px] font-medium text-grey-800 sm:inline-flex"
           >
             <Dot color={COVERED} />
             All sources indexed
@@ -717,15 +718,15 @@ export function FrameworksFrame({ active }: { active: boolean }) {
                   ? "none"
                   : "opacity 340ms var(--ease-enter), transform 340ms var(--ease-enter)",
               }}
-              className="flex flex-col rounded-lg border border-[rgba(10,10,10,0.10)] bg-white p-2.5 sm:p-3"
+              className="flex flex-col rounded-lg border border-black/[0.10] bg-white p-2.5 sm:p-3"
             >
-              <span className="font-display text-[10px] font-bold uppercase tracking-[0.14em] text-[#737373]">
+              <span className="font-display text-[10px] font-bold uppercase tracking-[0.14em] text-grey-600">
                 {f.org}
               </span>
-              <span className="mt-1 line-clamp-2 font-display text-[11px] font-semibold leading-snug text-[#0A0A0A] sm:text-[12px]">
+              <span className="mt-1 line-clamp-2 font-display text-[11px] font-semibold leading-snug text-black sm:text-[12px]">
                 {f.name}
               </span>
-              <span className="mt-auto flex items-center gap-1.5 pt-2 text-[9.5px] font-medium text-[#737373]">
+              <span className="mt-auto flex items-center gap-1.5 pt-2 text-[9.5px] font-medium text-grey-600">
                 <Dot color={COVERED} />
                 <span className="tabular-nums">v{f.version}</span>
                 <span className="ml-auto">indexed</span>

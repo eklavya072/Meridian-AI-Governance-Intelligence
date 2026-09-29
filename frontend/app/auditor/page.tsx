@@ -67,9 +67,9 @@ function CitationChips({ citations }: { citations: ChatCitation[] }) {
     <div className="mt-2">
       <button
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1.5 rounded-full border border-navy-950/15 bg-white px-2.5 py-1 text-[11px] font-medium text-navy-800 hover:border-navy-950/30 transition-colors"
+        className="inline-flex items-center gap-1.5 rounded-full border border-grey-950/15 bg-white px-2.5 py-1 text-[11px] font-medium text-grey-800 hover:border-grey-950/30 transition-colors"
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-[#3F7A52]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-status-green" />
         {open ? "Hide" : "Show"} {verified.length} verified source
         {verified.length > 1 ? "s" : ""}
       </button>
@@ -84,9 +84,9 @@ function CitationChips({ citations }: { citations: ChatCitation[] }) {
           >
             <div className="mt-2 space-y-1.5">
               {verified.map((c, i) => (
-                <div key={i} className="rounded-lg border border-navy-950/10 bg-[var(--surface)] px-3 py-2">
-                  <p className="text-[11px] font-semibold text-navy-800">{c.source}</p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-gray-600">
+                <div key={i} className="rounded-lg border border-grey-950/10 bg-[var(--surface)] px-3 py-2">
+                  <p className="text-[11px] font-semibold text-grey-800">{c.source}</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-grey-700">
                     &ldquo;{c.quote}&rdquo;
                   </p>
                 </div>
@@ -112,10 +112,10 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       <div
         className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isUser
-            ? "bg-navy-950 text-white rounded-br-md shadow-md shadow-navy-950/15"
+            ? "bg-grey-950 text-white rounded-br-md shadow-md shadow-grey-950/15"
             :          isBlocked
-            ? "bg-[#F7F0E2] text-[#7A5B1E] border border-[#E4D5B5] rounded-bl-md"
-            : "bg-white border border-navy-950/10 text-gray-800 rounded-bl-md shadow-sm"
+            ? "bg-status-amber-tint text-status-amber-ink border border-status-amber-line rounded-bl-md"
+            : "bg-white border border-grey-950/10 text-grey-900 rounded-bl-md shadow-sm"
         }`}
       >
         {/* See ChatPanel: assistant replies are light Markdown and must be
@@ -126,7 +126,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           <MarkdownLite text={msg.content} />
         )}
         {isBlocked && msg.reason && (
-          <p className="mt-1.5 text-xs text-[#8A6420] italic">Reason: {msg.reason}</p>
+          <p className="mt-1.5 text-xs text-status-amber-ink italic">Reason: {msg.reason}</p>
         )}
         {!isUser && <CitationChips citations={msg.citations} />}
       </div>
@@ -296,7 +296,7 @@ export default function AuditorPage() {
           <SplitText
             tag="h1"
             text="AI Auditor"
-            className="text-3xl font-bold text-navy-950 tracking-tight"
+            className="text-3xl font-bold text-grey-950 tracking-tight"
             splitType="chars"
             delay={45}
             duration={0.6}
@@ -306,7 +306,7 @@ export default function AuditorPage() {
             textAlign="left"
             playOnMount
           />
-          <p className="mt-1 text-sm text-gray-600">
+          <p className="mt-1 text-sm text-grey-700">
             One assistant for AI policy assessment — ask about governance
             dimensions and the international frameworks.
           </p>
@@ -318,7 +318,7 @@ export default function AuditorPage() {
               setSessionId(null);
               setMessages([]);
             }}
-            className="pressable rounded-lg border border-navy-950/15 bg-white px-4 py-2 text-sm font-medium text-navy-800 hover:border-navy-950/30 transition-colors"
+            className="pressable rounded-lg border border-grey-950/15 bg-white px-4 py-2 text-sm font-medium text-grey-800 hover:border-grey-950/30 transition-colors"
           >
             New chat
           </button>
@@ -328,7 +328,7 @@ export default function AuditorPage() {
                 setShowHistory(!showHistory);
                 if (!showHistory) loadSessions();
               }}
-              className="pressable rounded-lg border border-navy-950/15 bg-white px-4 py-2 text-sm font-medium text-navy-800 hover:border-navy-950/30 transition-colors"
+              className="pressable rounded-lg border border-grey-950/15 bg-white px-4 py-2 text-sm font-medium text-grey-800 hover:border-grey-950/30 transition-colors"
             >
               History ({sessions.length})
             </button>
@@ -339,11 +339,11 @@ export default function AuditorPage() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -6, scale: 0.98 }}
                   transition={{ duration: DUR.fast, ease: EASE.out }}
-                  className="absolute right-0 top-full z-30 mt-2 w-72 overflow-hidden rounded-xl border border-navy-950/10 bg-white shadow-xl shadow-navy-950/10"
+                  className="absolute right-0 top-full z-30 mt-2 w-72 overflow-hidden rounded-xl border border-grey-950/10 bg-white shadow-xl shadow-grey-950/10"
                 >
                   <div className="max-h-72 overflow-y-auto py-1">
                     {sessions.length === 0 && (
-                      <p className="px-4 py-3 text-xs text-gray-400 italic">
+                      <p className="px-4 py-3 text-xs text-grey-600 italic">
                         No previous auditor conversations.
                       </p>
                     )}
@@ -351,7 +351,7 @@ export default function AuditorPage() {
                       <button
                         key={s.session_id}
                         onClick={() => switchSession(s.session_id)}
-                        className="block w-full px-4 py-2 text-left text-xs text-gray-700 hover:bg-[var(--surface)] truncate"
+                        className="block w-full px-4 py-2 text-left text-xs text-grey-800 hover:bg-[var(--surface)] truncate"
                       >
                         {s.title || "(untitled)"}
                       </button>
@@ -365,7 +365,7 @@ export default function AuditorPage() {
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-[#E4C9C6] bg-[#F6ECEB] px-4 py-2.5 text-sm text-[#A8483F]">
+        <div className="mt-4 rounded-lg border border-status-red-line bg-status-red-tint px-4 py-2.5 text-sm text-status-red">
           {error}
         </div>
       )}
@@ -374,17 +374,17 @@ export default function AuditorPage() {
       <div className="mt-4 flex-1 overflow-y-auto rounded-2xl">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-navy-950 shadow-lg shadow-navy-950/25">
+            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-grey-950 shadow-lg shadow-grey-950/25">
               <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8">
                 <circle cx="12" cy="12" r="10" />
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
                 <path d="M12 17h.01" />
               </svg>
             </div>
-            <h2 className="mt-5 text-xl font-bold text-navy-950 tracking-tight">
+            <h2 className="mt-5 text-xl font-bold text-grey-950 tracking-tight">
               Ask the AI Auditor anything
             </h2>
-            <p className="mt-2 max-w-md text-sm leading-relaxed text-gray-600">
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-grey-700">
               Attach a policy PDF to ask questions grounded in its text, or
               ask about governance dimensions and the international
               frameworks — answers come with citations you can verify.
@@ -395,7 +395,7 @@ export default function AuditorPage() {
                   key={label}
                   onClick={() => send(label)}
                   disabled={loading}
-                  className="pressable rounded-xl border border-navy-950/10 bg-white px-4 py-3 text-left text-[13px] font-medium text-navy-900 shadow-sm hover:border-navy-950/30 hover:shadow-md disabled:opacity-50 transition-all"
+                  className="pressable rounded-xl border border-grey-950/10 bg-white px-4 py-3 text-left text-[13px] font-medium text-grey-900 shadow-sm hover:border-grey-950/30 hover:shadow-md disabled:opacity-50 transition-all"
                 >
                   {label}
                 </button>
@@ -413,13 +413,13 @@ export default function AuditorPage() {
                 animate={{ opacity: 1 }}
                 className="flex justify-start"
               >
-                <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-navy-950/10 bg-white px-4 py-3 shadow-sm">
+                <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-grey-950/10 bg-white px-4 py-3 shadow-sm">
                   <span className="flex gap-1">
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-navy-800 [animation-delay:0ms]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-navy-800 [animation-delay:150ms]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-navy-800 [animation-delay:300ms]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey-800 [animation-delay:0ms]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey-800 [animation-delay:150ms]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey-800 [animation-delay:300ms]" />
                   </span>
-                  <span className="text-xs text-gray-500">Auditing…</span>
+                  <span className="text-xs text-grey-600">Auditing…</span>
                 </div>
               </motion.div>
             )}
@@ -434,26 +434,26 @@ export default function AuditorPage() {
           {/* Attached document chip (chat-only ingestion) */}
           {doc && (
             <div className="mb-2 flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full border border-navy-950/15 bg-white py-1.5 pl-3 pr-1.5 shadow-sm">
-                <DocIcon className="h-4 w-4 text-navy-600" />
-                <span className="max-w-[220px] truncate text-xs font-medium text-navy-900">
+              <div className="flex items-center gap-2 rounded-full border border-grey-950/15 bg-white py-1.5 pl-3 pr-1.5 shadow-sm">
+                <DocIcon className="h-4 w-4 text-grey-600" />
+                <span className="max-w-[220px] truncate text-xs font-medium text-grey-900">
                   {doc.file_name}
                 </span>
                 <button
                   onClick={removeDoc}
                   title="Remove document"
-                  className="pressable grid h-5 w-5 place-items-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                  className="pressable grid h-5 w-5 place-items-center rounded-full text-grey-600 hover:bg-grey-50 hover:text-grey-700 transition-colors"
                 >
                   &times;
                 </button>
               </div>
-              <span className="text-[11px] text-gray-400">
+              <span className="text-[11px] text-grey-600">
                 Questions about this document are answered from its text.
               </span>
             </div>
           )}
 
-          <div className="flex items-end gap-1.5 rounded-[28px] border border-navy-950/15 bg-white p-2 pl-1.5 shadow-[0_10px_40px_rgba(10,10,10,0.12)] transition-all focus-within:border-navy-800/40 focus-within:shadow-[0_12px_48px_rgba(10,10,10,0.18)]">
+          <div className="flex items-end gap-1.5 rounded-[28px] border border-grey-950/15 bg-white p-2 pl-1.5 shadow-[0_10px_40px_rgba(10,10,10,0.12)] transition-all focus-within:border-grey-800/40 focus-within:shadow-[0_12px_48px_rgba(10,10,10,0.18)]">
             {/* Attach a policy PDF for document-grounded chat — always
                 at the start of the bar, before the text. */}
             <button
@@ -462,14 +462,14 @@ export default function AuditorPage() {
               title={doc ? "Replace document" : "Attach an AI policy PDF"}
               className={`pressable mb-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-all ${
                 uploading
-                  ? "bg-gray-200 text-gray-400"
+                  ? "bg-grey-100 text-grey-600"
                   : doc
-                  ? "bg-navy-950 text-white shadow-lg shadow-navy-950/30 hover:bg-navy-800"
-                  : "text-navy-500 hover:bg-navy-950/5 hover:text-navy-800"
+                  ? "bg-grey-950 text-white shadow-lg shadow-grey-950/30 hover:bg-grey-800"
+                  : "text-grey-600 hover:bg-grey-950/5 hover:text-grey-800"
               }`}
             >
               {uploading ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-grey-400 border-t-transparent" />
               ) : (
                 <PaperclipIcon className="h-5 w-5" />
               )}
@@ -493,7 +493,7 @@ export default function AuditorPage() {
                   ? "Ask about this document…"
                   : "Ask about governance dimensions or frameworks…"
               }
-              className="max-h-[200px] flex-1 resize-none bg-transparent py-2.5 text-[15px] leading-relaxed text-navy-950 outline-none placeholder:text-gray-400"
+              className="max-h-[200px] flex-1 resize-none bg-transparent py-2.5 text-[15px] leading-relaxed text-grey-950 outline-none placeholder:text-grey-600"
             />
             <button
               onClick={() => send(input)}
@@ -501,8 +501,8 @@ export default function AuditorPage() {
               title="Send"
               className={`pressable mb-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-all ${
                 canSend
-                  ? "bg-navy-950 text-white shadow-lg shadow-navy-950/30 hover:bg-navy-800"
-                  : "bg-gray-200 text-gray-400"
+                  ? "bg-grey-950 text-white shadow-lg shadow-grey-950/30 hover:bg-grey-800"
+                  : "bg-grey-100 text-grey-600"
               }`}
             >
               <ArrowUpIcon className="h-5 w-5" />
@@ -522,7 +522,7 @@ export default function AuditorPage() {
             }}
           />
 
-          <p className="mt-2 text-center text-[11px] text-gray-400">
+          <p className="mt-2 text-center text-[11px] text-grey-600">
             AI Auditor can make mistakes. Verify important claims against the
             source document.
           </p>

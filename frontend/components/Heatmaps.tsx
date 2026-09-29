@@ -24,6 +24,7 @@ import { EASE } from "@/lib/motion";
 import { useInViewOnce } from "@/lib/useInViewOnce";
 import type { Analysis } from "@/lib/api";
 
+import palette from "@/lib/palette.json";
 // Same abbreviation the Dimension Radar uses for this one long name.
 const SHORT_LABEL: Record<string, string> = {
   "Environmental Sustainability": "Env. Sustainability",
@@ -34,10 +35,10 @@ function shortLabel(dimension: string): string {
 }
 
 const COVERAGE_FILL: Record<string, string> = {
-  Covered: "#3F7A52",
-  Partial: "#C9AF7A",
-  Missing: "#A8483F",
-  "Insufficient Evidence": "#B07E2B",
+  Covered: palette.status.green,
+  Partial: palette.chart.partial,
+  Missing: palette.status.red,
+  "Insufficient Evidence": palette.status.amber,
 };
 
 export function analysisDocuments(a: Analysis): string[] {
@@ -131,12 +132,12 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
         {columns.map((col) => (
           <div key={col.analysis.analysis_id} className="text-center px-1 pb-1">
             <p
-              className="text-[9px] font-bold uppercase tracking-wide text-navy-600"
+              className="text-[9px] font-bold uppercase tracking-wide text-grey-600"
               title={analysisDocuments(col.analysis).join(" + ")}
             >
               {col.isBaseline ? "Baseline" : "Added"}
             </p>
-            <p className="text-[10px] font-semibold text-navy-950 leading-tight mt-0.5 line-clamp-2">
+            <p className="text-[10px] font-semibold text-grey-950 leading-tight mt-0.5 line-clamp-2">
               {col.isBaseline ? "" : "+ "}
               {col.headerDocs.join(" + ")}
             </p>
@@ -146,11 +147,11 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
         {dimensions.map((dimension, ri) => (
           <RowFragment key={dimension}>
             <div className="flex items-center pr-2 border-t border-[color:var(--border)] first:border-t-0">
-              <p className="text-[11px] font-medium text-navy-950">{shortLabel(dimension)}</p>
+              <p className="text-[11px] font-medium text-grey-950">{shortLabel(dimension)}</p>
             </div>
             {columns.map((col, ci) => {
               const cell = cells.get(`${dimension}::${col.analysis.analysis_id}`);
-              const fill = cell ? COVERAGE_FILL[cell.coverage] || "#8A8A8A" : "rgba(10,10,10,0.035)";
+              const fill = cell ? COVERAGE_FILL[cell.coverage] || palette.grey["500"] : "rgba(10,10,10,0.035)";
               return (
                 <motion.div
                   key={col.analysis.analysis_id}
@@ -171,7 +172,7 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
                       </span>
                     </>
                   ) : (
-                    <span className="text-[9px] text-navy-600">—</span>
+                    <span className="text-[9px] text-grey-600">—</span>
                   )}
                 </motion.div>
               );
@@ -182,7 +183,7 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2.5 pt-2 border-t border-[color:var(--border)]">
         {(["Covered", "Partial", "Missing"] as const).map((c) => (
-          <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-navy-600">
+          <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-grey-600">
             <span
               className="h-2 w-2 rounded-sm shrink-0"
               style={{ background: COVERAGE_FILL[c] }}

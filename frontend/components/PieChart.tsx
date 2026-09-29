@@ -42,6 +42,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { EASE } from "@/lib/motion";
 import { useInViewOnce } from "@/lib/useInViewOnce";
 
+import palette from "@/lib/palette.json";
 export interface PieDatum {
   label: string;
   value: number;
@@ -311,7 +312,7 @@ export function PieCenter({
         cx={g.cx}
         cy={g.cy}
         r={g.innerRadius + 2}
-        fill="#FFFFFF"
+        fill={palette.white}
         stroke="rgba(10, 10, 10, 0.07)"
         strokeWidth={1}
       />
@@ -326,7 +327,7 @@ export function PieCenter({
         textAnchor="middle"
         fontSize={26}
         fontWeight={700}
-        fill="#0A0A0A"
+        fill={palette.black}
         style={{ fontVariantNumeric: "tabular-nums" }}
       >
         {display}
@@ -344,7 +345,7 @@ export function PieCenter({
             y={g.cy + 19}
             textAnchor="middle"
             fontSize={10}
-            fill="#737373"
+            fill={palette.grey["600"]}
             letterSpacing="0.04em"
             style={{ textTransform: "uppercase", fontFamily: "inherit" }}
           >
@@ -383,7 +384,7 @@ export function PieLegend({
             onFocus={() => onHoverChange(i)}
             onBlur={() => onHoverChange(null)}
             className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors ${
-              isHover ? "bg-[#F0F0F0]" : "hover:bg-[#FAFAFA]"
+              isHover ? "bg-grey-100" : "hover:bg-grey-50"
             }`}
           >
             <span
@@ -392,14 +393,14 @@ export function PieLegend({
             />
             <span
               className={`truncate transition-colors ${
-                isHover ? "text-navy-950 font-semibold" : "text-navy-600"
+                isHover ? "text-grey-950 font-semibold" : "text-grey-600"
               }`}
             >
               {item.label}
             </span>
             <span
               className={`ml-auto tabular-nums ${
-                isHover ? "text-navy-950 font-bold" : "text-navy-950 font-semibold"
+                isHover ? "text-grey-950 font-bold" : "text-grey-950 font-semibold"
               }`}
             >
               {item.value}

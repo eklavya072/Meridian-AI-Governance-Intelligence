@@ -40,7 +40,7 @@ export type ModuleStackItem = {
  */
 
 const NAV_BUTTON_CLS =
-  "pressable flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--border)] bg-white text-navy-950 shadow-sm transition-colors hover:bg-navy-950/5";
+  "pressable flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--border)] bg-white text-grey-950 shadow-sm transition-colors hover:bg-grey-950/5";
 
 export default function ModuleStack({
   items,
@@ -202,11 +202,11 @@ export default function ModuleStack({
                 {/* Header band — reads as a real card heading: subtle tint,
                     centered display type, position counter, status meta. */}
                 <div className="relative shrink-0 border-b border-[color:var(--border)] bg-white px-4 py-4 text-center">
-                  <span className="absolute right-3 top-3 text-[11px] font-bold tabular-nums text-navy-950">
+                  <span className="absolute right-3 top-3 text-[11px] font-bold tabular-nums text-grey-950">
                     {String(i + 1).padStart(2, "0")} /{" "}
                     {String(n).padStart(2, "0")}
                   </span>
-                  <h4 className="font-display text-lg font-bold tracking-tight text-navy-950">
+                  <h4 className="font-display text-lg font-bold tracking-tight text-grey-950">
                     {item.title}
                   </h4>
                   {item.meta && (
@@ -243,8 +243,8 @@ export default function ModuleStack({
               className={cn(
                 "h-1.5 rounded-full transition-all duration-200",
                 i === active
-                  ? "w-5 bg-navy-950"
-                  : "w-1.5 bg-navy-950/40 hover:bg-navy-950/70"
+                  ? "w-5 bg-grey-950"
+                  : "w-1.5 bg-grey-950/40 hover:bg-grey-950/70"
               )}
             />
           ))}

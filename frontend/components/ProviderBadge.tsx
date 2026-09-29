@@ -15,14 +15,14 @@ export default function ProviderBadge({ generated_by }: ProviderBadgeProps) {
   if (!isFallback) return null;
 
   return (
-    <div className="bg-[#F7F0E2] border border-[#E4D5B5] rounded-lg px-4 py-3 text-sm">
+    <div className="bg-status-amber-tint border border-status-amber-line rounded-lg px-4 py-3 text-sm">
       <div className="flex items-start gap-2">
-        <span className="text-[#8A6420] font-medium shrink-0">&#9888;</span>
+        <span className="text-status-amber-ink font-medium shrink-0">&#9888;</span>
         <div>
-          <p className="text-[#7A5B1E] font-medium">
+          <p className="text-status-amber-ink font-medium">
             Generated with reduced-capacity model
           </p>
-          <p className="text-[#8A6420] mt-0.5">
+          <p className="text-status-amber-ink mt-0.5">
             This analysis was produced by{" "}
             <strong>{generated_by.provider}</strong> (
             {generated_by.tier} tier).{" "}

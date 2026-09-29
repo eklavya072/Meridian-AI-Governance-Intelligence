@@ -35,9 +35,11 @@ function isHoverCapable(): boolean {
 export default function TiltCard({
   children,
   className = "",
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
+  id?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
@@ -64,6 +66,7 @@ export default function TiltCard({
   return (
     <div
       ref={ref}
+      id={id}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
       style={{

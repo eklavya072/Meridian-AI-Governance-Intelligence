@@ -3,54 +3,26 @@
 @tailwind utilities;
 
 /* ── Design tokens ────────────────────────────────────────────────────────
-   Single source of truth for the palette. Components reference these via
-   Tailwind utilities (navy-900, teal-500, glass-*) or directly via var().
-   Palette is black + white + grey, full stop — the old navy/teal values
-   are remapped, never referenced in blue form. */
+   Colour values live in lib/palette.json. Tailwind reads that file for every
+   colour class, and components import it for inline colours; these few CSS
+   variables mirror it for the rules below that cannot use a class. */
 :root {
-  /* ── Monochrome tokens — the canonical scale. ───────────────────────── */
-  --black: #0A0A0A; /* primary dark — nav, headings, primary buttons */
-  --grey-900: #1A1A1A;
-  --grey-700: #404040;
-  --grey-500: #737373; /* secondary text, muted labels */
-  --grey-300: #D4D4D4; /* borders */
-  --grey-100: #F5F5F5; /* page background, subtle surface tint */
-  --white: #FFFFFF;
-
-  /* Remapped aliases — keep old names resolving to the greys so no
-     component class silently drops its color. */
-  --navy-950: #0A0A0A; /* primary dark */
-  --navy-800: #404040; /* secondary dark */
-  --navy-600: #737373; /* body/label text on light backgrounds */
-  --teal-500: #8A8A8A; /* grey accent */
-  --teal-100: #E5E5E5; /* pale grey tint */
-  --surface: #F5F5F5; /* page background — warm-neutral off-white */
-  --border: rgba(10, 10, 10, 0.10); /* thin black-tinted border */
+  --black: #0A0A0A; /* palette.black */
+  --white: #FFFFFF; /* palette.white */
+  --surface: #F5F5F5; /* palette.surface: page background */
+  --border: rgba(10, 10, 10, 0.10); /* palette.black at 10% */
   --shadow-sm: 0 1px 2px rgba(10, 10, 10, 0.05);
   --shadow-md: 0 4px 12px rgba(10, 10, 10, 0.08);
-
-  /* ── Chart tokens — muted, not the library's default palette. Coverage
-     distribution uses the muted status colors; everything else grey. ─── */
-  --chart-covered: #3F7A52; /* muted forest green */
-  --chart-partial: #C9AF7A; /* soft gold — softer than amber against red/green */
-  --chart-missing: #A8483F; /* muted red, desaturated */
-  --chart-neutral: #8A8A8A; /* grey for "not assessed" */
 
   /* ── Nav glass — black, transparent enough that page content reads
      through the blur, opaque enough that the pill never washes out and
      white labels stay legible. ────────────────────────────────────────── */
   --nav-glass: rgba(10, 10, 10, 0.7);
-
-  /* ── Legacy nav height (76px content + 1px border) — retained for the
-     historical backups (pipeline/grainient hero variants) that tuck under
-     a full-width bar. The current floating pill needs no tuck; the live
-     home page cancels main's pt-24 directly. ─────────────────────────── */
-  --nav-h: 77px;
 }
 
 body {
   background: var(--surface);
-  color: var(--navy-950);
+  color: var(--black);
   @apply antialiased font-sans;
 }
 
@@ -216,7 +188,7 @@ body {
      accent). Near-black, never grey: labels differentiate by weight,
      size and letter-spacing, not by fading the color. */
   .eyebrow {
-    @apply text-[11px] font-semibold uppercase tracking-[0.05em] text-navy-950;
+    @apply text-[11px] font-semibold uppercase tracking-[0.05em] text-grey-950;
   }
 
   /* ── Module-card typography (analysis modules) ──────────────────────────
@@ -234,24 +206,24 @@ body {
        .module-meta     — 12px gray-500 — secondary/summary lines
   */
   .module-heading {
-    @apply text-xs font-bold uppercase tracking-[0.08em] text-navy-950;
+    @apply text-xs font-bold uppercase tracking-[0.08em] text-grey-950;
   }
   .module-label {
     /* One step lighter than .module-heading (bold 700) so a label never
        reads as a section heading — weight, not colour, carries the cue. */
-    @apply text-xs font-medium uppercase tracking-[0.06em] text-navy-950;
+    @apply text-xs font-medium uppercase tracking-[0.06em] text-grey-950;
   }
   .module-value {
-    @apply text-sm font-bold text-navy-950;
+    @apply text-sm font-bold text-grey-950;
   }
   .module-body {
-    @apply text-sm font-medium leading-relaxed text-navy-900;
+    @apply text-sm font-medium leading-relaxed text-grey-900;
   }
   .module-list {
-    @apply text-sm font-medium leading-relaxed text-navy-900 list-disc pl-5 marker:text-navy-950 space-y-2.5;
+    @apply text-sm font-medium leading-relaxed text-grey-900 list-disc pl-5 marker:text-grey-950 space-y-2.5;
   }
   .module-meta {
-    @apply text-xs font-medium text-navy-900;
+    @apply text-xs font-medium text-grey-900;
   }
 
   /* Card recipe (Section 5) — one consistent surface for every card. */
@@ -272,7 +244,7 @@ body {
      carries the semantic color (green/amber/red); the label is always
      near-black, never grey. */
   .dot-indicator {
-    @apply inline-flex items-center gap-2 text-sm font-semibold text-navy-950;
+    @apply inline-flex items-center gap-2 text-sm font-semibold text-grey-950;
   }
   .dot-indicator .dot {
     @apply w-2 h-2 rounded-full shrink-0;

@@ -29,20 +29,20 @@ export default function CitationCard({
   const section = sectionLabel(evidence.section_title);
 
   return (
-    <div className="border rounded-lg p-4 space-y-2 bg-gray-50">
+    <div className="border rounded-lg p-4 space-y-2 bg-grey-50">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-navy-950 line-clamp-3 flex-1">
+        <p className="text-sm font-medium text-grey-950 line-clamp-3 flex-1">
           {evidence.text}
         </p>
         {verified ? (
           <motion.span
             {...verifiedSnap}
-            className="shrink-0 text-xs font-medium px-2 py-0.5 rounded bg-[#EAF1EC] text-[#3F7A52]"
+            className="shrink-0 text-xs font-medium px-2 py-0.5 rounded bg-status-green-tint text-status-green"
           >
             ✓ Verified
           </motion.span>
         ) : (
-          <span className="shrink-0 text-xs font-medium px-2 py-0.5 rounded bg-[#F6ECEB] text-[#A8483F]">
+          <span className="shrink-0 text-xs font-medium px-2 py-0.5 rounded bg-status-red-tint text-status-red">
             Unverified
           </span>
         )}
@@ -51,9 +51,9 @@ export default function CitationCard({
       {/* Where to find it, and nothing else. The storage id and the raw
           retrieval similarity used to sit here too; neither tells a reader
           anything they can check against the document. */}
-      <div className="flex flex-wrap gap-3 text-xs font-medium text-navy-900">
+      <div className="flex flex-wrap gap-3 text-xs font-medium text-grey-900">
         {evidence.document_name ? (
-          <span className="text-undp-blue">
+          <span className="text-grey-950">
             Document: {evidence.document_name}
           </span>
         ) : (
@@ -64,7 +64,7 @@ export default function CitationCard({
       </div>
 
       {verification && !verified && (
-        <details className="text-xs text-[#A8483F]">
+        <details className="text-xs text-status-red">
           <summary className="cursor-pointer font-medium">
             Verification details
           </summary>
@@ -80,7 +80,7 @@ export default function CitationCard({
               {verification.text_supports_claim ? "✓" : "✗"}
             </li>
             {verification.failure_reason && (
-              <li className="text-[#A8483F]">{verification.failure_reason}</li>
+              <li className="text-status-red">{verification.failure_reason}</li>
             )}
           </ul>
         </details>

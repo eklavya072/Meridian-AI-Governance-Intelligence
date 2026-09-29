@@ -125,15 +125,15 @@ export default function AnimatedSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls="animated-select-list"
-        className="pressable w-full flex items-center justify-between gap-2 border border-gray-300 rounded-lg px-3 py-2 text-sm text-left bg-white focus:outline-none focus:ring-2 focus:ring-undp-blue hover:border-undp-blue transition-colors"
+        className="pressable w-full flex items-center justify-between gap-2 border border-grey-200 rounded-lg px-3 py-2 text-sm text-left bg-white focus:outline-none focus:ring-2 focus:ring-grey-950 hover:border-grey-950 transition-colors"
       >
-        <span className={selected ? "text-gray-900" : "text-gray-400 truncate"}>
+        <span className={selected ? "text-grey-950" : "text-grey-600 truncate"}>
           {selected ? selected.label : placeholder || "Choose..."}
         </span>
         <motion.span
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ duration: DUR.fast, ease: EASE.out }}
-          className="text-gray-400 text-[10px] shrink-0"
+          className="text-grey-600 text-[10px] shrink-0"
           aria-hidden
         >
           ▼
@@ -155,7 +155,7 @@ export default function AnimatedSelect({
             exit={{ opacity: 0, y: -4, scale: 0.99 }}
             transition={{ duration: DUR.fast, ease: EASE.out }}
             style={{ transformOrigin: "top" }}
-            className="absolute z-30 mt-1.5 w-full max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1"
+            className="absolute z-30 mt-1.5 w-full max-h-64 overflow-auto rounded-lg border border-grey-100 bg-white shadow-lg py-1"
           >
             {options.map((o, i) => (
               <li key={o.value}>
@@ -172,10 +172,10 @@ export default function AnimatedSelect({
                   onFocus={() => setActiveIndex(i)}
                   className={`w-full text-left px-3 py-2 text-sm transition-colors ${
                     activeIndex === i
-                      ? "bg-navy-50 text-undp-blue"
+                      ? "bg-grey-50 text-grey-950"
                       : o.value === value
-                      ? "bg-navy-50/70 font-medium text-undp-blue"
-                      : "text-gray-700 hover:bg-navy-50"
+                      ? "bg-grey-50/70 font-medium text-grey-950"
+                      : "text-grey-800 hover:bg-grey-50"
                   }`}
                 >
                   {o.label}

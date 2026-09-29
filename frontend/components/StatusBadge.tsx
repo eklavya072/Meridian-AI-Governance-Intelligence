@@ -4,41 +4,41 @@ const statusConfig: Record<
 > = {
   queued: {
     label: "Queued",
-    badge: "bg-[#F7F0E2] text-[#7A5B1E]",
-    dot: "bg-[#B07E2B]",
+    badge: "bg-status-amber-tint text-status-amber-ink",
+    dot: "bg-status-amber",
     active: true,
-    bar: "text-[#B07E2B]",
+    bar: "text-status-amber",
   },
   processing: {
     label: "Processing",
-    badge: "bg-navy-100 text-navy-800",
-    dot: "bg-navy-500",
+    badge: "bg-grey-100 text-grey-800",
+    dot: "bg-grey-500",
     active: true,
-    bar: "text-navy-500",
+    bar: "text-grey-600",
   },
   generating_report: {
     label: "Generating Report",
-    badge: "bg-navy-100 text-navy-800",
-    dot: "bg-navy-500",
+    badge: "bg-grey-100 text-grey-800",
+    dot: "bg-grey-500",
     active: true,
-    bar: "text-navy-500",
+    bar: "text-grey-600",
   },
   complete: {
     label: "Complete",
-    badge: "bg-[#EAF1EC] text-[#3F7A52]",
-    dot: "bg-[#3F7A52]",
+    badge: "bg-status-green-tint text-status-green",
+    dot: "bg-status-green",
     active: false,
   },
   error: {
     label: "Error",
-    badge: "bg-[#F6ECEB] text-[#A8483F]",
-    dot: "bg-[#A8483F]",
+    badge: "bg-status-red-tint text-status-red",
+    dot: "bg-status-red",
     active: false,
   },
   chat_only: {
     label: "Document only",
-    badge: "bg-navy-100 text-navy-800",
-    dot: "bg-navy-400",
+    badge: "bg-grey-100 text-grey-800",
+    dot: "bg-grey-400",
     active: false,
   },
 };
@@ -52,8 +52,8 @@ export default function StatusBadge({
 }) {
   const cfg = statusConfig[status.toLowerCase()] || {
     label: status,
-    badge: "bg-gray-100 text-gray-800",
-    dot: "bg-gray-400",
+    badge: "bg-grey-50 text-grey-900",
+    dot: "bg-grey-400",
     active: false,
   };
 
@@ -74,7 +74,7 @@ export default function StatusBadge({
           earns its place by showing the run is alive. */}
       {showBar && cfg.active && cfg.bar && (
         <div
-          className={`w-full h-1 rounded-full progress-indeterminate bg-gray-200 ${cfg.bar}`}
+          className={`w-full h-1 rounded-full progress-indeterminate bg-grey-100 ${cfg.bar}`}
         />
       )}
     </div>
