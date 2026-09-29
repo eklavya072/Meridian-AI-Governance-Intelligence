@@ -161,76 +161,53 @@ class TestDisplayNames:
 
 
 class TestScopeDisclaimer:
-    def test_a_single_document_is_named(self):
+    def test_a_single_document_is_counted_and_recorded(self):
         scope = tasks._build_scope_disclaimer(_FakeVS(["strategy.pdf"]), "w1")
 
-        assert "strategy.pdf" in scope["disclaimer"]
+        assert "only the document supplied" in scope["disclaimer"]
         assert scope["documents"] == ["strategy.pdf"]
 
-    def test_multiple_documents_are_all_listed(self):
+    def test_multiple_documents_are_counted(self):
         scope = tasks._build_scope_disclaimer(_FakeVS(["a.pdf", "b.pdf"]), "w1")
 
         # A multi-document workspace must not have the report imply it scored
         # only one of them.
-        assert "a.pdf" in scope["disclaimer"] and "b.pdf" in scope["disclaimer"]
+        assert "the 2 documents supplied" in scope["disclaimer"]
+        assert scope["documents"] == ["a.pdf", "b.pdf"]
 
-    def test_an_empty_workspace_never_renders_an_empty_parenthetical(self):
+    def test_an_empty_workspace_still_reads_as_a_sentence(self):
         disclaimer = tasks._build_scope_disclaimer(_FakeVS([]), "w1")["disclaimer"]
 
         assert "()" not in disclaimer
-        assert "document(s) provided" in disclaimer
+        assert "only the documents supplied" in disclaimer
 
-    def test_korea_without_pipa_gets_the_scope_limited_note(self):
-        scope = tasks._build_scope_disclaimer(
-            _FakeVS(["AI Framework Act.pdf"]), "w1", country="South Korea"
-        )
+    def test_the_country_is_named(self):
+        scope = tasks._build_scope_disclaimer(_FakeVS(["policy.pdf"]), "w1", country="Kenya")
 
-        # Korea's personal-data governance lives in PIPA; scoring Privacy from
-        # the AI Act alone would understate it without saying so.
-        assert "PIPA" in scope["disclaimer"]
+        assert "not Kenya's full AI governance framework" in scope["disclaimer"]
 
-    def test_korea_with_pipa_present_gets_no_note(self):
-        scope = tasks._build_scope_disclaimer(
-            _FakeVS(["AI Framework Act.pdf", "PIPA 2020.pdf"]), "w1", country="South Korea"
-        )
-
-        # PIPA still appears — in the list of documents evaluated, which is
-        # correct. What must be absent is the scope-limited caveat.
-        assert "Note:" not in scope["disclaimer"]
-        assert "scope-limited assessment" not in scope["disclaimer"]
-
-    def test_the_eu_scored_from_the_ai_act_alone_says_so(self):
-        """Privacy read from the AI Act, with the GDPR not supplied, used to
-        carry no caveat at all — only Korea had one."""
+    def test_a_union_takes_the_article(self):
         scope = tasks._build_scope_disclaimer(
             _FakeVS(["EU AI ACT.pdf"]), "w1", country="European Union"
         )
 
-        assert "GDPR" in scope["disclaimer"]
-        assert "scope-limited assessment" in scope["disclaimer"]
+        assert "not the European Union's full" in scope["disclaimer"]
 
-    def test_a_supplied_data_protection_statute_needs_no_note(self):
+    def test_it_stays_two_sentences(self):
+        """The data-protection note made it a paragraph; the owner asked for
+        two or three lines on every country."""
         scope = tasks._build_scope_disclaimer(
-            _FakeVS(["UK Data Protection Act 2018.pdf"]), "w1", country="United Kingdom"
+            _FakeVS(["EU AI ACT.pdf"]), "w1", country="European Union"
         )
 
         assert "Note:" not in scope["disclaimer"]
-
-    def test_a_country_without_an_entry_gets_no_note(self):
-        scope = tasks._build_scope_disclaimer(_FakeVS(["policy.pdf"]), "w1", country="Atlantis")
-
-        assert "Note:" not in scope["disclaimer"]
-
-    def test_the_note_is_country_specific_not_global(self):
-        scope = tasks._build_scope_disclaimer(_FakeVS(["policy.pdf"]), "w1", country="Kenya")
-
-        assert "PIPA" not in scope["disclaimer"]
+        assert len(scope["disclaimer"]) < 240
 
     def test_the_disclaimer_always_states_the_scope_limit(self):
         disclaimer = tasks._build_scope_disclaimer(_FakeVS(["a.pdf"]), "w1")["disclaimer"]
 
         # Never an assessment of a country's complete governance apparatus.
-        assert "not an assessment of the country" in disclaimer
+        assert "not the country's full AI governance framework" in disclaimer
 
 
 class _FakeVS:

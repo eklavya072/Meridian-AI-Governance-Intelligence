@@ -7,14 +7,16 @@ assembled deterministically in code so the model can never invent one.
 Sections split:
   - LLM-written (one call): executive summary, key findings (strengths /
     attention areas), priority recommendations.
-  - Deterministic (code, from stored data): header, risk overview, relevant
-    precedent (from Module 4 matches), scope & methodology (reuses the stored
-    scope disclaimer verbatim).
+  - Deterministic (code, from stored data): header, dimension assessment,
+    implementation roadmap, evidence base, relevant precedent (from Module 4
+    matches), scope & methodology (reuses the stored scope disclaimer
+    verbatim).
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,8 +26,6 @@ from pydantic import BaseModel, Field
 from src.provider_router import generate_with_retry, get_provider
 
 logger = structlog.get_logger()
-
-PRIORITY_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, None: 9}
 
 
 # ── LLM-written narrative schema ──────────────────────────────────────────
@@ -179,66 +179,6 @@ def build_brief_prompt(
 # ── Deterministic sections (code-computed, never LLM) ─────────────────────
 
 
-def build_risk_overview(
-    gaps: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Risk distribution + priority dimensions, assembled from stored data.
-
-    A small table/paragraph: distribution by risk level, which dimensions
-    carry High/Critical priority, and one sentence on compounding risk when
-    multiple high-priority dimensions share a cluster.
-    """
-    distribution: dict[str, int] = {
-        "High": 0,
-        "Medium": 0,
-        "Low": 0,
-        "Insufficient Evidence": 0,
-    }
-    for g in gaps:
-        rl = g.get("risk_level")
-        if rl in distribution:
-            distribution[rl] += 1
-        else:
-            distribution.setdefault(rl or "Insufficient Evidence", 0)
-            distribution[rl or "Insufficient Evidence"] += 1
-
-    priority_dims: list[tuple[str, str]] = []
-    for g in gaps:
-        m2 = g.get("module_2") or {}
-        p = m2.get("priority")
-        if p in ("Critical", "High"):
-            priority_dims.append((g.get("dimension") or "Unknown", p))
-    priority_dims.sort(key=lambda x: PRIORITY_RANK.get(x[1], 9))
-    high_priority_dimensions = [d for d, _ in priority_dims]
-
-    assessed = sum(1 for g in gaps if not g.get("analysis_error"))
-    para = (
-        f"The analysis assessed {assessed} dimension(s). Risk distribution: "
-        f"{distribution['High']} High, {distribution['Medium']} Medium, "
-        f"{distribution['Low']} Low, {distribution['Insufficient Evidence']} "
-        "Insufficient Evidence."
-    )
-    if high_priority_dimensions:
-        para += f" High-priority dimensions: {', '.join(high_priority_dimensions)}."
-    if len(high_priority_dimensions) >= 2:
-        para += (
-            " Multiple dimensions share the highest priority — compounding risk "
-            "across these dimensions raises the urgency of coordinated, sequenced "
-            "implementation."
-        )
-    elif high_priority_dimensions:
-        para += (
-            " Single highest-priority dimension — sequencing should begin there "
-            "before related clusters are addressed."
-        )
-
-    return {
-        "paragraph": para,
-        "high_priority_dimensions": high_priority_dimensions,
-        "distribution": distribution,
-    }
-
-
 def build_relevant_precedent(gaps: list[dict[str, Any]]) -> str | None:
     """1-2 sentence note on matched Module 4 incidents (illustrative context
     only — never the full case-study treatment). Deterministic: reads the
@@ -265,7 +205,9 @@ def build_relevant_precedent(gaps: list[dict[str, Any]]) -> str | None:
     )
 
 
-def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_dimension_assessment(
+    gaps: list[dict[str, Any]], documents: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Per-dimension detail — the substance the brief used to discard.
 
     The brief summarised eight dimensions into three strength bullets and
@@ -274,12 +216,17 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
     verified: the coverage tier, the depth stage, the evidence-derived risk
     basis, and which of the mechanisms the dimension calls for are absent.
 
-    Deterministic by construction — no LLM involvement, so extending the brief
-    this way adds length without adding a single new place for the model to
-    invent something.
+    Two reference lines give a minister something to check or cite: the
+    bodies and instruments the document names for the dimension, and one of
+    its own provisions, quoted with its page.
+
+    Deterministic by construction — no LLM involvement in the brief, so
+    extending it this way adds length without adding a single new place for
+    the model to invent something.
     """
     rows: list[dict[str, Any]] = []
-    for g in gaps:
+    provisions = _assign_key_provisions(gaps, documents)
+    for g, provision in zip(gaps, provisions, strict=True):
         if g.get("analysis_error"):
             rows.append(
                 {
@@ -289,6 +236,8 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
                     "basis": "This dimension could not be assessed on this run. "
                     "It is not a finding about the document.",
                     "absent_mechanisms": [],
+                    "in_place": [],
+                    "key_provision": None,
                 }
             )
             continue
@@ -306,9 +255,148 @@ def build_dimension_assessment(gaps: list[dict[str, Any]]) -> list[dict[str, Any
                     "", (g.get("risk_basis") or g.get("coverage_reasoning") or "")
                 ).strip(),
                 "absent_mechanisms": _absent_mechanisms(g),
+                "in_place": _named_mechanisms(g),
+                "key_provision": provision,
             }
         )
     return rows
+
+
+def _named_mechanisms(gap: dict[str, Any], limit: int = 4) -> list[str]:
+    """The bodies and instruments the document names for this dimension, as
+    the evaluation recorded them ("Artificial Intelligence Commissioner (named
+    body)"), in the order it listed them."""
+    m1 = gap.get("module_1") or {}
+    out: list[str] = []
+    for item in m1.get("operational_mechanisms") or []:
+        text = " ".join(str(item).split())
+        if text and text not in out:
+            out.append(text)
+    return out[:limit]
+
+
+# A provision that states a rule reads as the document's commitment; a
+# preamble sentence around it does not.
+_NORM_RE = re.compile(
+    r"\b(shall|must|is required to|are required to|has the right|have the right|"
+    r"is prohibited|are prohibited|may not|shall not)\b",
+    re.IGNORECASE,
+)
+_QUOTE_LIMIT = 260
+
+
+def _is_document_evidence(e: dict[str, Any], evaluated: set[str]) -> bool:
+    """Whether a piece of evidence is the assessed document's own text.
+
+    A dimension's evidence also holds the framework passages it was compared
+    against, and printing one of those unlabelled under a country's
+    dimension presented a UNESCO sentence as that country's own text. The
+    run's list of evaluated documents is the test whenever it exists; only a
+    record without one falls back to "the source is its own file".
+    """
+    name = e.get("document_name") or ""
+    if evaluated:
+        return name in evaluated
+    return bool(name) and name == e.get("source_framework")
+
+
+_TERMINAL = (".", ";", ":", "!", "?", ")", "\u201d", '"')
+# Checkbox and bullet glyphs from forms and slide decks. NFKC also folds the
+# typographic ligatures PDFs carry ("proﬁling" -> "profiling").
+_SCORING_GRID_RE = re.compile(r"(?:\d\s*[\u2610\u2611\u2612]\s*)+(?:\d{1,3}\.\s)?")
+# A word broken across a line ("high- impact"), and a list item's number.
+_LINE_HYPHEN_RE = re.compile(r"(\w)- (\w)")
+_ITEM_NUMBER_RE = re.compile(r"^\d{1,3}\.\s+")
+_FORM_GLYPH_RE = re.compile(r"[\u2610\u2611\u2612\u25a0\u25a1\u25aa\u25cf]")
+# A sentence boundary a quote can start from when its passage opens mid-way.
+_SENTENCE_START_RE = re.compile(r"[.;:]\s+(?=[A-Z(\u201c\"])")
+
+
+def _clean_start(text: str) -> tuple[str, bool]:
+    """A passage cut out of the middle of a sentence ("qual access, gender
+    equality...") starts at its next sentence if one begins early enough;
+    otherwise it is marked as an excerpt. Returns the text and whether it
+    now opens on a sentence."""
+    if text[:1].isupper() or text[:1].isdigit() or text[:1] in '(\u201c"':
+        return text, True
+    m = _SENTENCE_START_RE.search(text[:160])
+    if m and len(text) - m.end() >= 80:
+        return text[m.end() :], True
+    return "\u2026" + text.split(" ", 1)[-1], False
+
+
+def _trim_quote(text: str) -> str:
+    """At most _QUOTE_LIMIT characters, opening on a sentence where it can
+    and ending on one where one fits, otherwise on a whole word marked with
+    an ellipsis. Passages are chunks of the document, so either end may fall
+    mid-word ("...any interested s")."""
+    text = unicodedata.normalize("NFKC", text)
+    text = _SCORING_GRID_RE.sub(" ", text)  # "2 ☐ 1 ☐ 0 ☐ 29. " between items
+    text = _FORM_GLYPH_RE.sub(" ", text)
+    text = _LINE_HYPHEN_RE.sub(r"\1-\2", " ".join(text.split()))
+    text = _ITEM_NUMBER_RE.sub("", text)
+    text, _ = _clean_start(text)
+    if len(text) > _QUOTE_LIMIT:
+        cut = text[:_QUOTE_LIMIT]
+        end = max(cut.rfind(". "), cut.rfind("; "))
+        if end >= 120:
+            return cut[: end + 1]
+        text = cut
+    elif text.endswith(_TERMINAL):
+        return text
+    # The last token may be a fragment of a word, so it goes.
+    return text.rsplit(" ", 1)[0].rstrip(",;:\u2014-") + "\u2026"
+
+
+def _provision_candidates(gap: dict[str, Any], evaluated: set[str]) -> list[dict[str, Any]]:
+    if gap.get("analysis_error"):
+        return []
+    return [
+        e
+        for e in gap.get("evidence") or []
+        if e.get("verified")
+        and _is_document_evidence(e, evaluated)
+        and len((e.get("text") or e.get("quote") or "").strip()) > 60
+    ]
+
+
+def _assign_key_provisions(
+    gaps: list[dict[str, Any]], documents: list[str] | None = None
+) -> list[dict[str, str] | None]:
+    """One verified provision from the assessed document per dimension, in
+    the order of `gaps`.
+
+    Per dimension: a passage that has not been quoted under another dimension
+    of this brief, then one free of form glyphs (checkbox scoring grids),
+    then one that states a rule, then one that opens on a sentence, then the
+    closest match. Dimensions with the fewest passages choose first, so the
+    only provision Human Autonomy has is not spent on Transparency first:
+    Rwanda's Article 21 was printed under three dimensions. A passage is
+    reused only when a dimension has nothing else.
+    """
+    evaluated = set(documents or [])
+    pools = [_provision_candidates(g, evaluated) for g in gaps]
+    chosen: list[dict[str, str] | None] = [None] * len(gaps)
+    quoted: set[str] = set()
+    for idx in sorted(range(len(gaps)), key=lambda k: len(pools[k])):
+        if not pools[idx]:
+            continue
+
+        def rank(e: dict[str, Any]) -> tuple[bool, bool, bool, bool, float]:
+            text = " ".join((e.get("text") or e.get("quote") or "").split())
+            return (
+                _trim_quote(text) not in quoted,
+                not _FORM_GLYPH_RE.search(text),
+                bool(_NORM_RE.search(text)),
+                _clean_start(text)[1],
+                e.get("similarity_score") or 0.0,
+            )
+
+        best = max(pools[idx], key=rank)
+        quote = _trim_quote(best.get("text") or best.get("quote") or "")
+        quoted.add(quote)
+        chosen[idx] = {"quote": quote, "source": _evidence_source(best)}
+    return chosen
 
 
 # Stripped from the basis prose because the same list is rendered as its own
@@ -409,11 +497,32 @@ def build_implementation_roadmap(gaps: list[dict[str, Any]]) -> list[dict[str, A
     return out
 
 
+# Download debris in an uploaded file's name: a random id before it
+# ("117ojp1ilnxmmvseo01-Egypt National...") or a browser's copy counter after
+# it ("Artificial_Intelligence_Policy__1_").
+_DOWNLOAD_ID_RE = re.compile(r"^(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{12,}-")
+_COPY_SUFFIX_RE = re.compile(r"(?:__\d+_|\s\(\d+\))$")
+
+
+def document_label(file_name: str) -> str:
+    """A document's name as a reader should see it: no extension, no
+    download debris, spaces for underscores."""
+    name = re.sub(r"\.pdf$", "", file_name or "", flags=re.IGNORECASE)
+    name = _COPY_SUFFIX_RE.sub("", _DOWNLOAD_ID_RE.sub("", name))
+    return " ".join(name.replace("_", " ").split())
+
+
 def _evidence_source(e: dict[str, Any]) -> str:
     """ "<document>, p. N" for a quote, so a reader can find it."""
-    name = re.sub(r"\.pdf$", "", str(e.get("document_name") or ""), flags=re.IGNORECASE)
+    name = document_label(str(e.get("document_name") or ""))
     page = str(e.get("page_number") or "").strip()
     return f"{name}, p. {page}" if name and page and page != "None" else name
+
+
+def key_provision_line(k: dict[str, str]) -> str:
+    """A dimension's quoted provision, identical in every rendering."""
+    source = f" ({k['source']})" if k.get("source") else ""
+    return f"Key provision: \u201c{k['quote']}\u201d{source}"
 
 
 def format_evidence_quote(q: dict[str, str]) -> str:
@@ -423,7 +532,9 @@ def format_evidence_quote(q: dict[str, str]) -> str:
 
 
 def build_evidence_base(
-    gaps: list[dict[str, Any]], documents: list[str] | None = None
+    gaps: list[dict[str, Any]],
+    documents: list[str] | None = None,
+    shown: set[str] | None = None,
 ) -> dict[str, Any]:
     """What the assessment actually rests on.
 
@@ -432,23 +543,12 @@ def build_evidence_base(
     passed verification against their source chunk, so nothing here is a new
     claim — it is the existing evidence chain, surfaced.
 
-    Quotes are drawn from the assessed document(s) only, each with its page.
-    A dimension's evidence also holds the framework passages it was compared
-    against, and printing one of those unlabelled under a country's
-    dimension presented a UNESCO sentence as that country's own text.
+    Quotes are drawn from the assessed document(s) only, each with its page
+    (_is_document_evidence). `shown` holds the passages the dimension
+    assessment already quotes, so the same sentence is not printed twice.
     """
     evaluated = set(documents or [])
-
-    def _from_document(e: dict[str, Any]) -> bool:
-        name = e.get("document_name") or ""
-        # The run's list of evaluated documents is the test whenever it exists.
-        # Only a record without one falls back to "the source is its own file",
-        # which also holds for a framework indexed from text rather than a PDF:
-        # used alongside the list, it put an incident-governance paper under
-        # Kenya's dimension as if the Bill said it.
-        if evaluated:
-            return name in evaluated
-        return bool(name) and name == e.get("source_framework")
+    shown = shown or set()
 
     total = verified = 0
     quotes: list[dict[str, str]] = []
@@ -465,8 +565,10 @@ def build_evidence_base(
                 e
                 for e in (g.get("evidence") or [])
                 if e.get("verified")
-                and _from_document(e)
+                and _is_document_evidence(e, evaluated)
                 and len((e.get("text") or e.get("quote") or "").strip()) > 80
+                and _evidence_source(e) + _trim_quote(e.get("text") or e.get("quote") or "")
+                not in shown
             ]
             if candidates:
                 best = max(candidates, key=lambda e: len(e.get("text") or e.get("quote") or ""))
@@ -492,19 +594,23 @@ def build_scope_and_methodology(
     documents: list[str],
     num_dimensions: int,
 ) -> str:
-    """Scope & Methodology — the stored scope disclaimer verbatim (never
-    regenerated) plus a one-line note on sources and frameworks."""
-    parts = [scope_disclaimer]
-    fw_line = (
-        f"This brief synthesizes the already-computed analysis of "
-        f"{num_dimensions} governance dimensions evaluated against "
-        f"{len(frameworks_used)} reference framework(s): "
-        f"{', '.join(frameworks_used) if frameworks_used else 'the configured core frameworks'}."
+    """Scope & Methodology in a few lines: the stored scope disclaimer
+    verbatim (never regenerated), then one sentence on how the verdicts were
+    reached. The reference instruments are counted, not listed; listing all
+    43 made this the longest section of a two-page brief."""
+    source = "document" if len(documents) == 1 else "documents"
+    against = (
+        f"{len(frameworks_used)} international reference instruments"
+        if frameworks_used
+        else "the core international reference instruments"
     )
-    parts.append(fw_line)
-    if documents:
-        parts.append("Source input(s): " + ", ".join(documents) + ".")
-    return "\n\n".join(parts)
+    method = (
+        f"Method: each of the {num_dimensions} governance dimensions was scored "
+        f"by code from the provisions found in the {source}, graded from a "
+        f"stated aspiration to an enforceable duty, and compared against "
+        f"{against}. Every quotation here was checked against its source page."
+    )
+    return f"{scope_disclaimer}\n\n{method}"
 
 
 # ── Assembly + orchestration ──────────────────────────────────────────────
@@ -548,11 +654,18 @@ def assemble_brief(
         ),
         "analysis_failed": sum(1 for g in gaps if g.get("analysis_error")),
     }
-    risk_overview = build_risk_overview(gaps)
     precedent = build_relevant_precedent(gaps)
-    dimension_assessment = build_dimension_assessment(gaps)
+    dimension_assessment = build_dimension_assessment(gaps, documents)
     implementation_roadmap = build_implementation_roadmap(gaps)
-    evidence_base = build_evidence_base(gaps, documents)
+    evidence_base = build_evidence_base(
+        gaps,
+        documents,
+        shown={
+            r["key_provision"]["source"] + r["key_provision"]["quote"]
+            for r in dimension_assessment
+            if r.get("key_provision")
+        },
+    )
     scope_and_methodology = build_scope_and_methodology(
         scope_disclaimer=scope_disclaimer,
         frameworks_used=frameworks_used,
@@ -577,7 +690,6 @@ def assemble_brief(
             "areas_requiring_attention": [
                 s.strip() for s in synthesis.areas_requiring_attention if s.strip()
             ],
-            "risk_overview": risk_overview,
             "priority_recommendations": [
                 {
                     "recommendation": r.recommendation.strip(),
@@ -696,9 +808,6 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
     else:
         lines.append("- None identified.")
     lines.append("")
-    lines.append("## RISK OVERVIEW")
-    lines.append(s["risk_overview"]["paragraph"])
-    lines.append("")
     rows = s.get("dimension_assessment") or []
     if rows:
         lines.append("## DIMENSION ASSESSMENT")
@@ -709,8 +818,12 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
             lines.append(head)
             if r.get("basis"):
                 lines.append(r["basis"])
+            if r.get("in_place"):
+                lines.append("Named in the document: " + "; ".join(r["in_place"]) + ".")
             if r.get("absent_mechanisms"):
                 lines.append("Mechanisms not addressed: " + ", ".join(r["absent_mechanisms"]) + ".")
+            if r.get("key_provision"):
+                lines.append(key_provision_line(r["key_provision"]))
             lines.append("")
     lines.append("## PRIORITY RECOMMENDATIONS")
     recs = s["priority_recommendations"]

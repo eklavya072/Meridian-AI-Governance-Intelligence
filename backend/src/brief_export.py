@@ -17,7 +17,7 @@ import re
 from io import BytesIO
 from typing import Any
 
-from src.brief_synthesis import format_evidence_quote
+from src.brief_synthesis import format_evidence_quote, key_provision_line
 from src.provenance import render_provenance_lines
 
 # Design tokens — mirrors the frontend palette (app/globals.css).
@@ -172,9 +172,6 @@ def render_docx(brief: dict[str, Any]) -> bytes:
     else:
         body("None identified.")
 
-    heading("RISK OVERVIEW")
-    body(s["risk_overview"]["paragraph"])
-
     # Deterministic depth sections (dimension detail, roadmap, evidence).
     # Rendered from stored analysis, so the exported document carries the same
     # substance as the on-screen brief rather than a shorter summary of it.
@@ -192,8 +189,12 @@ def render_docx(brief: dict[str, Any]) -> bytes:
             run.font.color.rgb = ink
             if r.get("basis"):
                 body(r["basis"])
+            if r.get("in_place"):
+                bullet("Named in the document: " + "; ".join(r["in_place"]))
             if r.get("absent_mechanisms"):
                 bullet("Not addressed: " + ", ".join(r["absent_mechanisms"]))
+            if r.get("key_provision"):
+                bullet(key_provision_line(r["key_provision"]))
 
     heading("PRIORITY RECOMMENDATIONS")
     recs = s["priority_recommendations"]
@@ -385,9 +386,6 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
     else:
         _body("None identified.")
 
-    _h1("RISK OVERVIEW")
-    _body(s["risk_overview"]["paragraph"])
-
     rows = s.get("dimension_assessment") or []
     if rows:
         _h1("DIMENSION ASSESSMENT")
@@ -398,8 +396,15 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
             _h2(label)
             if r.get("basis"):
                 _body(r["basis"])
+            items = []
+            if r.get("in_place"):
+                items.append("Named in the document: " + "; ".join(r["in_place"]))
             if r.get("absent_mechanisms"):
-                _bullets(["Not addressed: " + ", ".join(r["absent_mechanisms"])])
+                items.append("Not addressed: " + ", ".join(r["absent_mechanisms"]))
+            if r.get("key_provision"):
+                items.append(key_provision_line(r["key_provision"]))
+            if items:
+                _bullets(items)
 
     _h1("PRIORITY RECOMMENDATIONS")
     recs = s["priority_recommendations"]

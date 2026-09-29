@@ -37,98 +37,39 @@ _engine = None
 _session_factory = None
 
 
-# Where each country's personal-data rules principally live, and how to
-# recognise that instrument among the uploaded file names. Facts about which
-# law exists — never an expectation about what any verdict should be.
-_DATA_PROTECTION_STATUTES: dict[str, tuple[str, str]] = {
-    "european union": (
-        "General Data Protection Regulation (GDPR)",
-        r"gdpr|general data protection|2016/679",
-    ),
-    "united kingdom": ("Data Protection Act 2018 and UK GDPR", r"data protection act|uk gdpr"),
-    "china": (
-        "Personal Information Protection Law (PIPL)",
-        r"pipl|personal information protection law",
-    ),
-    "japan": (
-        "Act on the Protection of Personal Information (APPI)",
-        r"appi|protection of personal information",
-    ),
-    "india": (
-        "Digital Personal Data Protection Act, 2023",
-        r"dpdp|digital personal data protection",
-    ),
-    "kenya": ("Data Protection Act, 2019", r"data protection act"),
-    "egypt": ("Personal Data Protection Law No. 151 of 2020", r"personal data protection|151"),
-    "nigeria": ("Nigeria Data Protection Act, 2023", r"data protection act|ndpa|ndp act"),
-    "rwanda": (
-        "Law No. 058/2021 relating to the Protection of Personal Data and Privacy",
-        r"058/2021|protection of personal data|data protection",
-    ),
-    "south korea": (
-        "Personal Information Protection Act (PIPA)",
-        r"pipa|personal information protection",
-    ),
-    "korea": (
-        "Personal Information Protection Act (PIPA)",
-        r"pipa|personal information protection",
-    ),
-    "republic of korea": (
-        "Personal Information Protection Act (PIPA)",
-        r"pipa|personal information protection",
-    ),
-}
-
-
 def _build_scope_disclaimer(
     vector_store: VectorStore,
     workspace_id: str,
     country: str = "",
 ) -> dict[str, Any]:
-    """Deterministic scope disclaimer for one analysis run.
+    """Deterministic scope disclaimer for one analysis run: two sentences
+    saying the verdicts rest only on the documents supplied, never on the
+    country's complete governance apparatus.
 
-    States plainly that the analysis evaluates ONLY the specific document(s)
-    uploaded to this workspace, never the country's complete governance
-    apparatus. Document names are derived from the actually-ingested chunks
-    (metadata document_name), so multi-document workspaces list every input
-    and single-document workspaces state the one document evaluated.
-
-    Companion-instrument scope note (deterministic, document-name based —
-    never an LLM judgment): a country's personal-data rules usually sit in a
-    separate statute, so an analysis of its AI instruments alone reads Privacy
-    from whatever data provisions they happen to carry. When that statute is
-    not among the ingested documents, the disclaimer says the Privacy verdict
-    is scope-limited. This began as a Korea-only rule, while the EU's Privacy
-    was read from the AI Act without a word about the GDPR.
+    The documents are counted rather than named. Their names are listed with
+    the run (and in the brief's header), and naming four files here turned a
+    two-line caveat into a paragraph. Document names come from the ingested
+    chunks, so the count is what was actually evaluated.
     """
     docs = vector_store.get_workspace_documents(workspace_id) or []
     if len(docs) == 1:
-        doc_clause = f"the provided document ({docs[0]})"
-    elif len(docs) > 1:
-        doc_clause = "the provided documents (" + ", ".join(docs) + ")"
+        supplied = "the document supplied"
+    elif docs:
+        supplied = f"the {len(docs)} documents supplied"
     else:
-        # Defensive: no document_name metadata found (e.g. all-old chunks or
-        # an empty workspace) — never render an empty parenthetical.
-        doc_clause = "the document(s) provided to the system"
+        supplied = "the documents supplied"
+    name = (country or "").strip()
+    if not name:
+        whose = "the country's"
+    elif name.lower() in ("european union", "united kingdom", "republic of korea"):
+        whose = f"the {name}'s"
+    else:
+        whose = f"{name}'s"
     disclaimer = (
-        f"Scope: this assessment evaluates {doc_clause}. "
-        "It is not an assessment of the country's complete AI governance "
-        "apparatus — governance instruments not provided to the system are "
-        "outside this evaluation, and coverage verdicts should be read as "
-        "relative to the evidence supplied."
+        f"Scope: this assessment covers only {supplied}, not {whose} full AI "
+        "governance framework. Instruments that were not supplied are outside "
+        "it, so each verdict reflects that evidence alone."
     )
-    statute = _DATA_PROTECTION_STATUTES.get((country or "").strip().lower())
-    if statute and not any(re.search(statute[1], d, re.IGNORECASE) for d in docs):
-        name = country.strip()
-        if name.lower() in ("european union", "united kingdom", "republic of korea"):
-            name = "the " + name
-        disclaimer += (
-            f" Note: {name[0].upper() + name[1:]}'s personal-data protection sits "
-            f"primarily in the {statute[0]}, which is not among the provided "
-            "documents — the Privacy dimension reflects only the supplied "
-            "documents' own data provisions and is a scope-limited assessment, "
-            f"not an evaluation of {name}'s privacy regime."
-        )
     return {
         "documents": docs,
         "disclaimer": disclaimer,

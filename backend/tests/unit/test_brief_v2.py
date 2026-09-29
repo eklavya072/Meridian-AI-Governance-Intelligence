@@ -13,7 +13,6 @@ from src.brief_synthesis import (
     assemble_brief,
     build_dimension_digest,
     build_relevant_precedent,
-    build_risk_overview,
     render_brief_markdown,
 )
 
@@ -100,21 +99,6 @@ class TestDeterministicSections:
         assert "future strengthening opportunities" in digest.lower()
         assert "Cross-border data flow code" in digest
 
-    def test_risk_overview_counts_and_compounding(self, gaps):
-        ro = build_risk_overview(gaps)
-        assert ro["distribution"]["High"] == 2
-        assert ro["distribution"]["Medium"] == 1
-        assert ro["distribution"]["Low"] == 1
-        assert ro["high_priority_dimensions"] == ["Accountability", "Safety"]
-        # 2+ high-priority dims -> compounding sentence present.
-        assert "compounding" in ro["paragraph"]
-
-    def test_risk_overview_single_high_no_compounding(self, gaps):
-        single = [g for g in gaps if g["dimension"] in ("Accountability", "Privacy")]
-        ro = build_risk_overview(single)
-        assert ro["high_priority_dimensions"] == ["Accountability"]
-        assert "compounding" not in ro["paragraph"]
-
     def test_precedent_deduplicates(self, gaps):
         assert "Algorithmic bias in credit scoring" in build_relevant_precedent(gaps)
         no_incidents = [g for g in gaps if "module_4" not in g]
@@ -148,7 +132,11 @@ class TestAssembly:
         assert sec["priority_recommendations"][0]["recommendation"]
         assert sec["relevant_precedent"] is not None
         assert SCOPE in sec["scope_and_methodology"]
-        assert "EU AI Act, UNESCO" in sec["scope_and_methodology"]
+        # The instruments are counted, not listed: the list was 43 names long.
+        assert (
+            "compared against 2 international reference instruments" in sec["scope_and_methodology"]
+        )
+        assert "risk_overview" not in sec
 
     def test_markdown_roundtrip(self, gaps):
         brief = assemble_brief(
@@ -170,12 +158,12 @@ class TestAssembly:
             "EXECUTIVE SUMMARY",
             "KEY FINDINGS",
             "Areas of Strength",
-            "RISK OVERVIEW",
             "PRIORITY RECOMMENDATIONS",
             "RELEVANT PRECEDENT",
             "SCOPE & METHODOLOGY",
         ]:
             assert marker in md
+        assert "RISK OVERVIEW" not in md
 
 
 class TestExporters:

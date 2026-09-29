@@ -1214,9 +1214,8 @@ async def generate_brief_v2_route(workspace_id: str):
         scope_disclaimer = scope_info.get("disclaimer", "")
         if not scope_disclaimer:
             scope_disclaimer = (
-                "Scope: this assessment evaluates the document(s) provided to "
-                "the system. It is not an assessment of the country's complete "
-                "AI governance apparatus."
+                "Scope: this assessment covers only the documents supplied, not "
+                "the country's full AI governance framework."
             )
         documents = run_metrics.get("evaluated_documents") or (
             [latest.document_name] if latest.document_name else []

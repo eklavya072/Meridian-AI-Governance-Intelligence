@@ -14,7 +14,6 @@ from src.brief_synthesis import (
     build_evidence_base,
     build_implementation_roadmap,
     build_relevant_precedent,
-    build_risk_overview,
     build_scope_and_methodology,
     render_brief_markdown,
 )
@@ -201,11 +200,6 @@ class TestBriefSections:
         digest = build_dimension_digest(self.GAPS)
 
         assert "Transparency" in digest and "Fairness" in digest
-
-    def test_the_risk_overview_is_built(self):
-        overview = build_risk_overview(self.GAPS)
-
-        assert overview.get("paragraph")
 
     def test_dimension_assessments_cover_every_gap(self):
         assessments = build_dimension_assessment(self.GAPS)

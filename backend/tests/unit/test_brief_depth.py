@@ -121,6 +121,80 @@ class TestDimensionAssessment:
         assert "not a finding about the document" in priv["basis"]
 
 
+class TestReferenceLines:
+    """Two lines a minister can check: what the document names, and one of
+    its provisions in its own words."""
+
+    GAP = {
+        "dimension": "Accountability",
+        "coverage": "Partial",
+        "module_1": {
+            "operational_mechanisms": [
+                "AI Commissioner (named body)",
+                "AI Commissioner (named body)",
+                "Public register of high-risk systems",
+            ]
+        },
+        "evidence": [
+            {
+                "text": "The Commission recognises the importance of accountability "
+                "across the whole AI lifecycle for all actors.",
+                "document_name": "bill.pdf",
+                "page_number": 3,
+                "verified": True,
+                "similarity_score": 0.9,
+            },
+            {
+                "text": "A provider of a high-risk system shall keep a record of every "
+                "incident and report it to the Commissioner within 72 hours.",
+                "document_name": "bill.pdf",
+                "page_number": 19,
+                "verified": True,
+                "similarity_score": 0.7,
+            },
+            {
+                "text": "Organisations shall be answerable for the AI systems they "
+                "deploy, as the OECD principles require of every adherent.",
+                "document_name": "OECD AI Principles",
+                "page_number": 2,
+                "verified": True,
+                "similarity_score": 0.95,
+            },
+        ],
+    }
+
+    def test_named_mechanisms_are_listed_once(self):
+        row = build_dimension_assessment([self.GAP], ["bill.pdf"])[0]
+        assert row["in_place"] == [
+            "AI Commissioner (named body)",
+            "Public register of high-risk systems",
+        ]
+
+    def test_the_key_provision_is_a_rule_from_the_assessed_document(self):
+        row = build_dimension_assessment([self.GAP], ["bill.pdf"])[0]
+        # The binding sentence wins over a closer-matching preamble, and the
+        # framework passage is never presented as the country's text.
+        assert row["key_provision"]["quote"].startswith("A provider of a high-risk")
+        assert row["key_provision"]["source"] == "bill, p. 19"
+
+    def test_a_long_provision_is_cut_on_a_word(self):
+        long_gap = dict(self.GAP)
+        long_gap["evidence"] = [
+            {
+                "text": "The provider shall " + "maintain adequate records " * 30,
+                "document_name": "bill.pdf",
+                "page_number": 4,
+                "verified": True,
+            }
+        ]
+        quote = build_dimension_assessment([long_gap], ["bill.pdf"])[0]["key_provision"]["quote"]
+        assert len(quote) <= 261 and quote.endswith("…")
+
+    def test_no_verified_document_text_means_no_provision(self):
+        gap = {**self.GAP, "evidence": [{**self.GAP["evidence"][1], "verified": False}]}
+        assert build_dimension_assessment([gap], ["bill.pdf"])[0]["key_provision"] is None
+
+
 class TestImplementationRoadmap:
     def test_only_dimensions_with_phases_appear(self):
         items = build_implementation_roadmap(GAPS)
