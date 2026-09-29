@@ -145,7 +145,7 @@ export function StageHistogram({
       <div className="flex items-end gap-[3px] h-12">
         {counts.map((c, i) => (
           <div key={c.stage} className="flex-1 flex flex-col items-center gap-1">
-            <span className="text-[10px] font-semibold text-grey-800">
+            <span className="text-[11px] font-semibold tabular-nums text-grey-800">
               {c.count}
             </span>
             <div className="w-full rounded-t-sm overflow-hidden flex items-end flex-1">
@@ -166,7 +166,8 @@ export function StageHistogram({
         {counts.map((c) => (
           <span
             key={c.stage}
-            className="flex-1 text-center text-[9px] text-grey-600 leading-tight"
+            lang="en"
+            className="flex-1 min-w-0 text-center text-[11px] text-grey-600 leading-tight hyphens-auto break-words"
           >
             {c.stage}
           </span>

@@ -257,7 +257,7 @@ export default function AnalysisPage() {
               placeholder="Choose a workspace with a completed analysis..."
               options={workspaces.map((ws) => ({
                 value: ws.id,
-                label: `${ws.country} — ${ws.policy_title}`,
+                label: `${ws.country} · ${ws.policy_title}`,
               }))}
             />
           </div>
@@ -341,7 +341,7 @@ export default function AnalysisPage() {
             <span className="font-semibold">Analysis is currently running for this workspace.</span>{" "}
             {wsStatusDetail || "This can take a few minutes."}
             {analysis
-              ? " Showing the most recently completed results below — this will update automatically once the new run finishes."
+              ? " Showing the most recently completed results below. They update automatically once the new run finishes."
               : " Results will appear here automatically once it finishes."}
           </span>
         </div>

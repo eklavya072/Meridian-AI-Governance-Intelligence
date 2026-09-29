@@ -25,7 +25,7 @@ const statusConfig: Record<
   },
   complete: {
     label: "Complete",
-    badge: "bg-status-green-tint text-status-green",
+    badge: "bg-status-green-tint text-status-green-ink",
     dot: "bg-status-green",
     active: false,
   },

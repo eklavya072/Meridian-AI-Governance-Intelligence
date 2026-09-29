@@ -152,7 +152,7 @@ export default function AnimatedSelect({
             onKeyDown={onListKey}
             initial={{ opacity: 0, y: -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.99 }}
+            exit={{ opacity: 0, y: -4, scale: 0.99, pointerEvents: "none" }}
             transition={{ duration: DUR.fast, ease: EASE.out }}
             style={{ transformOrigin: "top" }}
             className="absolute z-30 mt-1.5 w-full max-h-64 overflow-auto rounded-lg border border-grey-100 bg-white shadow-lg py-1"

@@ -330,7 +330,7 @@ export default function AuditorPage() {
                 playOnMount
               />
             }
-            subtitle="One assistant for AI policy assessment — ask about governance dimensions and the international frameworks."
+            subtitle="One assistant for AI policy assessment. Ask about governance dimensions and the international frameworks."
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -409,7 +409,7 @@ export default function AuditorPage() {
             <p className="mt-2 max-w-md text-sm leading-relaxed text-grey-700">
               Attach a policy PDF to ask questions grounded in its text, or
               ask about governance dimensions and the international
-              frameworks — answers come with citations you can verify.
+              frameworks. Answers come with citations you can verify.
             </p>
             <div className="mt-6 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
               {SUGGESTIONS.map((label) => (
@@ -437,9 +437,9 @@ export default function AuditorPage() {
               >
                 <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-grey-950/10 bg-white px-4 py-3 shadow-sm">
                   <span className="flex gap-1">
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey-800 [animation-delay:0ms]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey-800 [animation-delay:150ms]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-grey-800 [animation-delay:300ms]" />
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-grey-800 [animation-delay:0ms]" />
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-grey-800 [animation-delay:160ms]" />
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-grey-800 [animation-delay:320ms]" />
                   </span>
                   <span className="text-xs text-grey-600">Auditing…</span>
                 </div>

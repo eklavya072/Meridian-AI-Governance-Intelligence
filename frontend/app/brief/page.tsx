@@ -127,7 +127,7 @@ export default function BriefPage() {
       setBrief(b);
       setCached(false);
       setInfo(
-        "Brief generated from the stored, citation-verified analysis results — one synthesis call."
+        "Brief generated from the stored, citation-verified analysis results in one synthesis call."
       );
     } catch (e) {
       if (currentWs.current === wsId)
@@ -174,10 +174,13 @@ export default function BriefPage() {
         subtitle="A concise synthesis of the analysis."
       />
 
+      {/* The brief is set as a document: one column the width of a page,
+          the controls sitting on the same edges as the sheet below them. */}
+      <div className="mx-auto w-full max-w-[760px] space-y-6">
       {/* Controls */}
       <div className="bg-white rounded-xl border border-black/[0.10] shadow-sm p-5">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[260px]">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="w-full">
             <label className="block text-base font-semibold text-grey-950 mb-1.5">
               Select Workspace
             </label>
@@ -195,7 +198,7 @@ export default function BriefPage() {
                 .sort(byCountryOrder)
                 .map((ws) => ({
                   value: ws.id,
-                  label: `${ws.country} — ${ws.policy_title}`,
+                  label: `${ws.country} · ${ws.policy_title}`,
                 }))}
             />
           </div>
@@ -256,30 +259,35 @@ export default function BriefPage() {
           transition={{ duration: 0.55, ease: EASE.out }}
           className="bg-white rounded-xl border border-black/[0.10] shadow-sm overflow-hidden"
         >
-          {/* Title block */}
-          <div className="border-b border-black/[0.10] bg-gradient-to-b from-grey-950/5 to-transparent px-8 py-8 text-center">
-            <p className="text-[11px] font-bold tracking-[0.18em] text-grey-600 uppercase">
-              AI Governance Assessment Brief
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-grey-950 tracking-tight">
-              {brief.country} — {brief.policy_title}
+          {/* Title block: the country as the title, the instrument under it,
+              then what this document is. The label that used to sit above
+              the title read as a kicker and measured 4.3:1. */}
+          <div className="border-b border-black/[0.10] bg-gradient-to-b from-grey-950/[0.04] to-transparent px-6 py-10 text-center sm:px-14">
+            <h2 className="text-[clamp(1.75rem,4vw,2.25rem)] font-bold leading-tight tracking-tight text-grey-950">
+              {brief.country}
             </h2>
+            <p className="mt-1.5 text-base font-medium text-grey-800">{brief.policy_title}</p>
+            <p className="mt-4 text-xs text-grey-700">
+              AI governance assessment brief, {brief.num_dimensions} dimensions
+            </p>
           </div>
 
-          <div className="px-8 py-6">
+          {/* Prose holds a reading measure of about 75 characters; headings
+              and rules run the full column. */}
+          <div className="px-6 pb-10 pt-4 sm:px-14 [&_li]:max-w-[60ch] [&_p]:max-w-[60ch]">
             {/* Section numbers are assigned in render order rather than
                 hardcoded: several sections below are conditional (a run with
                 no gaps has no roadmap), and fixed indices skipped numbers or
                 repeated them as soon as one was absent. */}
             {/* EXECUTIVE SUMMARY */}
             <SectionHeading index={nextIndex()}>Executive Summary</SectionHeading>
-            <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
+            <p className="text-sm leading-relaxed text-grey-900">
               {s.executive_summary}
             </p>
 
             {/* KEY FINDINGS */}
             <SectionHeading index={nextIndex()}>Key Findings</SectionHeading>
-            <div className="space-y-5 max-w-3xl">
+            <div className="space-y-5">
               <div>
                 <h3 className="text-sm font-bold text-grey-800 mb-2">
                   Areas of Strength
@@ -298,7 +306,7 @@ export default function BriefPage() {
             {(s.dimension_assessment?.length ?? 0) > 0 && (
               <>
                 <SectionHeading index={nextIndex()}>Dimension Assessment</SectionHeading>
-                <div className="max-w-3xl divide-y divide-grey-950/10">
+                <div className="divide-y divide-grey-950/10">
                   {s.dimension_assessment!.map((r, ri) => (
                     <motion.div
                       key={r.dimension}
@@ -356,10 +364,10 @@ export default function BriefPage() {
             <SectionHeading index={nextIndex()}>Priority Recommendations</SectionHeading>
             {s.priority_recommendations.length === 0 ? (
               <p className="text-sm text-grey-600 italic">
-                No critical gaps identified — no priority actions required.
+                No critical gaps identified, so no priority actions are required.
               </p>
             ) : (
-              <ol className="space-y-3 max-w-3xl">
+              <ol className="space-y-3">
                 {s.priority_recommendations.map((r, i) => (
                   <motion.li
                     key={i}
@@ -391,7 +399,7 @@ export default function BriefPage() {
             {(s.implementation_roadmap?.length ?? 0) > 0 && (
               <>
                 <SectionHeading index={nextIndex()}>Implementation Roadmap</SectionHeading>
-                <div className="max-w-3xl space-y-5">
+                <div className="space-y-5">
                   {s.implementation_roadmap!.map((item) => (
                     <div key={item.dimension}>
                       <p className="text-sm font-semibold text-grey-950">
@@ -407,8 +415,9 @@ export default function BriefPage() {
                         <div key={pi} className="mt-2 border-l-2 border-grey-950/15 pl-3">
                           <p className="text-sm font-bold text-grey-950">
                             {ph.phase}
+                            {ph.timeline && " "}
                             {ph.timeline && (
-                              <span className="ml-2 font-semibold text-grey-700">
+                              <span className="ml-1 font-semibold text-grey-700">
                                 {ph.timeline}
                               </span>
                             )}
@@ -440,13 +449,13 @@ export default function BriefPage() {
             {(s.evidence_base?.citations_total ?? 0) > 0 && (
               <>
                 <SectionHeading index={nextIndex()}>Evidence Base</SectionHeading>
-                <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
+                <p className="text-sm leading-relaxed text-grey-900">
                   {s.evidence_base!.citations_verified} of{" "}
                   {s.evidence_base!.citations_total} citations were verified against
                   their source passage.
                 </p>
                 {s.evidence_base!.representative_quotes.length > 0 && (
-                  <ul className="mt-2 max-w-3xl space-y-2">
+                  <ul className="mt-2 space-y-2">
                     {s.evidence_base!.representative_quotes.map((q, qi) => (
                       <li key={qi} className="border-l-2 border-grey-950/15 pl-3">
                         <span className="text-xs font-semibold text-grey-950">
@@ -469,11 +478,11 @@ export default function BriefPage() {
             {s.relevant_precedent && (
               <>
                 <SectionHeading index={nextIndex()}>Relevant Precedent</SectionHeading>
-                <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
+                <p className="text-sm leading-relaxed text-grey-900">
                   {s.relevant_precedent}
                 </p>
                 {(s.precedents?.length ?? 0) > 0 && (
-                  <div className="mt-4 grid max-w-3xl gap-3">
+                  <div className="mt-4 grid gap-3">
                     {s.precedents!.map((p, pi) => (
                       <motion.article
                         key={p.incident}
@@ -517,7 +526,7 @@ export default function BriefPage() {
             <SectionHeading index={nextIndex()}>
               Scope &amp; Methodology
             </SectionHeading>
-            <div className="space-y-3 max-w-3xl">
+            <div className="space-y-3">
               {s.scope_and_methodology.split("\n\n").map((para, i) => (
                 <p key={i} className="text-xs leading-relaxed text-grey-600">
                   {para}
@@ -546,6 +555,7 @@ export default function BriefPage() {
           </p>
         </div>
       )}
+      </div>
     </div>
   );
 }

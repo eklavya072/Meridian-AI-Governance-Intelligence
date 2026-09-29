@@ -40,7 +40,7 @@ export function Module3Panel({ gap }: { gap: GovernanceGap }) {
           answered before it is asked. */}
       {m3.phases.length > 0 && (
         <p className="text-[11px] leading-[1.5] text-grey-600">
-          Phase timelines are calculated from this dimension&apos;s own profile — its coverage
+          Phase timelines are calculated from this dimension&apos;s own profile: its coverage
           tier, depth stage, how many mechanisms the document already operates, and whether it
           names a responsible agency. Each phase carries the reasoning that produced its range.
         </p>
@@ -81,7 +81,7 @@ export function Module3Panel({ gap }: { gap: GovernanceGap }) {
 
       <div className="border rounded-lg p-4 bg-white/70">
         <p className="module-label mb-1.5">Responsible Agency</p>
-        <p className="module-value">{m3.responsible_agency || "—"}</p>
+        <p className="module-value">{m3.responsible_agency || "Not named"}</p>
         <div className="mt-1.5 flex items-center gap-2">
           <span className="dot-indicator !gap-1.5 !text-xs">
             <span
@@ -98,7 +98,7 @@ export function Module3Panel({ gap }: { gap: GovernanceGap }) {
           </span>
           {grounding === "none_identified" && (
             <span className="text-[11px] font-medium text-grey-900 italic">
-              No invented agency — implementation responsibility is for the
+              No agency is invented here. Implementation responsibility is for the
               adopting government to assign.
             </span>
           )}

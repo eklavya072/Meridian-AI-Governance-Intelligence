@@ -152,7 +152,7 @@ export function Module1Panel({ gap }: { gap: GovernanceGap }) {
         <div className="rounded-lg border border-status-red-line bg-status-red-tint px-3 py-2">
           <p className="module-heading mb-1 text-status-red">Citation caveat</p>
           <p className="module-body text-status-red">
-            Not found anywhere in the uploaded document —{" "}
+            Not found anywhere in the uploaded document:{" "}
             {gap.fabricated_citations!.join(", ")}. Treat as unreliable.
           </p>
         </div>

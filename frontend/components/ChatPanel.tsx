@@ -17,7 +17,7 @@ const INTENT_BADGES: Record<string, { label: string; color: string }> = {
   },
   recommendation_explanation: {
     label: "Recommendation",
-    color: "bg-status-green-tint text-status-green",
+    color: "bg-status-green-tint text-status-green-ink",
   },
   educational: {
     label: "Educational",
@@ -62,7 +62,7 @@ function CitationBadge({ citations }: { citations: ChatMessage["citations"] }) {
   if (passed === 0) return null;
   return (
     <div className="flex gap-2 mt-2 text-[10px]">
-      <span className="text-status-green bg-status-green-tint px-1.5 py-0.5 rounded">
+      <span className="text-status-green-ink bg-status-green-tint px-1.5 py-0.5 rounded">
         {passed} verified
       </span>
     </div>
@@ -362,7 +362,7 @@ export default function ChatPanel() {
             <div className="text-center text-grey-600 text-sm mt-8 space-y-4">
               <p className="font-medium text-grey-600">AI Rapporteur</p>
               <p>
-                Ask about this analysis — how each dimension was scored, the
+                Ask about this analysis: how each dimension was scored, the
                 evidence, recommendations, roadmap, and case intelligence.
               </p>
               <div className="text-xs space-y-1 text-left max-w-xs mx-auto">

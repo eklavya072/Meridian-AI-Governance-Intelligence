@@ -371,7 +371,7 @@ export function PieLegend({
 }) {
   return (
     <div
-      className={`grid grid-cols-2 gap-x-4 gap-y-1 mt-3 text-xs w-full max-w-[230px] ${className}`}
+      className={`grid grid-cols-2 gap-x-3 gap-y-1 mt-3 text-xs w-full max-w-[320px] ${className}`}
     >
       {items.map((item, i) => {
         const isHover = hoveredIndex === i;
@@ -392,7 +392,7 @@ export function PieLegend({
               style={{ background: item.color, transform: isHover ? "scale(1.3)" : "scale(1)" }}
             />
             <span
-              className={`truncate transition-colors ${
+              className={`min-w-0 leading-snug transition-colors ${
                 isHover ? "text-grey-950 font-semibold" : "text-grey-600"
               }`}
             >

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Unbounded, Public_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { MotionConfig } from "motion/react";
 import { ChatProvider } from "@/components/ChatProvider";
@@ -14,7 +14,7 @@ import NavBar from "@/components/NavBar";
    Open Graph and Twitter cards were absent entirely, so every share of this
    link rendered as a bare URL. */
 const DESCRIPTION =
-  "Meridian reads a national AI strategy and reports what it obliges — " +
+  "Meridian reads a national AI strategy and reports what it obliges: " +
   "every commitment graded from a stated aspiration to an enforceable duty, " +
   "its gaps ranked against forty-three international instruments, with a " +
   "citation behind every line.";
@@ -23,17 +23,17 @@ export const metadata: Metadata = {
   /* Link previews need an absolute image URL. SITE_URL is the deployed
      address, set at build time (deploy/huggingface/Dockerfile). */
   metadataBase: new URL(process.env.SITE_URL || "http://localhost:3000"),
-  title: "Meridian — AI Governance Intelligence Workbench",
+  title: "Meridian · AI Governance Intelligence Workbench",
   description: DESCRIPTION,
   openGraph: {
-    title: "Meridian — AI Governance Intelligence Workbench",
+    title: "Meridian · AI Governance Intelligence Workbench",
     description: DESCRIPTION,
     siteName: "Meridian",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Meridian — AI Governance Intelligence Workbench",
+    title: "Meridian · AI Governance Intelligence Workbench",
     description: DESCRIPTION,
   },
 };
@@ -47,15 +47,18 @@ export const metadata: Metadata = {
    (hero, section headings, card titles).
    Public Sans (body): designed for government digital services; highly
    readable at body sizes, the institutional reading face.
-   Self-hosted via next/font (no runtime requests, no layout shift). */
-const display = Space_Grotesk({
-  subsets: ["latin"],
+   Self-hosted from app/fonts (no runtime requests, no layout shift, and no
+   build that falls back to Arial when Google Fonts is unreachable). */
+const display = localFont({
+  src: "./fonts/space-grotesk.woff2",
+  weight: "300 700",
   variable: "--font-display",
   display: "swap",
 });
 
-const body = Public_Sans({
-  subsets: ["latin"],
+const body = localFont({
+  src: "./fonts/public-sans.woff2",
+  weight: "100 900",
   variable: "--font-body",
   display: "swap",
 });
@@ -63,8 +66,9 @@ const body = Public_Sans({
 /* Brand face (Unbounded): the Meridian wordmark in the nav only — a wide,
    geometric display face, on its own variable so the wordmark can differ
    from the Space Grotesk headings. */
-const brand = Unbounded({
-  subsets: ["latin"],
+const brand = localFont({
+  src: "./fonts/unbounded.woff2",
+  weight: "200 900",
   variable: "--font-brand",
   display: "swap",
 });

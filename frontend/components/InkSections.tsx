@@ -58,9 +58,9 @@ type Method = { n: string; title: string; body: string };
    Re-measure before changing it. */
 const METHOD: Method[] = [
   {
-    n: "T0–T4",
+    n: "T0-T4",
     title: "The normative-force ladder",
-    body: "Every provision is graded from a stated value to a duty backed by a consequence, by who it binds, how firmly and with what penalty — the Abbott and Snidal legalization framework, applied provision by provision.",
+    body: "Every provision is graded from a stated value to a duty backed by a consequence, by who it binds, how firmly and with what penalty: the Abbott and Snidal legalization framework, applied provision by provision.",
   },
   {
     n: "0",
@@ -101,7 +101,7 @@ export function MethodBand() {
           </h2>
           <p className="l-ink-lede">
             Four rules sit under every reading. They run in code, the same way
-            every time — which is what makes a score arguable on the evidence.
+            every time, which is what makes a score arguable on the evidence.
           </p>
         </header>
         <div className="l-ink-rules">

@@ -132,12 +132,12 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
         {columns.map((col) => (
           <div key={col.analysis.analysis_id} className="text-center px-1 pb-1">
             <p
-              className="text-[9px] font-bold uppercase tracking-wide text-grey-600"
+              className="text-[11px] font-bold uppercase tracking-wide text-grey-600"
               title={analysisDocuments(col.analysis).join(" + ")}
             >
               {col.isBaseline ? "Baseline" : "Added"}
             </p>
-            <p className="text-[10px] font-semibold text-grey-950 leading-tight mt-0.5 line-clamp-2">
+            <p className="text-[11px] font-semibold text-grey-950 leading-tight mt-0.5 line-clamp-2">
               {col.isBaseline ? "" : "+ "}
               {col.headerDocs.join(" + ")}
             </p>
@@ -160,19 +160,19 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={entered ? { opacity: 1, scale: 1 } : {}}
                   transition={{ duration: 0.3, delay: ri * 0.04 + ci * 0.03, ease: EASE.out }}
-                  title={cell ? `${dimension}: ${cell.coverage} — ${cell.depth}` : "Not assessed"}
+                  title={cell ? `${dimension}: ${cell.coverage}, ${cell.depth}` : "Not assessed"}
                 >
                   {cell ? (
                     <>
-                      <span className="text-[9px] font-bold uppercase tracking-wide leading-tight text-center text-white">
+                      <span className="text-[11px] font-bold uppercase tracking-wide leading-tight text-center text-white">
                         {cell.coverage}
                       </span>
-                      <span className="text-[8px] font-medium leading-tight text-center text-white/85">
+                      <span lang="en" className="text-[10px] font-medium leading-tight text-center text-white/90 hyphens-auto break-words">
                         {cell.depth}
                       </span>
                     </>
                   ) : (
-                    <span className="text-[9px] text-grey-600">—</span>
+                    <span className="text-[11px] text-grey-600">none</span>
                   )}
                 </motion.div>
               );

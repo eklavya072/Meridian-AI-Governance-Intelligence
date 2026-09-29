@@ -805,7 +805,7 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
               hero. One line, and it says the thing that matters: governance,
               not the whole strategy. */}
           <p className="l-body l-band-note">
-            Governance only — not the industrial policy, the compute or the
+            Governance only, not the industrial policy, the compute or the
             skills. Eight dimensions, and the instruments that bind each one.
           </p>
         </div>

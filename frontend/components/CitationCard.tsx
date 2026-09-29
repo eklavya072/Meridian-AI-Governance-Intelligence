@@ -37,7 +37,7 @@ export default function CitationCard({
         {verified ? (
           <motion.span
             {...verifiedSnap}
-            className="shrink-0 text-xs font-medium px-2 py-0.5 rounded bg-status-green-tint text-status-green"
+            className="shrink-0 text-xs font-medium px-2 py-0.5 rounded bg-status-green-tint text-status-green-ink"
           >
             ✓ Verified
           </motion.span>

@@ -146,7 +146,7 @@ export default function WorkspacePage() {
     }
     // Past the usual window — most likely provider quota/latency, not a
     // stuck pipeline (this app hits daily LLM quota limits regularly).
-    return `Taking longer than usual (elapsed ${elapsedLabel}) — likely provider load, still running`;
+    return `Taking longer than usual (elapsed ${elapsedLabel}), likely provider load. Still running.`;
   }
 
   async function loadWorkspaces() {
@@ -333,7 +333,7 @@ export default function WorkspacePage() {
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-3">
                     <h3 className="font-medium text-grey-950">
-                      {ws.country} — {ws.policy_title}
+                      {ws.country} · {ws.policy_title}
                     </h3>
                     <StatusBadge
                       status={ws.status}

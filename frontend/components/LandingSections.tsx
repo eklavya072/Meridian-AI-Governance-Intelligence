@@ -289,7 +289,7 @@ function Method() {
         <p className="l-body l-method-lede">
           A score you cannot audit is an opinion with a number on it. Each of
           the four stages below writes down what it did, so the brief at the
-          end comes apart line by line — back through the reasoning, back to
+          end comes apart line by line: back through the reasoning, back to
           the paragraph it came from.
         </p>
       </div>

@@ -57,7 +57,7 @@ export const COVERAGE_GLOSS: Record<string, string> = {
     "much the document says on the subject.",
   Partial:
     "Provisions for this dimension exist and were read, but they fall short of a governed " +
-    "regime — commitments are stated without a duty, a single duty stands alone, or the duties " +
+    "regime: commitments are stated without a duty, a single duty stands alone, or the duties " +
     "reach too few of the mechanisms this dimension calls for. The subject is addressed; it is " +
     "not yet fully obliged.",
   Missing:
@@ -72,7 +72,7 @@ export const COVERAGE_GLOSS: Record<string, string> = {
 export const DEPTH_GLOSS: Record<string, string> = {
   Unaddressed: "No provision for this dimension was scored, so there is no regime to describe.",
   Emerging:
-    "Intent is on the record — the document states what it wants for this dimension — but " +
+    "Intent is on the record, since the document states what it wants for this dimension, but " +
     "nothing yet assigns the work or requires it of anyone.",
   Delegated:
     "Responsibility has landed somewhere: an owner is named or a duty is stated, but the " +
@@ -82,7 +82,7 @@ export const DEPTH_GLOSS: Record<string, string> = {
     "audit, enforcement or redress machinery that would make the regime self-sustaining.",
   Institutionalized:
     "Binding requirements are paired with the enforcement, oversight or redress machinery that " +
-    "makes them answerable — the highest stage this instrument recognises.",
+    "makes them answerable. It is the highest stage this instrument recognises.",
 };
 
 export function CoverageIndicator({ coverage }: { coverage: string }) {
@@ -194,7 +194,7 @@ export function CitationRow({ citation }: { citation: ModuleCitation }) {
       <div className="border rounded-lg p-3 bg-grey-50/70">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-medium text-grey-900 italic">
-            No supporting passage was found in the retrieved context — the
+            No supporting passage was found in the retrieved context, so the
             model declined to fabricate a citation.
           </p>
           <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded bg-grey-950 text-white">

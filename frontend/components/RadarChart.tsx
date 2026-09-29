@@ -409,7 +409,7 @@ export function RadarArea({
                 fill="transparent"
                 tabIndex={0}
                 role="button"
-                aria-label={`${metric.label}${tip ? ` — ${tip.label}` : ""}`}
+                aria-label={`${metric.label}${tip ? `: ${tip.label}` : ""}`}
                 onFocus={() => setHoverIndex(i)}
                 onBlur={() => setHoverIndex(null)}
                 className="focus:outline-none"
