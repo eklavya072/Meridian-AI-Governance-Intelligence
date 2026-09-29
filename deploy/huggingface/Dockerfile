@@ -16,9 +16,14 @@ WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# The Space's public address (https://<user>-<space>.hf.space), set as a
+# Space variable. Link previews need it: a shared link's preview image must
+# be an absolute URL.
+ARG SITE_URL=""
 ENV NEXT_OUTPUT=export \
     NEXT_PUBLIC_API_URL=/api/v1 \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    SITE_URL=${SITE_URL}
 RUN npm run build
 
 # ── app ──────────────────────────────────────────────────────────────────

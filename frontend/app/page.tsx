@@ -27,6 +27,8 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import HeroScrub from "@/components/HeroScrub";
 import LandingSections from "@/components/LandingSections";
+import { landingFontVariables } from "@/lib/landingFonts";
+import "./landing.css";
 
 export default function Landing() {
   /* Arming the section reveals is a separate step from playing them.
@@ -46,7 +48,7 @@ export default function Landing() {
   }, []);
 
   return (
-    <div className={`landing${armed ? " is-armed" : ""}`}>
+    <div className={`landing ${landingFontVariables}${armed ? " is-armed" : ""}`}>
       {/* The ground below the fold. The hero carries the moving image, so
           nothing here needs a frame loop. */}
       <div className="l-waves-still" aria-hidden />

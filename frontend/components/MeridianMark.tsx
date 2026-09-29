@@ -26,7 +26,7 @@
  * The meaning folds in four layers: the meridian (origin and namesake),
  * the eight ticks (dimensions), the axis (the standard), and the plumb
  * (evidence). Stroke-based and currentColor, so it inherits white on the
- * dark landing and navy/black on light surfaces. Optically centered in
+ * dark landing and black on light surfaces. Optically centered in
  * the viewBox, so it aligns cleanly with text in the navbar; renders
  * crisp at favicon size (16px) and strong at hero size (80px+).
  */
