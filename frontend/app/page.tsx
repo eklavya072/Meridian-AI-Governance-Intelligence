@@ -25,12 +25,27 @@
  */
 
 import { useEffect, useLayoutEffect, useState } from "react";
-import HeroScrub from "@/components/HeroScrub";
+import HeroScrub, { type HeroIntro } from "@/components/HeroScrub";
+import Preloader from "@/components/Preloader";
 import LandingSections from "@/components/LandingSections";
 import { landingFontVariables } from "@/lib/landingFonts";
 import "./landing.css";
 
+/* The intro plays on a fresh load of the page (a first visit or a reload),
+   not on every return to it while browsing the app: this flag lives as long
+   as the loaded script does. */
+let introPlayed = false;
+
 export default function Landing() {
+  /* The Meridian intro covers the page, then its stairs drop away and the
+     hero's opening line is set word by word beneath them. It is in the
+     server-rendered HTML, so the page is never seen before it. */
+  const [showPreloader, setShowPreloader] = useState(() => !introPlayed);
+  const [intro, setIntro] = useState<HeroIntro>(() => (introPlayed ? "none" : "wait"));
+  const reduced =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   /* Arming the section reveals is a separate step from playing them.
      Their start states hide content, so they cannot live in CSS
      unconditionally: without JS the server-rendered page would paint blank.
@@ -56,7 +71,18 @@ export default function Landing() {
       {/* Dust drifting on a 90 second cycle. */}
       <div className="l-dust" aria-hidden />
 
-      <HeroScrub />
+      {showPreloader && (
+        <Preloader
+          reduced={reduced}
+          onReveal={() => {
+            introPlayed = true;
+            setIntro(reduced ? "none" : "play");
+          }}
+          onDone={() => setShowPreloader(false)}
+        />
+      )}
+
+      <HeroScrub intro={intro} />
 
       {/* Not a <main>: the root layout already provides that landmark, and
           nesting a second one gives assistive tech two competing main

@@ -536,18 +536,21 @@ body:has(.landing) main {
    other four beats keep their left rag. */
 .l-band.l-band-c > * {
   text-align: right;
-  width: min(34rem, 100%);
+  width: min(50rem, 100%);
   max-width: none;
   margin-left: auto;
 }
-/* Beat three carries a list, not a proclamation. At the full display size it
-   ran four lines in its column and sat taller than the note underneath it,
-   which is what made the beat look top-heavy against the other four. */
+/* Beat three is two sentences, a claim and its payload, and each owns a
+   line: set as one balanced paragraph, the gold sentence broke across two
+   lines with half of it sitting on the white line above. The column is wide
+   enough for the longer sentence at this size on a laptop; below that each
+   sentence wraps within itself, never into the other. */
 .l-band-c .l-band-stmt {
-  text-wrap: balance;
-  font-size: clamp(1.6rem, 2.9vw, 2.4rem);
-  line-height: 1.1;
+  font-size: clamp(1.5rem, 2.3vw, 2.15rem);
+  line-height: 1.12;
 }
+.l-stmt-line { display: block; text-wrap: balance; }
+.l-band-c .l-band-note { width: min(34rem, 100%); }
 /* The accent on the payload phrase. */
 .l-band-key { color: var(--key); }
 /* The per-band scrim rides the band's own opacity and deepens with its
@@ -1018,6 +1021,55 @@ body:has(.landing) main {
 .l-stage:not(.is-static) .l-sw-in {
   will-change: transform, opacity;
 }
+/* Each band and its scrim fade as the scroll moves; on their own layers
+   that is a composite, not a repaint of a screen-wide gradient. */
+.l-stage:not(.is-static) .l-band,
+.l-stage:not(.is-static) .l-band::before {
+  will-change: opacity;
+}
+
+/* ── The opening line's entrance ─────────────────────────────────────────
+   Played once, as the intro's stairs drop away. Each word rises through
+   its mask in reading order, 70ms apart, leaning back upright as it lands;
+   the gold turn follows the setup, and the deck resolves last. A CSS
+   transition rather than a script-driven one, so it runs on the compositor
+   at full frame rate while the page is still loading underneath. */
+.l-band-a.is-intro-pending .l-sw-in {
+  opacity: 0;
+  transform: translate3d(0, 115%, 0) skewY(7deg);
+}
+.l-band-a.is-intro-pending .l-h1-sub {
+  opacity: 0;
+  transform: translate3d(0, 14px, 0);
+}
+.l-band-a.is-intro-play .l-sw-in {
+  transform-origin: 0% 100%;
+  transition:
+    transform 1100ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 650ms cubic-bezier(0.33, 1, 0.68, 1);
+  transition-delay: calc(180ms + var(--wi, 0) * var(--intro-word, 70ms));
+}
+.l-band-a.is-intro-play .l-h1-sub {
+  transition:
+    transform 900ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 900ms ease-out;
+  transition-delay: 1150ms;
+}
+/* ── The intro overlay ──────────────────────────────────────────────────
+   Its script unmounts it after four seconds. If the script never runs, this
+   fades it out at six, so the overlay can never trap the page; and under
+   reduced motion it is never shown at all. */
+.l-preloader { animation: l-pre-failsafe 400ms ease-out 6s forwards; }
+@keyframes l-pre-failsafe { to { opacity: 0; visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) {
+  .l-preloader { display: none !important; }
+  .l-band-a.is-intro-pending .l-sw-in,
+  .l-band-a.is-intro-pending .l-h1-sub { opacity: 1; transform: none; }
+}
+
+/* The grain is a paper texture; under the pinned hero it is never seen,
+   and at eleven screens tall it was the largest layer on the page. */
+.landing .l-scrub::after { display: none; }
 /* Three beats, three entrances, each echoing what the footage is doing
    under it. One: words rise from the mask edge as the light arrives from
    below. Two: rows snap in from the right, the way a value lands on a
@@ -1144,8 +1196,10 @@ body:has(.landing) main {
     background: rgba(6, 7, 9, 0.62);
   }
   .l-band { z-index: 1; }
-  /* Assembled, not mid-animation: the scrub never runs here. */
-  .l-sw-in {
+  /* Assembled, not mid-animation: the scrub never runs here. The opening
+     line is the exception while its entrance plays (never under reduced
+     motion, where no entrance is set). */
+  .l-band:not(.is-intro-pending):not(.is-intro-play) .l-sw-in {
     opacity: 1 !important;
     transform: none !important;
     filter: none !important;
@@ -2385,7 +2439,6 @@ html:has(.landing) {
   line-height: 1.05;
   letter-spacing: var(--tr-hero);
 }
-.l-band-c .l-band-stmt,
 .l-band-d .l-band-stmt {
   font-size: clamp(1.55rem, 2.8vw, 2.4rem);
   line-height: 1.08;

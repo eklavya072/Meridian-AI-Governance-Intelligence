@@ -16,7 +16,9 @@
  * scrub can lose is motion, never words.
  */
 
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef } from "react";
+
+const useLayoutEffectSafe = typeof window === "undefined" ? useEffect : useLayoutEffect;
 import Link from "next/link";
 
 /* Scroll distance for the pinned region. Three beats, each needing roughly a
@@ -159,11 +161,14 @@ function ScrubWords({
   seed,
   spread = 0.55,
   className = "",
+  indexFrom = 0,
 }: {
   text: string;
   seed: number;
   spread?: number;
   className?: string;
+  /** Position of the first word in the opening line's entrance sequence. */
+  indexFrom?: number;
 }) {
   const words = text.split(" ");
   const rand = rng(seed);
@@ -184,7 +189,10 @@ function ScrubWords({
               <span className="l-sw">
                 <span
                   className="l-sw-in"
-                  style={{ ["--th" as string]: th.toFixed(3) }}
+                  style={{
+                    ["--th" as string]: th.toFixed(3),
+                    ["--wi" as string]: indexFrom + i,
+                  }}
                 >
                   {w}
                 </span>
@@ -198,7 +206,18 @@ function ScrubWords({
   );
 }
 
-export default function HeroScrub() {
+/** The opening line's entrance: `wait` holds it hidden under the intro,
+ *  `play` runs it as the intro's stairs drop away, `none` shows it as is
+ *  (reduced motion, or a return visit within the session). */
+export type HeroIntro = "wait" | "play" | "none";
+
+/* Word cadence for the opening line, matched to the intro's stairs, which
+   drop 50ms apart; the words run a touch slower so the line reads as being
+   set rather than blinking on. */
+const INTRO_WORD_MS = 70;
+const INTRO_TOTAL_MS = 2400;
+
+export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
   const rootRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -262,10 +281,32 @@ export default function HeroScrub() {
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("error", onVideoError);
 
-    const heroProgress = () => {
-      const span = root.offsetHeight - window.innerHeight;
-      if (span <= 0) return 0;
-      return clamp(-root.getBoundingClientRect().top / span, 0, 1);
+    /* The hero's place on the page, measured on load and resize rather
+       than on every scroll event: reading layout inside a scroll handler,
+       right after the frame loop has written styles, forces the browser to
+       lay the page out again mid-scroll. */
+    let rootTop = 0;
+    let span = 1;
+    const measure = () => {
+      rootTop = root.getBoundingClientRect().top + window.scrollY;
+      span = Math.max(1, root.offsetHeight - window.innerHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    window.addEventListener("resize", measure);
+    const heroProgress = () => clamp((window.scrollY - rootTop) / span, 0, 1);
+
+    /* The clip runs at 24000/1001 fps. Seeking to a time inside the frame
+       already on screen decodes that same frame again, so seeks snap to
+       frame boundaries and a repeat is skipped. */
+    const FPS = 24000 / 1001;
+    let lastFrame = -1;
+    const seekTo = (p: number) => {
+      const frame = Math.round(videoTimeAt(p) * FPS);
+      if (frame === lastFrame) return;
+      lastFrame = frame;
+      requestSeek(frame / FPS);
     };
 
     /* ── caption bands, written only on change ───────────────────────── */
@@ -315,12 +356,13 @@ export default function HeroScrub() {
           c.k = k;
           el.style.setProperty("--k", String(k));
         }
+        /* No blur on the way out. Blurring the band blurred its scrim too,
+           a gradient as wide as the screen, re-rendered on every frame of
+           every handover: that was the hitch between beats. The words lift
+           and fade on their own. */
         if (Math.abs(x - c.x) > 0.002) {
           c.x = x;
           el.style.setProperty("--x", String(x));
-          /* Blur only while a beat is leaving. A filter left on the band at
-             blur(0) still makes the browser re-rasterise it every frame. */
-          el.style.filter = x > 0.002 ? `blur(${(x * 4).toFixed(2)}px)` : "none";
         }
       });
     };
@@ -355,7 +397,7 @@ export default function HeroScrub() {
         rafId = requestAnimationFrame(tick);
       }
       updateBands(shown);
-      if (video.duration) requestSeek(videoTimeAt(shown));
+      if (video.duration) seekTo(shown);
     };
 
     /* The frame loop is where the words move now, so the rule this route is
@@ -395,7 +437,6 @@ export default function HeroScrub() {
         el.style.visibility = "visible";
         el.style.setProperty("--k", "1");
         el.style.setProperty("--x", "0");
-        el.style.filter = "none";
         cache[i].x = -1;
       });
     };
@@ -449,7 +490,7 @@ export default function HeroScrub() {
           () => {
             stage.classList.remove("is-loading");
             stage.classList.add("is-video-ready");
-            if (video.duration) requestSeek(videoTimeAt(heroProgress()));
+            if (video.duration) seekTo(heroProgress());
           },
           { once: true },
         );
@@ -493,19 +534,12 @@ export default function HeroScrub() {
         c.k = -1;
         c.x = -1;
       });
-      /* A one-time, time-based ramp for the opening beat, handing over to
-         scroll. Driven by a timer rather than rAF so a stalled compositor
-         still arrives at assembled text. */
-      const t0 = performance.now();
-      const ramp = setInterval(() => {
-        /* 2200ms was the whole opening line taking over two seconds to
-           arrive, with nothing happening for most of it. An entrance the
-           reader waits through is not an entrance. */
-        loadK = clamp((performance.now() - t0) / 1050, 0, 1);
-        updateBands(shown);
-        if (loadK >= 1) clearInterval(ramp);
-      }, 60);
-      rampTimers.push(ramp);
+      /* The opening beat is assembled from the start; its entrance is a CSS
+         transition (see the intro effect below), which runs on the
+         compositor. It used to be stepped by a 60ms timer, about sixteen
+         frames a second, on a main thread still busy loading the page:
+         that was the laggy first line. */
+      loadK = 1;
       updateBands(heroProgress());
       onScroll();
       /* The same insurance every reveal on this route carries: scroll
@@ -522,7 +556,7 @@ export default function HeroScrub() {
             target = p;
             velocity = 0;
             updateBands(p);
-            if (video.duration) requestSeek(videoTimeAt(p));
+            if (video.duration) seekTo(p);
           }
         }, 250),
       );
@@ -565,6 +599,8 @@ export default function HeroScrub() {
     applyHeroMode();
 
     return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
       mqls.forEach((m) => m.removeEventListener("change", applyHeroMode));
       window.removeEventListener("scroll", onScroll);
       video.removeEventListener("seeked", onSeeked);
@@ -577,6 +613,32 @@ export default function HeroScrub() {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, []);
+
+  /* The opening line's entrance. Held hidden while the intro covers the
+     page, then played as its stairs drop: each word rises through its mask
+     in reading order, the gold turn follows, then the deck. The classes
+     come off once it has run, so scrolling drives the line from then on
+     with no transition lag. Without JS neither class is ever set and the
+     line simply shows. */
+  const bandA = useRef<HTMLDivElement | null>(null);
+  useLayoutEffectSafe(() => {
+    const el = bandA.current;
+    if (!el) return;
+    if (intro === "wait") {
+      el.classList.add("is-intro-pending");
+      return;
+    }
+    if (intro !== "play") return;
+    el.classList.add("is-intro-pending");
+    // Flush styles so the transition starts from the hidden state. Not a
+    // frame callback: those pause in a background tab, and the intro's own
+    // timers would then run ahead of the words.
+    void el.offsetWidth;
+    el.classList.add("is-intro-play");
+    el.classList.remove("is-intro-pending");
+    const done = setTimeout(() => el.classList.remove("is-intro-play"), INTRO_TOTAL_MS);
+    return () => clearTimeout(done);
+  }, [intro]);
 
   return (
     <section
@@ -615,8 +677,10 @@ export default function HeroScrub() {
             documents. This one states the finding the product exists for. */}
         <div
           className="l-band l-band-a"
+          style={{ ["--intro-word" as string]: `${INTRO_WORD_MS}ms` }}
           ref={(el) => {
             bandRefs.current[0] = el;
+            bandA.current = el;
           }}
         >
           <h1 className="l-hero-display l-h1">
@@ -630,6 +694,7 @@ export default function HeroScrub() {
                 text="We measure how deep it goes."
                 seed={17}
                 spread={0.4}
+                indexFrom={8}
               />
             </span>
           </h1>
@@ -711,23 +776,27 @@ export default function HeroScrub() {
                 EIA entry was withdrawn on 18 Sep as a duplicate of the
                 Recommendation, and the hero was the last place still
                 claiming forty-four. */}
+            {/* One sentence per line. Balanced as one paragraph, the gold
+                sentence broke across two lines with half of it on the white
+                line above; each is its own block now, so the white claim and
+                the gold payload each hold a line of their own. */}
             <ScrubWords
+              className="l-stmt-line"
               text="One document, against forty-three frameworks."
               seed={53}
               spread={0.5}
-            />{" "}
+            />
             {/* The verdict is the thing beat three delivers — the reading
                 and the frameworks are how it is made — so it takes the
                 accent, the way the turn does in the hook and "A minority"
                 does in the finding. One gold phrase per beat, on the
                 payload. */}
-            <span className="l-band-key">
-              <ScrubWords
-                text="Eight verdicts on its duties."
-                seed={59}
-                spread={0.2}
-              />
-            </span>
+            <ScrubWords
+              className="l-stmt-line l-band-key"
+              text="Eight verdicts on its duties."
+              seed={59}
+              spread={0.2}
+            />
           </p>
           {/* This ran five lines — the eight dimensions listed in full, then
               a paragraph of scope caveat. A beat the reader crosses in one
