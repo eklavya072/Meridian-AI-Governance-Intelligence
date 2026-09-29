@@ -110,7 +110,7 @@ function FrameworksContent() {
       );
       setError(null);
     } catch (e) {
-      setError("Failed to load frameworks");
+      setError(`Couldn't load the frameworks. ${e instanceof Error ? e.message : ""}`.trim());
     } finally {
       setLoading(false);
     }
@@ -124,7 +124,7 @@ function FrameworksContent() {
       />
 
       {error && (
-        <div className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
+        <div role="alert" className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}

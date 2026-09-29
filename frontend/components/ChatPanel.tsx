@@ -73,6 +73,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   const [showCitations, setShowCitations] = useState(false);
   const isUser = msg.role === "user";
   const isBlocked = msg.blocked;
+  const isFailed = msg.failed;
   const intent = msg.intent;
 
   return (
@@ -86,13 +87,16 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm ${
           isUser
             ? "bg-grey-950 text-white rounded-br-md"
+            : isFailed
+            ? "bg-status-red-tint text-grey-900 border border-status-red-line rounded-bl-md"
             : isBlocked
             ? "bg-status-amber-tint text-status-amber-ink border border-status-amber-line rounded-bl-md"
             : "bg-grey-50 text-grey-900 rounded-bl-md"
         }`}
+        role={isFailed ? "alert" : undefined}
       >
         {/* Intent badge + provider label */}
-        {!isUser && !isBlocked && (
+        {!isUser && !isBlocked && !isFailed && (
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             {intent && <IntentBadge intent={intent} />}
             {msg.provider && msg.provider !== "template" && (

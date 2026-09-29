@@ -6,6 +6,7 @@ import { api, ChatCitation, ChatSessionInfo } from "@/lib/api";
 import { EASE, DUR } from "@/lib/motion";
 import PageHeader from "@/components/PageHeader";
 import MarkdownLite from "@/components/MarkdownLite";
+import { chatFailureText } from "@/components/ChatProvider";
 
 interface ChatMessage {
   id: string;
@@ -14,6 +15,7 @@ interface ChatMessage {
   citations: ChatCitation[];
   blocked?: boolean;
   reason?: string | null;
+  failed?: boolean;
 }
 
 // One per capability, in the order the greeting introduces them: a governance
@@ -102,6 +104,7 @@ function CitationChips({ citations }: { citations: ChatCitation[] }) {
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === "user";
   const isBlocked = msg.blocked;
+  const isFailed = msg.failed;
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -113,10 +116,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isUser
             ? "bg-grey-950 text-white rounded-br-md shadow-md shadow-grey-950/15"
-            :          isBlocked
+            : isFailed
+            ? "bg-status-red-tint text-grey-900 border border-status-red-line rounded-bl-md"
+            : isBlocked
             ? "bg-status-amber-tint text-status-amber-ink border border-status-amber-line rounded-bl-md"
             : "bg-white border border-grey-950/10 text-grey-900 rounded-bl-md shadow-sm"
         }`}
+        role={isFailed ? "alert" : undefined}
       >
         {/* See ChatPanel: assistant replies are light Markdown and must be
             rendered, or **bold** reaches the user as literal asterisks. */}
@@ -184,7 +190,8 @@ export default function AuditorPage() {
       const data = await api.chat.listSessions("", "auditor");
       setSessions(data);
     } catch {
-      // ignore
+      // The history list is a convenience; a failed send reports an outage
+      // in the thread itself.
     }
   }, []);
 
@@ -239,15 +246,16 @@ export default function AuditorPage() {
           reason: res.reason,
         },
       ]);
-    } catch {
+    } catch (e) {
       if (conversation.current !== mine) return;
       setMessages((prev) => [
         ...prev,
         {
           id: `error-${Date.now()}`,
           role: "assistant",
-          content: "Sorry — I hit an error answering that. Please try again.",
+          content: chatFailureText(e),
           citations: [],
+          failed: true,
         },
       ]);
     } finally {
@@ -272,8 +280,19 @@ export default function AuditorPage() {
           citations: m.citations || [],
         }))
       );
-    } catch {
-      // ignore
+    } catch (e) {
+      if (conversation.current !== mine) return;
+      setMessages([
+        {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: `I couldn't open that conversation. ${
+            e instanceof Error ? e.message : ""
+          }`.trim(),
+          citations: [],
+          failed: true,
+        },
+      ]);
     }
   }
 
@@ -464,6 +483,7 @@ export default function AuditorPage() {
             </button>
             <textarea
               ref={textareaRef}
+              aria-label="Your question"
               value={input}
               onChange={(e) => {
                 setInput(e.target.value);

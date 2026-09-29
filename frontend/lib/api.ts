@@ -11,12 +11,25 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
   return `${fallback}: ${res.status}`;
 }
 
+/** Thrown when the API can't be reached at all: fetch rejects with a bare
+ *  TypeError ("Failed to fetch", "Load failed") that means nothing to a reader. */
+export const API_UNREACHABLE =
+  "Couldn't reach the Meridian API. Check that the backend is running, then try again.";
+
+async function send(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new Error(API_UNREACHABLE);
+  }
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
+  const res = await send(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -461,7 +474,7 @@ export const api = {
     const formData = new FormData();
     formData.append("file", file);
     const url = `${API_BASE}/upload/${workspaceId}`;
-    const res = await fetch(url, { method: "POST", body: formData });
+    const res = await send(url, { method: "POST", body: formData });
     if (!res.ok) {
       throw new Error(await errorMessage(res, "Upload failed"));
     }
@@ -475,7 +488,7 @@ export const api = {
 
   /** Start the pipeline over every document queued on the workspace. */
   runAnalysis: async (workspaceId: string) => {
-    const res = await fetch(`${API_BASE}/analyze/${workspaceId}/run`, {
+    const res = await send(`${API_BASE}/analyze/${workspaceId}/run`, {
       method: "POST",
     });
     if (!res.ok) {
@@ -493,7 +506,7 @@ export const api = {
     const formData = new FormData();
     formData.append("file", file);
     const url = `${API_BASE}/auditor/upload`;
-    const res = await fetch(url, { method: "POST", body: formData });
+    const res = await send(url, { method: "POST", body: formData });
     if (!res.ok) {
       throw new Error(await errorMessage(res, "Upload failed"));
     }
@@ -527,7 +540,7 @@ export const api = {
 
   /** Download the cached brief as PDF or DOCX (blob download, no LLM call). */
   downloadBrief: async (workspaceId: string, format: "pdf" | "docx") => {
-    const res = await fetch(`${API_BASE}/brief/${workspaceId}/export?format=${format}`);
+    const res = await send(`${API_BASE}/brief/${workspaceId}/export?format=${format}`);
     if (!res.ok) {
       throw new Error(await errorMessage(res, "Export failed"));
     }

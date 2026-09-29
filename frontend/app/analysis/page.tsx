@@ -1576,7 +1576,9 @@ export default function AnalysisPage() {
         setError("No analysis results yet.");
       }
     } catch (e) {
-      if (seq === loadSeq.current) setError("Failed to load analysis");
+      if (seq === loadSeq.current) {
+        setError(e instanceof Error ? e.message : "Couldn't load the analysis.");
+      }
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
@@ -1664,6 +1666,8 @@ export default function AnalysisPage() {
           })
         );
       })
+      // Only the framework links in the evidence panels use this list;
+      // without it they render as plain text.
       .catch(() => {});
   }, []);
 
@@ -1693,7 +1697,11 @@ export default function AnalysisPage() {
           setSelectedWs(usable[0].id);
         }
       })
-      .catch(() => {});
+      .catch((e) =>
+        setError(
+          `Couldn't load the workspace list. ${e instanceof Error ? e.message : ""}`.trim()
+        )
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1832,7 +1840,11 @@ export default function AnalysisPage() {
         </div>
       )}
 
-      {error && (            <div className="bg-status-amber-tint border border-status-amber-line text-status-amber-ink px-4 py-3 rounded-lg text-sm">
+      {error && (
+        <div
+          role="alert"
+          className="bg-status-amber-tint border border-status-amber-line text-status-amber-ink px-4 py-3 rounded-lg text-sm"
+        >
           {error}
         </div>
       )}

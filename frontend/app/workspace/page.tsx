@@ -160,7 +160,7 @@ export default function WorkspacePage() {
       setWorkspaces(data.filter((w) => w.status !== "chat_only").sort(byCountryOrder));
       setError(null);
     } catch (e) {
-      setError("Failed to load workspaces");
+      setError(`Couldn't load the workspaces. ${e instanceof Error ? e.message : ""}`.trim());
     } finally {
       setLoading(false);
     }
@@ -241,7 +241,7 @@ export default function WorkspacePage() {
       />
 
       {error && (
-        <div className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
+        <div role="alert" className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}

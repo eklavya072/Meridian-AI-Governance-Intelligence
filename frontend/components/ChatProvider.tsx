@@ -20,6 +20,17 @@ export interface ChatMessage {
   provider?: string;
   blocked?: boolean;
   reason?: string | null;
+  /** The request failed; the content says why. */
+  failed?: boolean;
+}
+
+/** What a failed chat request tells the reader: the server's own reason
+ *  when it gave one, and always what to do next. */
+export function chatFailureText(e: unknown): string {
+  const why = (e instanceof Error && e.message ? e.message : "The request failed").replace(/\.?$/, ".");
+  return /try again/i.test(why)
+    ? `I couldn't answer that. ${why}`
+    : `I couldn't answer that. ${why} Try again in a moment.`;
 }
 
 interface ChatContextValue {
@@ -105,7 +116,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const data = await api.chat.listSessions(workspaceId, mode);
       setSessions(data);
     } catch {
-      // ignore
+      // The history list is a convenience: the conversation itself still
+      // works, and a failed send reports the outage in the thread.
     }
   }, [workspaceId, mode]);
 
@@ -136,8 +148,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           citations: m.citations || [],
         }))
       );
-    } catch {
-      // ignore
+    } catch (e) {
+      if (conversation.current !== mine) return;
+      setMessages([
+        {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: `I couldn't open that conversation. ${
+            e instanceof Error ? e.message : ""
+          }`.trim(),
+          citations: [],
+          failed: true,
+        },
+      ]);
     }
   }, []);
 
@@ -200,13 +223,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         reason: response.reason,
       };
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch {
+    } catch (e) {
       if (conversation.current !== mine) return;
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
         role: "assistant",
-        content: "Sorry, I encountered an error processing your question.",
+        content: chatFailureText(e),
         citations: [],
+        failed: true,
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {

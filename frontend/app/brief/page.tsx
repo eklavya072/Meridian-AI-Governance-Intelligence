@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, Workspace, BriefDocument } from "@/lib/api";
+import { api, API_UNREACHABLE, Workspace, BriefDocument } from "@/lib/api";
 import Button from "@/components/Button";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import { byCountryOrder } from "@/lib/countryOrder";
@@ -52,7 +52,14 @@ export default function BriefPage() {
   const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listWorkspaces().then(setWorkspaces).catch(() => {});
+    api
+      .listWorkspaces()
+      .then(setWorkspaces)
+      .catch((e) =>
+        setError(
+          `Couldn't load the workspace list. ${e instanceof Error ? e.message : ""}`.trim()
+        )
+      );
   }, []);
 
   const loadCached = useCallback(async (wsId: string) => {
@@ -66,8 +73,10 @@ export default function BriefPage() {
       if (currentWs.current !== wsId) return;
       setBrief(b);
       setCached(true);
-    } catch {
-      if (currentWs.current === wsId) setBrief(null); // 404 — nothing cached yet
+    } catch (e) {
+      if (currentWs.current !== wsId) return;
+      setBrief(null); // a 404 means nothing is cached yet: not an error
+      if (e instanceof Error && e.message === API_UNREACHABLE) setError(e.message);
     }
   }, []);
 
@@ -184,7 +193,7 @@ export default function BriefPage() {
           </div>
         )}
         {error && (
-          <div className="mt-3 rounded-lg bg-status-red-tint border border-status-red-line px-4 py-2.5 text-sm text-status-red">
+          <div role="alert" className="mt-3 rounded-lg bg-status-red-tint border border-status-red-line px-4 py-2.5 text-sm text-status-red">
             {error}
           </div>
         )}
