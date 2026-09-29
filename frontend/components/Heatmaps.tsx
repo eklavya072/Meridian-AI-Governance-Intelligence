@@ -36,9 +36,9 @@ function shortLabel(dimension: string): string {
 
 const COVERAGE_FILL: Record<string, string> = {
   Covered: palette.status.green,
-  Partial: palette.chart.partial,
+  Partial: palette.analysis.partial,
   Missing: palette.status.red,
-  "Insufficient Evidence": palette.status.amber,
+  "Insufficient Evidence": palette.analysis.amber,
 };
 
 export function analysisDocuments(a: Analysis): string[] {

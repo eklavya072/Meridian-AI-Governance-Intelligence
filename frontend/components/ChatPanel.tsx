@@ -286,6 +286,7 @@ export default function ChatPanel() {
         transition={{ duration: DUR.slow, ease: EASE.outSoft }}
         ref={drawerRef}
         role="dialog"
+        data-lenis-prevent
         aria-modal="true"
         aria-labelledby="chat-panel-title"
         aria-hidden={!isOpen || undefined}

@@ -45,5 +45,9 @@
     "DEFAULT": "#6C5513",
     "light": "#CEA850",
     "tint": "#F3EEE2"
+  },
+  "analysis": {
+    "partial": "#C9AF7A",
+    "amber": "#B07E2B"
   }
 }

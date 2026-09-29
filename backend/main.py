@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from src import metrics
+from src.brief_emphasis import emphasize_brief
 from src.brief_export import render_docx, render_pdf
 from src.brief_synthesis import generate_brief as generate_brief_v2
 from src.brief_synthesis import render_brief_markdown
@@ -1255,7 +1256,7 @@ async def generate_brief_v2_route(workspace_id: str):
             ) from exc
 
         await _save_brief(db, workspace_id, brief, render_brief_markdown(brief))
-        return brief
+        return emphasize_brief(brief)
 
 
 @app.get("/api/v1/brief/{workspace_id}")
@@ -1265,7 +1266,7 @@ async def get_brief(workspace_id: str):
         report = await _load_cached_brief(db, workspace_id)
         if report is None or not report.meta:
             raise HTTPException(404, "No brief generated for this workspace yet.")
-        return report.meta
+        return emphasize_brief(report.meta)
 
 
 @app.get("/api/v1/brief/{workspace_id}/export")
@@ -1277,7 +1278,7 @@ async def export_brief(workspace_id: str, format: str = "pdf"):
             raise HTTPException(
                 404, "No brief generated for this workspace yet — generate one first."
             )
-        brief = report.meta
+        brief = emphasize_brief(report.meta)
         slug = workspace_id[:8]
         if format == "docx":
             data = await asyncio.to_thread(render_docx, brief)

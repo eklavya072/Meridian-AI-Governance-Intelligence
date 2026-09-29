@@ -24,7 +24,8 @@
  * Full creative rationale and copy: docs/landing-design-package.md
  */
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import Lenis from "lenis";
 import HeroScrub, { type HeroIntro } from "@/components/HeroScrub";
 import Preloader from "@/components/Preloader";
 import LandingSections from "@/components/LandingSections";
@@ -45,6 +46,26 @@ export default function Landing() {
   const reduced =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* Smooth scrolling on the landing only. A wheel moves the page in steps,
+     and at speed the scrubbed hero, the pinned track and the reveals all
+     jumped with it; Lenis turns the steps into one glide that everything
+     scroll-driven follows. Paused while the intro covers the page; off
+     under reduced motion; touch keeps its native momentum. */
+  const lenisRef = useRef<Lenis | null>(null);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const lenis = new Lenis({ lerp: 0.085, smoothWheel: true, anchors: true, autoRaf: true });
+    lenisRef.current = lenis;
+    return () => {
+      lenis.destroy();
+      lenisRef.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (showPreloader) lenisRef.current?.stop();
+    else lenisRef.current?.start();
+  }, [showPreloader]);
 
   /* Arming the section reveals is a separate step from playing them.
      Their start states hide content, so they cannot live in CSS

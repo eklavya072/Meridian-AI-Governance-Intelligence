@@ -17,6 +17,7 @@ import re
 from io import BytesIO
 from typing import Any
 
+from src.brief_emphasis import split_marks
 from src.brief_synthesis import format_evidence_quote, key_provision_line, precedent_lines
 from src.provenance import render_provenance_lines
 
@@ -47,6 +48,11 @@ def _xml_safe(value: Any) -> Any:
 
 def _esc(text: str) -> str:
     return html.escape(text or "", quote=False)
+
+
+def _rich(text: str) -> str:
+    """Escaped, with key terms marked **...** set bold and underlined."""
+    return re.sub(r"\*\*(.+?)\*\*", r"<b><u>\1</u></b>", _esc(text))
 
 
 # ── DOCX ──────────────────────────────────────────────────────────────────
@@ -123,7 +129,7 @@ def render_docx(brief: dict[str, Any]) -> bytes:
     # Title block.
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    tr = title.add_run(f"{brief.get('country', '')} — {brief.get('policy_title', '')}")
+    tr = title.add_run(f"{brief.get('country', '')} · {brief.get('policy_title', '')}")
     tr.font.size = Pt(17)
     tr.font.bold = True
     tr.font.color.rgb = navy
@@ -145,12 +151,22 @@ def render_docx(brief: dict[str, Any]) -> bytes:
         h.paragraph_format.space_before = Pt(12 if level == 1 else 8)
         h.paragraph_format.space_after = Pt(4)
 
+    def runs(p, text: str) -> None:
+        # Key terms marked **...** (brief_emphasis) are set bold and underlined.
+        for fragment, marked in split_marks(text):
+            run = p.add_run(fragment)
+            if marked:
+                run.font.bold = True
+                run.font.underline = True
+
     def body(text: str) -> None:
-        p = doc.add_paragraph(text)
+        p = doc.add_paragraph()
+        runs(p, text)
         p.paragraph_format.space_after = Pt(6)
 
     def bullet(text: str) -> None:
-        p = doc.add_paragraph(text, style="List Bullet")
+        p = doc.add_paragraph(style="List Bullet")
+        runs(p, text)
         p.paragraph_format.space_after = Pt(2)
 
     # ── Sections ──────────────────────────────────────────────────────
@@ -181,7 +197,7 @@ def render_docx(brief: dict[str, Any]) -> bytes:
         for r in rows:
             p = doc.add_paragraph()
             p.paragraph_format.space_after = Pt(2)
-            label = f"{r['dimension']} — {r['coverage']}"
+            label = f"{r['dimension']}: {r['coverage']}"
             if r.get("depth"):
                 label += f" · {r['depth']}"
             run = p.add_run(label)
@@ -206,10 +222,10 @@ def render_docx(brief: dict[str, Any]) -> bytes:
             nr.font.bold = True
             nr.font.color.rgb = ink
             if r.get("rationale"):
-                rr = p.add_run(f" — {r['rationale']}")
-                rr.font.color.rgb = ink
+                p.add_run(": ")
+                runs(p, r["rationale"])
     else:
-        body("No critical gaps identified — no priority actions required.")
+        body("No critical gaps identified, so no priority actions are required.")
 
     roadmap = s.get("implementation_roadmap") or []
     if roadmap:
@@ -226,7 +242,7 @@ def render_docx(brief: dict[str, Any]) -> bytes:
                 label = ph["phase"] or "Phase"
                 if ph.get("timeline"):
                     label += f" · {ph['timeline']}"
-                body(f"{label} — {ph.get('objective', '')}")
+                body(f"{label}: {ph.get('objective', '')}")
                 for st in ph["steps"]:
                     bullet(st)
             for mc in item.get("monitoring") or []:
@@ -355,7 +371,7 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
     story: list[Any] = []
     story.append(
         Paragraph(
-            _esc(f"{brief.get('country', '')} — {brief.get('policy_title', '')}"), title_style
+            _esc(f"{brief.get('country', '')} · {brief.get('policy_title', '')}"), title_style
         )
     )
     story.append(Paragraph("AI Governance Assessment Brief", sub_style))
@@ -368,12 +384,12 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
         story.append(Paragraph(_esc(text), h2_style))
 
     def _body(text: str) -> None:
-        story.append(Paragraph(_esc(text), body_style))
+        story.append(Paragraph(_rich(text), body_style))
 
     def _bullets(items: list[str]) -> None:
         story.append(
             ListFlowable(
-                [ListItem(Paragraph(_esc(item), body_style), leftIndent=14) for item in items],
+                [ListItem(Paragraph(_rich(item), body_style), leftIndent=14) for item in items],
                 bulletType="bullet",
                 start="•",
                 leftIndent=12,
@@ -400,7 +416,7 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
     if rows:
         _h1("DIMENSION ASSESSMENT")
         for r in rows:
-            label = f"{r['dimension']} — {r['coverage']}"
+            label = f"{r['dimension']}: {r['coverage']}"
             if r.get("depth"):
                 label += f" · {r['depth']}"
             _h2(label)
@@ -421,7 +437,7 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
     if recs:
         items = [
             f"<b>{_esc(r['recommendation'])}</b>"
-            + (f" — {_esc(r['rationale'])}" if r.get("rationale") else "")
+            + (f": {_rich(r['rationale'])}" if r.get("rationale") else "")
             for r in recs
         ]
         story.append(
@@ -433,7 +449,7 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
         )
         story.append(Spacer(1, 2))
     else:
-        _body("No critical gaps identified — no priority actions required.")
+        _body("No critical gaps identified, so no priority actions are required.")
 
     roadmap = s.get("implementation_roadmap") or []
     if roadmap:
@@ -446,7 +462,7 @@ def render_pdf(brief: dict[str, Any]) -> bytes:
                 label = ph["phase"] or "Phase"
                 if ph.get("timeline"):
                     label += f" \u00b7 {ph['timeline']}"
-                _body(f"{label} — {ph.get('objective', '')}")
+                _body(f"{label}: {ph.get('objective', '')}")
                 _bullets(ph["steps"])
             if item.get("monitoring"):
                 _bullets([f"Monitor: {mc}" for mc in item["monitoring"]])

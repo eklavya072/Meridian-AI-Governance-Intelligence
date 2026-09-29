@@ -16,7 +16,7 @@ import { CitationRow, citationIsVisible } from "./shared";
 
 const AGENCY_GROUNDING_DOT: Record<string, string> = {
   document_named: palette.status.green, // named in document — muted green
-  document_implied: palette.status.amber, // implied — muted amber
+  document_implied: palette.analysis.amber,
   none_identified: palette.status.red, // none — muted red
 };
 

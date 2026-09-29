@@ -33,9 +33,9 @@ const COVERAGE_LABEL: Record<string, string> = {
 // for a calmer, more elegant read than the harsher stock traffic-light amber.
 const TIER_DOT: Record<string, string> = {
   Covered: palette.status.green, // --chart-covered (muted forest green)
-  Partial: palette.chart.partial, // --chart-partial (soft gold)
+  Partial: palette.analysis.partial,
   Missing: palette.status.red, // --chart-missing (muted red)
-  "Insufficient Evidence": palette.status.amber, // cannot tell — caution amber
+  "Insufficient Evidence": palette.analysis.amber,
 };
 
 // WHAT THE WORD MEANS, AND WHY THIS CELL EARNED IT.

@@ -26,7 +26,7 @@ import palette from "@/lib/palette.json";
 // distribution is the one chart that carries the Covered/Partial/Missing
 // semantic, so it uses the muted status colors; everything else is grey.
 const CHART_COVERED = palette.status.green; // muted forest green
-const CHART_PARTIAL = palette.chart.partial; // soft gold — softer than amber against red/green
+const CHART_PARTIAL = palette.analysis.partial;
 const CHART_MISSING = palette.status.red; // muted red
 const CHART_NEUTRAL = palette.grey["500"]; // grey — not assessed
 const CHART_EMPTY = "rgba(10, 10, 10, 0.08)"; // --border, for zero-state slice

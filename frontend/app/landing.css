@@ -87,10 +87,7 @@ body:has(.landing) main {
      the tracking are carrying the presence now, so the size does not have
      to — and a smaller display line leaves the FILM visible around it,
      which is the whole reason there is a film. */
-  /* The hero line is the largest on the page: it sat at 47px under lines
-     of 48 and 56px further down, so the page's opening read as its
-     smallest statement. */
-  --t-hero: clamp(2.3rem, 4.3vw, 4rem);
+  --t-hero: clamp(1.85rem, 3.25vw, 2.95rem);
   --t-display: clamp(2.6rem, 6.2vw, 5rem);
   --t-h2: clamp(1.95rem, 3.9vw, 3.15rem);
   --t-h3: clamp(1.45rem, 2.5vw, 2rem);
@@ -514,46 +511,23 @@ body:has(.landing) main {
    middle of a video. */
 .l-band-a { justify-content: center;      align-items: center;     text-align: center; }
 .l-band-b { justify-content: center;      align-items: flex-start; text-align: left; }
-.l-band-c { justify-content: center;      align-items: flex-end;   text-align: right; }
+.l-band-c { justify-content: center;      align-items: center;     text-align: center; }
 .l-band-d { justify-content: center;      align-items: flex-start; text-align: left; }
 .l-band-e { justify-content: center;      align-items: center;     text-align: center; }
-/* Beat three sits on the right edge (`align-items: flex-end`), which
-   right-aligns its two blocks to each other while their text runs left — so
-   a 17ch headline and a 46ch note had left edges 29 characters apart. Giving
-   both children one width puts those edges flush and lets the right edge
-   stay on the band's anchor. */
-/* The width is in REM, not ch. `ch` is font-relative, so 44ch of the display
-   face and 44ch of the body face are two different widths — the first
-   attempt at this left the two blocks 96px apart at the left edge while
-   their right edges sat flush, which looked exactly as wrong as the
-   original. */
-/* Beat three is the only beat anchored to the right edge, and it set its
-   text flush LEFT inside that anchor — so the block had a hard edge on the
-   side nobody reads from and a ragged one on the side everybody does. That
-   is what made it feel unplaced: the composition's edge and the reading's
-   edge were on opposite sides.
-
-   Both blocks are the same width and both set flush right now, so the
-   band's anchor IS the edge the eye follows down. Two short lines and a
-   two-line note is the length right-aligned text stays comfortable at; the
-   other four beats keep their left rag. */
+/* Beat three is centred: two short statement lines over a note of the
+   same measure. */
 .l-band.l-band-c > * {
-  text-align: right;
-  width: min(50rem, 100%);
+  text-align: center;
+  width: min(38rem, 100%);
   max-width: none;
-  margin-left: auto;
+  margin-inline: auto;
 }
-/* Beat three is two sentences, a claim and its payload, and each owns a
-   line: set as one balanced paragraph, the gold sentence broke across two
-   lines with half of it sitting on the white line above. The column is wide
-   enough for the longer sentence at this size on a laptop; below that each
-   sentence wraps within itself, never into the other. */
 .l-band-c .l-band-stmt {
-  font-size: clamp(1.5rem, 2.3vw, 2.15rem);
-  line-height: 1.12;
+  font-size: clamp(1.9rem, 3.5vw, 3rem);
+  line-height: 1.06;
+  letter-spacing: var(--tr-hero);
 }
-.l-stmt-line { display: block; text-wrap: balance; }
-.l-band-c .l-band-note { width: min(34rem, 100%); }
+.l-stmt-line { display: block; }
 /* The accent on the payload phrase. */
 .l-band-key { color: var(--key); }
 /* The per-band scrim rides the band's own opacity and deepens with its
@@ -619,7 +593,7 @@ body:has(.landing) main {
     rgba(6, 8, 12, 0.38) 0%, rgba(6, 8, 12, 0.31) 52%, rgba(6, 8, 12, 0) 78%);
 }
 .l-band-c::before {
-  background: radial-gradient(ellipse 58% 58% at 74% 50%,
+  background: radial-gradient(ellipse 58% 58% at 50% 50%,
     rgba(6, 8, 12, 0.38) 0%, rgba(6, 8, 12, 0.31) 52%, rgba(6, 8, 12, 0) 78%);
 }
 /* The closing beat had no override, so it was the ONLY band still running
@@ -1899,10 +1873,8 @@ body:has(.landing) main {
 .l-close {
   text-align: center;
   border-top: 1px solid var(--hairline);
-  /* Two thirds of a screen: large enough to read as the page's last
-     statement rather than a strip, still short of a second hero. */
-  min-height: 62svh;
-  padding-block: clamp(3rem, 8vh, 6rem);
+  min-height: 34svh;
+  padding-block: clamp(2rem, 4vh, 3rem);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1915,8 +1887,8 @@ body:has(.landing) main {
      two-sentence statement across three ragged parts — the thing the
      explicit line break was supposed to prevent. The break is the <span>;
      the type has to be small enough to let it be the only one. */
-  font-size: clamp(1.8rem, 3.5vw, 3.1rem);
-  line-height: 1.1;
+  font-size: clamp(1.5rem, 3.1vw, 2.45rem);
+  line-height: 1.12;
   letter-spacing: var(--tr-h1);
   margin: 0 auto;
   max-width: 100%;
@@ -1930,7 +1902,7 @@ body:has(.landing) main {
 .l-close-line { display: block; }
 .l-close-h { text-align: center; }
 .l-close-turn { color: var(--key); }
-.l-close-cta { margin-top: 2.25rem; }
+.l-close-cta { margin-top: 1.6rem; }
 
 /* ── The last line ───────────────────────────────────────────────────────
    Small and thin, deliberately. A footer that competes with the close
@@ -2545,3 +2517,10 @@ html:has(.landing) {
 .l-btn-quiet {
   border-color: rgba(242, 241, 236, 0.42);
 }
+
+/* Lenis smooth scrolling (app/page.tsx). */
+html.lenis,
+html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }

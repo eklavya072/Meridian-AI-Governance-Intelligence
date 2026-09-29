@@ -39,9 +39,5 @@ const mono = localFont({
   display: "swap",
 });
 
-/** The serif alone, for the executive brief: the document a minister reads
- *  is set like the landing's printed argument. */
-export const serifVariable = serif.variable;
-
 /** Classes that define the three font variables; put them on `.landing`. */
 export const landingFontVariables = `${serif.variable} ${grotesk.variable} ${mono.variable}`;

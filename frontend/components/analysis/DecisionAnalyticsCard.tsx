@@ -17,7 +17,6 @@ import {
   type RadarTooltip,
 } from "@/components/RadarChart";
 import { staggerContainer, staggerChild } from "@/lib/motion";
-import { ForceLadder } from "./ForceLadder";
 import palette from "@/lib/palette.json";
 
 // ── Dimension Radar — coverage tier → ring position ─────────────────────
@@ -39,7 +38,7 @@ const RADAR_DISPLAY: Record<string, string> = {
 
 const RADAR_TIER_LEGEND = [
   { label: "Missing", color: palette.status.red },
-  { label: "Partially Covered", color: palette.chart.partial },
+  { label: "Partially Covered", color: palette.analysis.partial },
   { label: "Fully Covered", color: palette.status.green },
 ] as const;
 
@@ -49,7 +48,7 @@ const RADAR_TIER_LEGEND = [
 // legend and donut.
 const radarTooltip = (value: number): RadarTooltip => {
   if (value >= 100) return { label: "Fully Covered", color: palette.status.green };
-  if (value >= 66) return { label: "Partially Covered", color: palette.chart.partial };
+  if (value >= 66) return { label: "Partially Covered", color: palette.analysis.partial };
   if (value >= 33) return { label: "Missing", color: palette.status.red };
   return { label: "Not assessed", color: palette.grey["500"] };
 };
@@ -200,12 +199,6 @@ export function DecisionAnalyticsCard({
           Decision Analytics
         </motion.h2>
       </div>
-
-      {/* The force ladder leads: it is the idea the rest of the page grades
-          by. The coverage and depth charts follow it. */}
-      <motion.div variants={staggerChild} className="mb-4">
-        <ForceLadder gaps={gaps} />
-      </motion.div>
 
       {/* Row 1: the two charts side by side — coverage donut and depth
           gauge, both animating their fill on load. These are the visual

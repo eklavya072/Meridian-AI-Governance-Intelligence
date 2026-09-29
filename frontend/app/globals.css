@@ -337,3 +337,14 @@ html, body { overflow-x: hidden; overflow-x: clip; }
   .evidence-thread .et-dot,
   .evidence-thread .et-source { transition: none; }
 }
+
+/* A key term in the executive brief (marked by the API): bold, with an
+   underline in the brass accent. */
+.brief-em {
+  font-weight: 700;
+  color: var(--black);
+  text-decoration: underline;
+  text-decoration-color: rgba(108, 85, 19, 0.55); /* palette.brass */
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}

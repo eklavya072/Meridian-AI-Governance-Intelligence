@@ -22,7 +22,7 @@ import {
 export const PRIORITY_DOT: Record<string, string> = {
   Critical: palette.status.red, // muted red
   High: palette.status.red, // muted red
-  Medium: palette.status.amber, // muted amber
+  Medium: palette.analysis.amber,
   Low: palette.status.green, // muted forest green
 };
 

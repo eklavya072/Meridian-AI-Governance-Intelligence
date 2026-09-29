@@ -1,31 +1,42 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { FileDown, FileText } from "lucide-react";
 import { motion } from "motion/react";
 import { EASE } from "@/lib/motion";
 import { api, API_UNREACHABLE, Workspace, BriefDocument } from "@/lib/api";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import Button from "@/components/Button";
-import EvidenceThread from "@/components/EvidenceThread";
-import { serifVariable } from "@/lib/landingFonts";
+import PageHeader from "@/components/PageHeader";
 import { byCountryOrder } from "@/lib/countryOrder";
 
-import palette from "@/lib/palette.json";
-import PageHeader from "@/components/PageHeader";
-
-/* The two downloads, each in the colour its format is known by, so the
-   pair reads at a glance and neither is mistaken for the primary action. */
+/* The two downloads, each in the colour its format is known by. */
 const DOWNLOAD_LOOK = {
   pdf: "border-file-pdf-line bg-file-pdf-tint text-file-pdf hover:border-file-pdf/50 hover:shadow-[0_6px_18px_-8px_rgba(154,63,55,0.45)]",
   docx: "border-file-docx-line bg-file-docx-tint text-file-docx hover:border-file-docx/50 hover:shadow-[0_6px_18px_-8px_rgba(46,90,140,0.45)]",
 } as const;
-/* Scroll reveals in the brief play once, a little before the element is
-   fully in view, so reading down never waits on them. */
+
+/* Scroll reveals play once, a little before the element is fully in view. */
 const IN_VIEW = { once: true, margin: "0px 0px -8% 0px" } as const;
 
-/* A section heading whose rule draws out from the title as it comes into
-   view, the way a ruled document is set. */
+/* Prose with its key terms marked **...** by the API (brief_emphasis.py),
+   rendered bold and underlined. */
+function Marked({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*\*.+?\*\*)/g).map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={i} className="brief-em">
+            {part.slice(2, -2)}
+          </strong>
+        ) : (
+          <Fragment key={i}>{part}</Fragment>
+        )
+      )}
+    </>
+  );
+}
+
 function SectionHeading({ index, children }: { index: string; children: React.ReactNode }) {
   return (
     <motion.div
@@ -44,7 +55,7 @@ function SectionHeading({ index, children }: { index: string; children: React.Re
       <motion.h2
         variants={{ hidden: { opacity: 0, y: 6 }, shown: { opacity: 1, y: 0 } }}
         transition={{ duration: 0.45, ease: EASE.out, delay: 0.05 }}
-        className="font-serif text-[1.3rem] font-medium leading-tight tracking-[-0.01em] text-grey-950"
+        className="text-lg font-bold text-grey-950 tracking-tight"
       >
         {children}
       </motion.h2>
@@ -66,7 +77,9 @@ function BulletList({ items, empty }: { items: string[]; empty: string }) {
       {items.map((item, i) => (
         <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-grey-900">
           <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-grey-950/50" />
-          <span>{item}</span>
+          <span>
+            <Marked text={item} />
+          </span>
         </li>
       ))}
     </ul>
@@ -76,9 +89,7 @@ function BulletList({ items, empty }: { items: string[]; empty: string }) {
 export default function BriefPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWs, setSelectedWs] = useState("");
-  // The country on screen now, for replies that arrive later. Generating a
-  // brief takes ~20s; switching country meanwhile showed the finished brief
-  // under the wrong name, and a slow cached read did the same.
+  // The country on screen now, so a slow reply for another one is dropped.
   const currentWs = useRef("");
   currentWs.current = selectedWs;
   const [brief, setBrief] = useState<BriefDocument | null>(null);
@@ -153,9 +164,7 @@ export default function BriefPage() {
   }
 
   const s = brief?.sections;
-  // Render-order section numbering. Reset on every render so the counter does
-  // not accumulate across re-renders; JSX below evaluates top-to-bottom, so
-  // calling this in place yields 01, 02, 03 ... skipping absent sections.
+  // Sections are numbered in render order, so an absent section skips no number.
   let sectionCounter = 0;
   const nextIndex = () => String(++sectionCounter).padStart(2, "0");
 
@@ -176,18 +185,13 @@ export default function BriefPage() {
         subtitle="A concise synthesis of the analysis."
       />
 
-      {/* The brief is set as a document: one column the width of a page,
-          the controls sitting on the same edges as the sheet below them. */}
-      <div className={`mx-auto w-full max-w-[760px] space-y-6 ${serifVariable}`}>
       {/* Controls */}
       <div className="bg-white rounded-xl border border-black/[0.10] shadow-sm p-5">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="w-full">
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="flex-1 min-w-[260px]">
             <label className="block text-base font-semibold text-grey-950 mb-1.5">
               Select Workspace
             </label>
-            {/* Same dropdown component as the Analysis page — identical
-                look and identical scrollbar, so the two pages feel one. */}
             <AnimatedSelect
               value={selectedWs}
               onChange={(v) => {
@@ -204,10 +208,7 @@ export default function BriefPage() {
                 }))}
             />
           </div>
-          {/* Generates, and regenerates once a brief exists (an example
-              workspace keeps the brief it ships with). generate() no-ops
-              without a selection, so it is disabled only while a call is in
-              flight. Sized to match the two downloads beside it. */}
+          {/* An example workspace keeps the brief it ships with. */}
           {brief && workspaces.find((w) => w.id === selectedWs)?.locked ? null : (
             <Button disabled={loading} onClick={generate} className="py-[13px] text-[15px]">
               {loading ? "Generating..." : brief ? "Regenerate Brief" : "Generate Brief"}
@@ -220,7 +221,7 @@ export default function BriefPage() {
                 type="button"
                 onClick={() => download(fmt)}
                 disabled={exporting !== null}
-                className={`pressable inline-flex items-center gap-2 rounded-xl border px-5 py-[13px] text-[15px] font-semibold transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-50 ${DOWNLOAD_LOOK[fmt]}`}
+                className={`pressable inline-flex items-center gap-2 rounded-xl border px-5 py-[13px] text-[15px] font-semibold transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass disabled:cursor-not-allowed disabled:opacity-50 ${DOWNLOAD_LOOK[fmt]}`}
               >
                 {fmt === "pdf" ? (
                   <FileDown aria-hidden className="h-4 w-4" />
@@ -246,7 +247,10 @@ export default function BriefPage() {
           </div>
         )}
         {error && (
-          <div role="alert" className="mt-3 rounded-lg bg-status-red-tint border border-status-red-line px-4 py-2.5 text-sm text-status-red">
+          <div
+            role="alert"
+            className="mt-3 rounded-lg bg-status-red-tint border border-status-red-line px-4 py-2.5 text-sm text-status-red"
+          >
             {error}
           </div>
         )}
@@ -261,54 +265,37 @@ export default function BriefPage() {
           transition={{ duration: 0.55, ease: EASE.out }}
           className="bg-white rounded-xl border border-black/[0.10] shadow-sm overflow-hidden"
         >
-          {/* Title block: the country as the title, the instrument under it,
-              then what this document is. The label that used to sit above
-              the title read as a kicker and measured 4.3:1. */}
-          <div className="border-b border-black/[0.10] bg-gradient-to-b from-grey-950/[0.04] to-transparent px-6 py-10 text-center sm:px-14">
-            <h2 className="font-serif text-[clamp(2rem,4.6vw,2.75rem)] font-medium leading-[1.08] tracking-[-0.015em] text-grey-950">
-              {brief.country}
-            </h2>
-            <p className="mt-1.5 text-base font-medium text-grey-800">{brief.policy_title}</p>
-            <p className="mt-4 text-xs text-grey-700">
-              AI governance assessment brief, {brief.num_dimensions} dimensions
+          <div className="border-b border-black/[0.10] bg-gradient-to-b from-grey-950/5 to-transparent px-8 py-8 text-center">
+            <p className="text-[11px] font-bold tracking-[0.18em] text-grey-600 uppercase">
+              AI Governance Assessment Brief
             </p>
+            <h2 className="mt-2 text-2xl font-bold text-grey-950 tracking-tight">
+              {brief.country} · {brief.policy_title}
+            </h2>
           </div>
 
-          {/* Prose holds a reading measure of about 75 characters; headings
-              and rules run the full column. */}
-          <div className="px-6 pb-10 pt-4 sm:px-14 [&_li]:max-w-[60ch] [&_p]:max-w-[60ch]">
-            {/* Section numbers are assigned in render order rather than
-                hardcoded: several sections below are conditional (a run with
-                no gaps has no roadmap), and fixed indices skipped numbers or
-                repeated them as soon as one was absent. */}
-            {/* EXECUTIVE SUMMARY */}
+          <div className="px-8 py-6">
             <SectionHeading index={nextIndex()}>Executive Summary</SectionHeading>
-            <p className="text-sm leading-relaxed text-grey-900">
-              {s.executive_summary}
+            <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
+              <Marked text={s.executive_summary} />
             </p>
 
-            {/* KEY FINDINGS */}
             <SectionHeading index={nextIndex()}>Key Findings</SectionHeading>
-            <div className="space-y-5">
+            <div className="space-y-5 max-w-3xl">
               <div>
-                <h3 className="text-sm font-bold text-grey-800 mb-2">
-                  Areas of Strength
-                </h3>
+                <h3 className="text-sm font-bold text-grey-800 mb-2">Areas of Strength</h3>
                 <BulletList items={s.areas_of_strength} empty="None identified." />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-grey-800 mb-2">
-                  Areas Requiring Attention
-                </h3>
+                <h3 className="text-sm font-bold text-grey-800 mb-2">Areas Requiring Attention</h3>
                 <BulletList items={s.areas_requiring_attention} empty="None identified." />
               </div>
             </div>
 
-            {/* DIMENSION ASSESSMENT — deterministic per-dimension detail */}
             {(s.dimension_assessment?.length ?? 0) > 0 && (
               <>
                 <SectionHeading index={nextIndex()}>Dimension Assessment</SectionHeading>
-                <div className="divide-y divide-grey-950/10">
+                <div className="max-w-3xl divide-y divide-grey-950/10">
                   {s.dimension_assessment!.map((r, ri) => (
                     <motion.div
                       key={r.dimension}
@@ -316,45 +303,19 @@ export default function BriefPage() {
                       whileInView={{ opacity: 1, y: 0 }}
                       viewport={IN_VIEW}
                       transition={{ duration: 0.45, ease: EASE.out, delay: (ri % 4) * 0.04 }}
-                      className="-mx-3 rounded-lg px-3 py-3 transition-colors duration-200 hover:bg-grey-950/[0.025]"
+                      className="py-3 first:pt-0"
                     >
                       <div className="flex flex-wrap items-baseline gap-x-2">
-                        <span className="text-sm font-semibold text-grey-950">
-                          {r.dimension}
-                        </span>
+                        <span className="text-sm font-semibold text-grey-950">{r.dimension}</span>
                         <span className="text-xs font-semibold uppercase tracking-wide text-grey-600">
                           {r.coverage}
                           {r.depth ? ` · ${r.depth}` : ""}
                         </span>
                       </div>
-                      {r.basis && !r.key_provision && (
+                      {r.basis && (
                         <p className="mt-1 text-sm leading-relaxed text-grey-800">
-                          {r.basis}
+                          <Marked text={r.basis} />
                         </p>
-                      )}
-                      {r.key_provision && (
-                        /* The finding and the provision it rests on, tied by
-                           the evidence thread. */
-                        <EvidenceThread
-                          className="mt-1.5"
-                          claim={
-                            <p className="text-sm leading-relaxed text-grey-800">
-                              {r.basis || "Key provision"}
-                            </p>
-                          }
-                          source={
-                            <blockquote>
-                              <p className="text-[13px] italic leading-relaxed text-grey-800">
-                                &ldquo;{r.key_provision.quote}&rdquo;
-                              </p>
-                              {r.key_provision.source && (
-                                <footer className="mt-0.5 text-xs text-grey-600">
-                                  {r.key_provision.source}
-                                </footer>
-                              )}
-                            </blockquote>
-                          }
-                        />
                       )}
                       {(r.in_place?.length ?? 0) > 0 && (
                         <p className="mt-1.5 text-xs leading-relaxed text-grey-700">
@@ -368,20 +329,31 @@ export default function BriefPage() {
                           {r.absent_mechanisms.join(", ")}
                         </p>
                       )}
+                      {r.key_provision && (
+                        <blockquote className="mt-2 border-l-2 border-grey-950/20 pl-3">
+                          <p className="text-[13px] italic leading-relaxed text-grey-800">
+                            &ldquo;{r.key_provision.quote}&rdquo;
+                          </p>
+                          {r.key_provision.source && (
+                            <footer className="mt-0.5 text-xs text-grey-600">
+                              {r.key_provision.source}
+                            </footer>
+                          )}
+                        </blockquote>
+                      )}
                     </motion.div>
                   ))}
                 </div>
               </>
             )}
 
-            {/* PRIORITY RECOMMENDATIONS */}
             <SectionHeading index={nextIndex()}>Priority Recommendations</SectionHeading>
             {s.priority_recommendations.length === 0 ? (
               <p className="text-sm text-grey-600 italic">
                 No critical gaps identified, so no priority actions are required.
               </p>
             ) : (
-              <ol className="space-y-3">
+              <ol className="space-y-3 max-w-3xl">
                 {s.priority_recommendations.map((r, i) => (
                   <motion.li
                     key={i}
@@ -400,7 +372,7 @@ export default function BriefPage() {
                       </p>
                       {r.rationale && (
                         <p className="mt-0.5 text-sm text-grey-700 leading-snug">
-                          {r.rationale}
+                          <Marked text={r.rationale} />
                         </p>
                       )}
                     </div>
@@ -409,11 +381,10 @@ export default function BriefPage() {
               </ol>
             )}
 
-            {/* IMPLEMENTATION ROADMAP — sequenced Module 3 actions */}
             {(s.implementation_roadmap?.length ?? 0) > 0 && (
               <>
                 <SectionHeading index={nextIndex()}>Implementation Roadmap</SectionHeading>
-                <div className="space-y-5">
+                <div className="max-w-3xl space-y-5">
                   {s.implementation_roadmap!.map((item) => (
                     <div key={item.dimension}>
                       <p className="text-sm font-semibold text-grey-950">
@@ -431,13 +402,13 @@ export default function BriefPage() {
                             {ph.phase}
                             {ph.timeline && " "}
                             {ph.timeline && (
-                              <span className="ml-1 font-semibold text-grey-700">
-                                {ph.timeline}
-                              </span>
+                              <span className="ml-1 font-semibold text-grey-700">{ph.timeline}</span>
                             )}
                           </p>
                           {ph.objective && (
-                            <p className="text-sm text-grey-900">{ph.objective}</p>
+                            <p className="text-sm text-grey-900">
+                              <Marked text={ph.objective} />
+                            </p>
                           )}
                           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-grey-800">
                             {ph.steps.map((st, si) => (
@@ -459,28 +430,22 @@ export default function BriefPage() {
               </>
             )}
 
-            {/* EVIDENCE BASE — what the verdicts rest on */}
             {(s.evidence_base?.citations_total ?? 0) > 0 && (
               <>
                 <SectionHeading index={nextIndex()}>Evidence Base</SectionHeading>
-                <p className="text-sm leading-relaxed text-grey-900">
-                  {s.evidence_base!.citations_verified} of{" "}
-                  {s.evidence_base!.citations_total} citations were verified against
-                  their source passage.
+                <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
+                  {s.evidence_base!.citations_verified} of {s.evidence_base!.citations_total}{" "}
+                  citations were verified against their source passage.
                 </p>
                 {s.evidence_base!.representative_quotes.length > 0 && (
-                  <ul className="mt-2 space-y-2">
+                  <ul className="mt-2 max-w-3xl space-y-2">
                     {s.evidence_base!.representative_quotes.map((q, qi) => (
                       <li key={qi} className="border-l-2 border-grey-950/15 pl-3">
-                        <span className="text-xs font-semibold text-grey-950">
-                          {q.dimension}
-                        </span>
+                        <span className="text-xs font-semibold text-grey-950">{q.dimension}</span>
                         <p className="text-sm italic leading-relaxed text-grey-800">
                           &ldquo;{q.quote}&rdquo;
                         </p>
-                        {q.source && (
-                          <p className="text-xs text-grey-600 mt-0.5">{q.source}</p>
-                        )}
+                        {q.source && <p className="text-xs text-grey-600 mt-0.5">{q.source}</p>}
                       </li>
                     ))}
                   </ul>
@@ -488,15 +453,14 @@ export default function BriefPage() {
               </>
             )}
 
-            {/* RELEVANT PRECEDENT */}
             {s.relevant_precedent && (
               <>
                 <SectionHeading index={nextIndex()}>Relevant Precedent</SectionHeading>
-                <p className="text-sm leading-relaxed text-grey-900">
-                  {s.relevant_precedent}
+                <p className="text-sm leading-relaxed text-grey-900 max-w-3xl">
+                  <Marked text={s.relevant_precedent} />
                 </p>
                 {(s.precedents?.length ?? 0) > 0 && (
-                  <div className="mt-4 grid gap-3">
+                  <div className="mt-4 grid max-w-3xl gap-3">
                     {s.precedents!.map((p, pi) => (
                       <motion.article
                         key={p.incident}
@@ -517,13 +481,13 @@ export default function BriefPage() {
                         {p.what_happened && (
                           <p className="mt-1.5 text-[13px] leading-relaxed text-grey-800">
                             <span className="font-semibold text-grey-950">What happened.</span>{" "}
-                            {p.what_happened}
+                            <Marked text={p.what_happened} />
                           </p>
                         )}
                         {p.lesson && (
                           <p className="mt-1 text-[13px] leading-relaxed text-grey-800">
                             <span className="font-semibold text-grey-950">Lesson.</span>{" "}
-                            {p.lesson}
+                            <Marked text={p.lesson} />
                           </p>
                         )}
                         {p.source && (
@@ -536,11 +500,8 @@ export default function BriefPage() {
               </>
             )}
 
-            {/* SCOPE & METHODOLOGY */}
-            <SectionHeading index={nextIndex()}>
-              Scope &amp; Methodology
-            </SectionHeading>
-            <div className="space-y-3">
+            <SectionHeading index={nextIndex()}>Scope &amp; Methodology</SectionHeading>
+            <div className="space-y-3 max-w-3xl">
               {s.scope_and_methodology.split("\n\n").map((para, i) => (
                 <p key={i} className="text-xs leading-relaxed text-grey-600">
                   {para}
@@ -548,12 +509,11 @@ export default function BriefPage() {
               ))}
             </div>
 
-            {/* Generated-stamp footer — on the card only, never in the
-                PDF/DOCX exports. */}
+            {/* On the card only, never in the exports. */}
             <div className="mt-8 border-t border-black/[0.10] pt-4 text-center">
               <p className="text-xs text-grey-600">
-                Generated {brief.generated_at} · Based on analysis of{" "}
-                {brief.num_dimensions} governance dimensions
+                Generated {brief.generated_at} · Based on analysis of {brief.num_dimensions}{" "}
+                governance dimensions
               </p>
             </div>
           </div>
@@ -564,12 +524,11 @@ export default function BriefPage() {
         <div className="bg-white rounded-xl border border-dashed border-black/[0.20] px-8 py-12 text-center">
           <p className="text-sm text-grey-600">
             No brief exists for this workspace yet. Click{" "}
-            <span className="font-semibold text-grey-950">Generate Brief</span> to synthesize
-            one from the stored analysis.
+            <span className="font-semibold text-grey-950">Generate Brief</span> to synthesize one
+            from the stored analysis.
           </p>
         </div>
       )}
-      </div>
     </div>
   );
 }

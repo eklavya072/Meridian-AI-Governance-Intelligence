@@ -244,12 +244,30 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
     let loadK = 0;
     let objectUrl: string | null = null;
 
-    /* Seek gating. Writing currentTime while a seek is in flight is the
-       difference between smooth and choppy in Chrome. Coalesce to the newest
-       target and issue exactly one follow-up. */
+    /* Seek gating: one seek in flight at a time, coalesced to the newest
+       target. A seek is released by whichever comes first: the new frame
+       reaching the screen (requestVideoFrameCallback), the `seeked` event,
+       or a 250ms timeout. A seek whose completion signal never arrives
+       would otherwise hold the gate shut and freeze the film on one frame. */
     let seekBusy = false;
     let pendingTime: number | null = null;
+    let seekTimer: ReturnType<typeof setTimeout> | null = null;
+    type FrameVideo = HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+    };
+    const frameVideo = video as FrameVideo;
 
+    const releaseSeek = () => {
+      if (!seekBusy) return;
+      seekBusy = false;
+      if (seekTimer) clearTimeout(seekTimer);
+      seekTimer = null;
+      if (pendingTime !== null) {
+        const t = pendingTime;
+        pendingTime = null;
+        requestSeek(t);
+      }
+    };
     const requestSeek = (t: number) => {
       if (!video.duration || Number.isNaN(video.duration)) return;
       if (seekBusy) {
@@ -259,26 +277,18 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
       seekBusy = true;
       try {
         video.currentTime = t;
+        frameVideo.requestVideoFrameCallback?.(releaseSeek);
+        seekTimer = setTimeout(releaseSeek, 250);
       } catch {
         seekBusy = false;
       }
     };
-    const onSeeked = () => {
-      seekBusy = false;
-      if (pendingTime !== null) {
-        const t = pendingTime;
-        pendingTime = null;
-        requestSeek(t);
-      }
-    };
-    /* The deadlock escape: without this a failed seek leaves seekBusy true
-       forever and the video freezes on one frame. */
     const onVideoError = () => {
       seekBusy = false;
       pendingTime = null;
       stage.classList.add("is-videoless");
     };
-    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("seeked", releaseSeek);
     video.addEventListener("error", onVideoError);
 
     /* The hero's place on the page, measured on load and resize rather
@@ -377,8 +387,9 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
        A lerp starts at full speed the instant the target moves, which reads
        as a jolt at the start of every flick; the spring picks up speed and
        lays it down again, with no overshoot. OMEGA sets how closely it
-       follows: about a third of a second to settle. */
-    const OMEGA = 11;
+       follows; the page scroll is already smoothed (Lenis), so it follows
+       tightly, settling in about a fifth of a second. */
+    const OMEGA = 16;
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - (lastTick || now)) / 1000);
       lastTick = now;
@@ -603,7 +614,8 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
       window.removeEventListener("resize", measure);
       mqls.forEach((m) => m.removeEventListener("change", applyHeroMode));
       window.removeEventListener("scroll", onScroll);
-      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("seeked", releaseSeek);
+      if (seekTimer) clearTimeout(seekTimer);
       video.removeEventListener("error", onVideoError);
       if (rafId !== null) cancelAnimationFrame(rafId);
       rampTimers.forEach(clearInterval);
@@ -747,7 +759,10 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
           </ul>
         </div>
 
-        {/* 3 — what it is. Right, so the eye crosses the frame. */}
+        {/* 3: what it does. Two short lines of equal weight, centred; the
+            verdict takes the accent. The frameworks set what a complete
+            regime holds, the verdict weighs the document's own duties, so
+            they sit in the note rather than in the claim. */}
         <div
           className="l-band l-band-c"
           ref={(el) => {
@@ -755,58 +770,18 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
           }}
         >
           <p className="l-hero-display l-band-stmt">
-            {/* "Eight readings, forty-four frameworks, one brief" was a
-                specification — three quantities and a deliverable, which
-                tells a reader what they are buying rather than what happens
-                to their document. This is the same facts as an event: one
-                thing goes in, the instruments are brought to bear on it,
-                eight verdicts come out.
-
-                "against forty-four frameworks. Eight verdicts." put the two
-                clauses in sequence and so read as cause and effect — as if
-                comparing a document to the corpus were what produced the
-                verdict. It is not, and the paper says so explicitly: adding
-                or removing a framework does not move a verdict. The corpus
-                supplies the expectation set, which is what makes an absence
-                nameable; the verdict comes from the force of the document's
-                own provisions. Naming the subject of the verdict in the
-                accent separates them — and "its duties" keeps the beat
-                at two lines, which the longer phrasings did not. The count
-                is forty-three: the UNESCO
-                EIA entry was withdrawn on 18 Sep as a duplicate of the
-                Recommendation, and the hero was the last place still
-                claiming forty-four. */}
-            {/* One sentence per line. Balanced as one paragraph, the gold
-                sentence broke across two lines with half of it on the white
-                line above; each is its own block now, so the white claim and
-                the gold payload each hold a line of their own. */}
-            <ScrubWords
-              className="l-stmt-line"
-              text="One document, against forty-three frameworks."
-              seed={53}
-              spread={0.5}
-            />
-            {/* The verdict is the thing beat three delivers — the reading
-                and the frameworks are how it is made — so it takes the
-                accent, the way the turn does in the hook and "A minority"
-                does in the finding. One gold phrase per beat, on the
-                payload. */}
+            <ScrubWords className="l-stmt-line" text="One document." seed={53} spread={0.3} />
             <ScrubWords
               className="l-stmt-line l-band-key"
-              text="Eight verdicts on its duties."
+              text="Eight verdicts."
               seed={59}
-              spread={0.2}
+              spread={0.3}
             />
           </p>
-          {/* This ran five lines — the eight dimensions listed in full, then
-              a paragraph of scope caveat. A beat the reader crosses in one
-              scroll cannot carry a paragraph; the dimensions are named on
-              the stages below and the scope belongs in the brief, not in the
-              hero. One line, and it says the thing that matters: governance,
-              not the whole strategy. */}
           <p className="l-body l-band-note">
-            Governance only, not the industrial policy, the compute or the
-            skills. Eight dimensions, and the instruments that bind each one.
+            Read against forty-three international frameworks, across eight
+            dimensions of governance. Not the industrial policy, the compute or
+            the skills.
           </p>
         </div>
 
