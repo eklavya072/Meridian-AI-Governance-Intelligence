@@ -118,24 +118,8 @@ MODULE_DEDUP_HEADROOM = int(os.getenv("MODULE_DEDUP_HEADROOM", "3"))
 # Japan or the EU — it is recall insurance, not a scoring change.
 USE_HYBRID_SEARCH = os.getenv("USE_HYBRID_SEARCH", "true").lower() == "true"
 
-# Comprehensive-evidence pool: a broad semantic sweep of the workspace
-# document BEYOND the prompt-budget bucket. The LLM judges the document on
-# the small DOC_TOP_K budget; a governance mechanism expressed in the
-# policy's own terminology can rank outside it and be missed. The pool feeds
-# the deterministic ladder's R1/R2 evidence check so a mechanism the prompt
-# never showed can still floor Missing -> Partial instead of being erased.
-# Local, embedding-only operation — no LLM/API cost — so a wider sweep is
-# cheap. Raised (40->60 / 18->24) alongside the hybrid lexical fusion in
-# _retrieve_doc_bucket_multi_query, so the ladder's R1/R2 evidence check
-# sees a genuinely wider net, not just a wider dense-only one.
-EVIDENCE_POOL_CANDIDATES = int(os.getenv("EVIDENCE_POOL_CANDIDATES", "60"))
-EVIDENCE_POOL_MAX = int(os.getenv("EVIDENCE_POOL_MAX", "24"))
-
-# Scoring pool — feeds deterministic pattern scoring, NOT an LLM prompt, so it
-# is sized for document coverage rather than token budget (see
-# retrieve_scoring_pool). Large instruments were being scored from as few as
-# four chunks under the prompt-sized pool, which penalised long statutes
-# purely for being long.
+# Scoring pool: feeds deterministic pattern scoring, not an LLM prompt, so it
+# is sized for coverage of the document rather than for a token budget.
 SCORING_POOL_CANDIDATES = int(os.getenv("SCORING_POOL_CANDIDATES", "300"))
 SCORING_POOL_MAX = int(os.getenv("SCORING_POOL_MAX", "160"))
 
@@ -774,65 +758,6 @@ class RetrievalPipeline:
             )
         return out
 
-    def retrieve_document_evidence_pool(
-        self,
-        dimension: str,
-        workspace_id: str | None = None,
-        candidates: int = EVIDENCE_POOL_CANDIDATES,
-        max_chunks: int = EVIDENCE_POOL_MAX,
-    ) -> list[dict[str, Any]]:
-        """Broad semantic sweep of the workspace document for a dimension.
-
-        Anti-false-negative net for the Module 1 verdict: the prompt-budget
-        document bucket (DOC_TOP_K) is what the LLM sees, and a governance
-        mechanism expressed in the policy's own terminology can rank outside
-        it. This pool pulls a wider candidate set with the same multi-query
-        RRF (dimension definition + aspects — semantic similarity, NOT a
-        keyword checklist), filters preamble / low-information fragments, and
-        returns the surviving dimension-relevant chunks for the deterministic
-        ladder's R1/R2 comprehensive-evidence check. The ladder only ever
-        reads real chunks (real chunk_ids, real text), so a mechanism the
-        prompt missed can still floor Missing -> Partial instead of being
-        erased into a false Missing.
-        """
-        if not workspace_id:
-            return []
-        raw = self._retrieve_doc_bucket_multi_query(
-            dimension=dimension,
-            dim_query=dimension,
-            workspace_id=workspace_id,
-            candidates=candidates,
-        )
-        filtered = [c for c in raw if not self._is_preamble_chunk(c)]
-        out: list[dict[str, Any]] = []
-        accepted_keys: list[str] = []
-        for c in filtered:
-            text = (c.get("text") or "").strip()
-            if not text:
-                continue
-            if is_low_information_fragment(text):
-                continue
-            # Containment dedup (see _is_near_duplicate). This pool feeds the
-            # LLM prompt, where a duplicate costs tokens AND crowds out a
-            # distinct passage the model would otherwise have seen.
-            key = _dedup_key(text)
-            if _is_near_duplicate(key, accepted_keys):
-                continue
-            accepted_keys.append(key)
-            out.append(c)
-            if len(out) >= max_chunks:
-                break
-        if out:
-            logger.info(
-                "document_evidence_pool_retrieved",
-                dimension=dimension,
-                workspace_id=workspace_id,
-                raw_candidates=len(raw),
-                after_preamble_filter=len(filtered),
-                pool_size=len(out),
-            )
-        return out
-
     def retrieve_scoring_pool(
         self,
         dimension: str,
@@ -840,30 +765,13 @@ class RetrievalPipeline:
         candidates: int = SCORING_POOL_CANDIDATES,
         max_chunks: int = SCORING_POOL_MAX,
     ) -> list[dict[str, Any]]:
-        """Wide sweep of the workspace document for DETERMINISTIC scoring.
+        """Wide sweep of the workspace document for deterministic scoring.
 
-        Separate from retrieve_document_evidence_pool because the two serve
-        different consumers with opposite constraints:
-
-          - the evidence pool feeds an LLM prompt, so it is deliberately small
-            and aggressively trimmed (preamble filter, 24-chunk cap) to protect
-            the token budget;
-          - this pool feeds regex/pattern scoring in evidence_strength.py,
-            which costs nothing per chunk, so it should see as much of the
-            document as possible.
-
-        Reusing the small prompt-budget pool for scoring was starving the
-        scorer on large instruments: a 144-page regulation returned as few as
-        FOUR chunks for a dimension, and every strength signal was computed
-        from that sliver — so long, dense statutes scored LOWER than short
-        strategies purely because retrieval showed the scorer less of them.
-        That is a document-length artifact, not a governance finding.
-
-        The preamble filter is also deliberately NOT applied here. Recitals and
-        preambles are exactly where a statute states purpose in soft language
-        ("should", "is appropriate to") — the tier system already grades that
-        as weak, so including them adds real signal instead of discarding a
-        large share of the document unscored.
+        The pattern scorer in evidence_strength.py costs nothing per chunk, so
+        it sees as much of the document as possible: a long statute would
+        otherwise be scored from a sliver of itself. The preamble filter is not
+        applied; recitals state purpose in soft language, which the tier system
+        already grades as weak.
         """
         if not workspace_id:
             return []

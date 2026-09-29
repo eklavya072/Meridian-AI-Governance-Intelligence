@@ -442,14 +442,6 @@ class TestAnalysisRoutes:
         # Either "nothing yet" (404) or an empty result — never a stack trace.
         assert client.get(f"/api/v1/analyze/{uuid.uuid4()}").status_code in (200, 404)
 
-    def test_listing_analyses_for_an_unknown_workspace(self, client):
-        FakeWorkspaceService.workspace = None
-        FakeWorkspaceService.analyses = []
-
-        response = client.get(f"/api/v1/workspace/{uuid.uuid4()}/analyses")
-
-        assert response.status_code in (200, 404)
-
 
 class TestBriefExportRoute:
     def test_an_unsupported_export_format_is_rejected(self, client):
@@ -566,14 +558,12 @@ class TestMalformedIds:
         "method, path",
         [
             ("get", "/api/v1/workspace/not-a-uuid"),
-            ("get", "/api/v1/workspace/not-a-uuid/analyses"),
             ("get", "/api/v1/analyze/not-a-uuid"),
             ("post", "/api/v1/analyze/not-a-uuid/run"),
             ("get", "/api/v1/brief/not-a-uuid"),
             ("post", "/api/v1/brief/not-a-uuid/generate"),
             ("get", "/api/v1/brief/not-a-uuid/export?format=pdf"),
             ("get", "/api/v1/chat/sessions/not-a-uuid"),
-            ("delete", "/api/v1/chat/sessions/not-a-uuid"),
             ("get", "/api/v1/chat/sessions?workspace_id=not-a-uuid"),
         ],
     )

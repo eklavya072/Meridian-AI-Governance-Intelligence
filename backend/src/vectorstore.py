@@ -574,59 +574,6 @@ class VectorStore:
     def embed_query(self, text: str) -> list[float]:
         return self.embedding_service.embed_query(text)
 
-    def delete_workspace_document(self, workspace_id: str, document_name: str) -> int:
-        """Remove a single document's chunks from one workspace.
-
-        Makes re-uploading a document IDEMPOTENT. Chunk ids were once fresh
-        uuid4s per ingestion, so `collection.add` never collided with a previous
-        copy — it appended, and every re-run stacked another complete copy of
-        the document into the workspace. The pipeline now uses
-        `retire_workspace_document`, which keeps chunks stored analyses cite.
-
-        The damage was severe and silent. A measured audit of the live store
-        found the EU AI Act workspace holding 15,363 chunks of which only
-        ~1,450 were unique — roughly 90% duplicates — with Kenya, Nigeria and
-        Zambia between 50% and 80%. Retrieval then spent its candidate budget
-        re-reading the same passages: a 300-candidate sweep over a 90%-duplicate
-        corpus surfaces only ~30 distinct chunks, so the scorer saw a fraction
-        of the document and under-counted provisions on exactly the largest,
-        most binding instruments. Dimensions looked thin because retrieval was
-        starved, not because the policy was silent.
-
-        Scoped to (workspace_id, document_name) rather than the whole
-        workspace so multi-document workspaces (e.g. India's DPDPA + AI
-        Governance Guidelines) keep their other documents intact.
-        """
-        if not workspace_id or not document_name:
-            return 0
-        try:
-            results = self.collection.get(
-                where={
-                    "$and": [
-                        {"workspace_id": {"$eq": str(workspace_id)}},
-                        {"document_name": {"$eq": str(document_name)}},
-                    ]
-                }
-            )
-        except Exception as exc:
-            logger.warning(
-                "workspace_document_delete_query_failed",
-                workspace_id=workspace_id,
-                document_name=document_name,
-                error=str(exc),
-            )
-            return 0
-        ids = results.get("ids") or []
-        if ids:
-            self.collection.delete(ids=ids)
-        logger.info(
-            "workspace_document_chunks_deleted",
-            workspace_id=workspace_id,
-            document_name=document_name,
-            count=len(ids),
-        )
-        return len(ids)
-
     def retire_workspace_document(
         self,
         workspace_id: str,
@@ -634,20 +581,16 @@ class VectorStore:
         keep_ids: set[str],
         replacing_ids: set[str],
     ) -> tuple[int, int]:
-        """Take a document's chunks out of its workspace before re-indexing it.
+        """Take a document's chunks out of its workspace before re-indexing it,
+        so a re-upload replaces the document instead of stacking a second copy
+        (duplicates starve retrieval).
 
-        `delete_workspace_document` removes them outright, which is right for
-        retrieval (no stale duplicates) and wrong for the record: stored
-        analyses cite chunks by id, and a re-read under newer ingestion rules
-        mints new ids wherever the text changed, so every earlier run of that
-        country was left citing chunks that no longer existed.
-
-        So a chunk a stored analysis still cites is RETIRED instead — moved to a
-        `retired:<workspace>` scope that no workspace query matches, while a
-        lookup by id still resolves. Everything else is deleted. A chunk whose id
-        the new ingestion re-creates is deleted too: the id encodes the text, so
-        the replacement is the same passage, and Chroma silently ignores an add
-        for an id that already exists.
+        Stored analyses cite chunks by id, so a chunk one of them still cites
+        is retired rather than deleted: moved to a `retired:<workspace>` scope
+        that no workspace query matches, while a lookup by id still resolves.
+        Everything else is deleted, including chunks whose id the new
+        ingestion re-creates (the id encodes the text, and Chroma ignores an
+        add for an id that already exists).
 
         Returns (deleted, retired).
         """

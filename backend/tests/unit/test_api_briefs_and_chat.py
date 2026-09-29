@@ -175,28 +175,6 @@ class TestGetAnalysis:
         assert len(body["analyses"]) == 2
 
 
-class TestListAnalyses:
-    def test_an_empty_history_returns_a_list_not_an_error(self, client):
-        FakeService.analyses = []
-
-        response = client.get(f"/api/v1/workspace/{uuid.uuid4()}/analyses")
-
-        assert response.status_code in (200, 404)
-
-    def test_every_run_is_listed_for_the_run_selector(self, client):
-        FakeService.analyses = [
-            FakeAnalysis(document_name="guidelines.pdf"),
-            FakeAnalysis(document_name="guidelines.pdf + statute.pdf"),
-        ]
-
-        response = client.get(f"/api/v1/workspace/{uuid.uuid4()}/analyses")
-
-        # The two-run pattern per country is intentional and the selector
-        # depends on both being returned.
-        if response.status_code == 200:
-            assert len(response.json()) >= 1
-
-
 class TestBriefRoutes:
     def test_fetching_a_brief_that_was_never_generated(self, client):
         response = client.get(f"/api/v1/brief/{uuid.uuid4()}")
@@ -263,11 +241,6 @@ class TestChatRoutes:
 
     def test_fetching_an_unknown_session_is_404(self, client):
         assert client.get(f"/api/v1/chat/sessions/{uuid.uuid4()}").status_code in (404, 500)
-
-    def test_deleting_an_unknown_session_is_not_a_500(self, client):
-        response = client.delete(f"/api/v1/chat/sessions/{uuid.uuid4()}")
-
-        assert response.status_code in (200, 204, 404)
 
 
 class TestFrameworkSync:

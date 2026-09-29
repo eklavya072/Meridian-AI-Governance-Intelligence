@@ -276,11 +276,9 @@ async def run_full_analysis_pipeline(
                 for c in doc_chunks:
                     c.metadata["ingest_key"] = key
                     c.metadata["ingest_total"] = len(doc_chunks)
-                # Replace, don't append: a second full copy in the workspace
-                # starves retrieval with duplicates (see
-                # delete_workspace_document for the measured impact). Chunks an
-                # earlier run cites are retired rather than deleted, so that
-                # run's citations still resolve.
+                # Replace, don't append: a second copy in the workspace starves
+                # retrieval with duplicates. Chunks an earlier run cites are
+                # retired rather than deleted, so its citations still resolve.
                 removed, retired = await asyncio.to_thread(
                     vector_store.retire_workspace_document,
                     workspace_id,

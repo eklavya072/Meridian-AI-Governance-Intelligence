@@ -48,7 +48,6 @@ body:has(.landing) main {
 
   --accent: #F2F1EC;
   --accent-hover: #FFFFFF;
-  --accent-muted: rgba(242, 241, 236, 0.14);
 
   /* ── The one colour ────────────────────────────────────────────────────
      Gold, and nothing else. The page briefly carried the instrument's three
@@ -88,12 +87,10 @@ body:has(.landing) main {
      to — and a smaller display line leaves the FILM visible around it,
      which is the whole reason there is a film. */
   --t-hero: clamp(1.85rem, 3.25vw, 2.95rem);
-  --t-display: clamp(2.6rem, 6.2vw, 5rem);
   --t-h2: clamp(1.95rem, 3.9vw, 3.15rem);
   --t-h3: clamp(1.45rem, 2.5vw, 2rem);
   --t-body-lg: clamp(1.1rem, 1.35vw, 1.28rem);
   --t-body: clamp(1.02rem, 1.1vw, 1.12rem);
-  --t-micro: 0.78rem;
   --t-label: 0.6875rem;
 
   /* Tracking is a function of size, never a constant. The references are
@@ -151,7 +148,6 @@ body:has(.landing) main {
      than deliberately. `ease` and bare `ease-out` were doing a third job
      nobody named. A curve per job, named for the job. */
   --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
 
   /* Text sits over a moving ground, which is a background nobody controls
@@ -346,15 +342,7 @@ body:has(.landing) main {
      keeps weight 300 from going spindly at display sizes. */
   font-optical-sizing: auto;
 }
-.l-label {
-  display: block;
-  font-family: var(--code);
-  font-weight: 500;
-  font-size: var(--t-label);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
+
 /* Light type on a dark ground looks thinner and tighter than the same type
    on white — the glyphs bloom into the background. The three corrections
    are a touch more leading, a touch more tracking, and one step more
@@ -381,18 +369,6 @@ body:has(.landing) main {
   font-weight: 600;
 }
 
-/* ── The moving ground ────────────────────────────────────────────────────
-   A slow WebGL swell in charcoal and grey, fixed behind the whole page, so
-   scrolling feels like moving through a place rather than past stacked
-   sections. Everything above it is transparent; only .landing paints a
-   colour, and that colour is what the waves sit on. */
-.l-waves {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-.l-waves > * { width: 100%; height: 100%; }
 /* Reduced motion and no-WebGL both land here: a still version of the same
    grade, so the page is never a flat black rectangle. */
 .l-waves-still {
@@ -748,7 +724,6 @@ body:has(.landing) main {
    cap on the ELEMENT, never a container: a ch resolves against the font the
    element inherits, so a cap on the wrapper would be counted in the body
    sans rather than the serif inside it. */
-
 
 /* ── Beat two: the finding ───────────────────────────────────────────────
    Sized as the argument it is. This was a small block in a corner, which
@@ -1141,8 +1116,7 @@ body:has(.landing) main {
     min-height: 0;
     padding-block: clamp(4.5rem, 11vh, 8rem);
   }
-  .l-stage-video,
-  .l-stage-film { position: fixed; }
+  .l-stage-video { position: fixed; }
 
   /* Beats stack in the normal flow. `position: absolute` and `inset: 0` are
      what made them a deck; in a column they are a document. */
@@ -1220,7 +1194,6 @@ body:has(.landing) main {
 
 /* Applied to type only. Buttons and the light product screens are opaque
    surfaces and a shadow on their labels would read as grime. */
-.l-sec .l-label,
 .l-sec .l-h2,
 .l-sec .l-body,
 .l-close-h { text-shadow: var(--tshadow); }
@@ -1265,24 +1238,20 @@ body:has(.landing) main {
 
 /* Reveal. Start and end states are both prefixed with the section class so
    nothing later in the cascade can leave an element stuck at its start. */
-.landing.is-armed .l-sec .l-label,
 .landing.is-armed .l-sec .l-h2,
-.landing.is-armed .l-sec .l-body,
-.landing.is-armed .l-sec .l-standards-visual {
+.landing.is-armed .l-sec .l-body {
   opacity: 0;
   transform: translateY(16px);
   transition: opacity 800ms var(--ease-out), transform 800ms var(--ease-out);
 }
-.landing.is-armed .l-sec.in .l-label,
 .landing.is-armed .l-sec.in .l-h2,
-.landing.is-armed .l-sec.in .l-body,
-.landing.is-armed .l-sec.in .l-standards-visual {
+.landing.is-armed .l-sec.in .l-body {
   opacity: 1;
   transform: none;
 }
 .landing.is-armed .l-sec.in .l-h2 { transition-delay: 90ms; }
 .landing.is-armed .l-sec.in .l-body { transition-delay: 170ms; }
-.landing.is-armed .l-sec.in .l-standards-visual { transition-delay: 140ms; }
+
 /* `.done` lands a couple of seconds after the entrance starts, on a plain
    timer, and it does two jobs.
 
@@ -1295,10 +1264,8 @@ body:has(.landing) main {
    an embedded webview that stops producing frames), the element still ends
    up visible, because there is no longer an animation standing between the
    class and the computed value. Timers keep firing where frames do not. */
-.landing.is-armed .l-sec.in.done .l-label,
 .landing.is-armed .l-sec.in.done .l-h2,
-.landing.is-armed .l-sec.in.done .l-body,
-.landing.is-armed .l-sec.in.done .l-standards-visual {
+.landing.is-armed .l-sec.in.done .l-body {
   opacity: 1;
   transform: none;
   transition: none !important;
@@ -1450,8 +1417,6 @@ body:has(.landing) main {
   margin: 0 0 clamp(1.5rem, 4.5vh, 3.25rem);
 }
 
-
-
 .l-stats-inner {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
@@ -1461,7 +1426,6 @@ body:has(.landing) main {
   border-radius: 0.875rem;
   overflow: hidden;
 }
-
 
 /* Each card is parchment, with the light-surface tokens declared locally so
    its contents resolve against the card rather than against the ink behind
@@ -1603,9 +1567,6 @@ body:has(.landing) main {
    when it has decided the screen can take it. */
 .l-track { position: relative; }
 .l-track-rail { display: block; }
-.l-track-arc { display: none; }
-.l-track-arc-wrap { display: none; }
-.l-track.is-horizontal .l-track-arc-wrap { display: block; }
 
 .l-track.is-horizontal {
   /* Scroll distance for the sideways travel: roughly a viewport and a
@@ -1662,88 +1623,7 @@ body:has(.landing) main {
    easing is right, because constant motion is exactly what it is — and the
    progress stroke draws on top of that. Turning plus drawing is what makes
    the gesture read as a circle being travelled. */
-/* The indicator is a ring lying in space, not a circle drawn on glass.
-   Flat, at 56px, it reads as a pie chart. Tilting it on X gives the stroke
-   a near edge and a far edge, so the head travelling round it genuinely
-   goes away and comes back instead of sliding along an outline — that is
-   the curve it was missing. The perspective is deliberately short (320px
-   against a 76px object): a long one flattens the tilt back out and takes
-   the depth with it. */
-.l-track-arc-wrap {
-  position: absolute;
-  left: 50%;
-  bottom: 2.1rem;
-  margin-left: -38px;
-  width: 76px;
-  height: 76px;
-  perspective: 460px;
-  perspective-origin: 50% 44%;
-  pointer-events: none;
-}
-.l-track.is-horizontal .l-track-arc {
-  display: block;
-  width: 76px;
-  height: 76px;
-  transform-style: preserve-3d;
-  animation: l-arc-turn 11s linear infinite;
-  overflow: visible;
-}
-/* 58deg is past the point where a tilted circle still reads as a circle:
-   the minor axis collapses to 53% of the major and the eye gives up and
-   calls it a line. 34deg keeps the minor axis at 83% — unmistakably round,
-   with just enough foreshortening that the head travels in depth. */
-@keyframes l-arc-turn {
-  from { transform: rotateX(34deg) rotate(-90deg); }
-  to   { transform: rotateX(34deg) rotate(270deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .l-track.is-horizontal .l-track-arc {
-    animation: none;
-    transform: rotateX(34deg) rotate(-90deg);
-  }
-}
-.l-track-arc-bed,
-.l-track-arc-ink {
-  fill: none;
-  stroke-width: 3;
-  stroke-linecap: round;
-}
-/* The bed is the accent at low alpha, not a grey. A grey ring under a gold
-   stroke gives the indicator two hues and reads as neither — the muddy
-   middle tone. One colour, two strengths. */
-.l-track-arc-bed { stroke: color-mix(in srgb, var(--key) 26%, transparent); }
-.l-track-arc-ink {
-  stroke: var(--key);
-  /* Nearly twice the settle it had. The arc is the one indicator on a
-     section that already moves sideways under the reader; at 520ms it
-     snapped to each new position and read as a counter ticking rather than
-     as something being drawn. */
-  transition: stroke-dashoffset 900ms var(--ease-glide);
-}
-/* The head. A drawn arc alone says how far round you are; a mark travelling
-   the circumference is what makes the motion read as CIRCULAR rather than
-   as a line that happens to be bent. It rides the end of the stroke, so the
-   two are always one gesture. */
-.l-track-arc-head {
-  fill: var(--key);
-  transition: transform 900ms var(--ease-glide);
-  transform-origin: 32px 32px;
-}
-/* The far half of a tilted ring is further away, so it is drawn lighter.
-   That single cue is what sells the shape as a circle in space rather than
-   as a squashed oval. */
-.l-track-arc-bed { opacity: 0.8; }
-@media (max-height: 620px) {
-  .l-track.is-horizontal .l-track-arc-wrap { display: none; }
-}
-@media (min-width: 940px) {
-  .l-split { grid-template-columns: 0.82fr 1.18fr; }
-  .l-split.is-reverse { grid-template-columns: 1.18fr 0.82fr; }
-  .l-split.is-reverse .l-split-copy { order: 2; }
-  .l-split.is-reverse .l-split-visual { order: 1; }
-}
-.l-split-copy .l-body { margin-top: 1.5rem; max-width: 46ch; }
-.l-standards-head .l-body { margin-top: 1.5rem; max-width: 58ch; }
+
 
 /* ── 05 The method ────────────────────────────────────────────────────── */
 /* The method section ran edge to edge at the gutter (72px at 1440) while
@@ -1773,28 +1653,7 @@ body:has(.landing) main {
   max-width: 22ch;
   text-wrap: balance;
 }
-/* The spine. Sits in the gutter on wide screens where there is room beside
-   the grid, and is suppressed below that rather than crowding the copy —
-   a decorative rule that steals width from a paragraph is a bad trade. */
-.l-spine {
-  position: absolute;
-  left: -2.25rem;
-  top: 0.5rem;
-  bottom: 0.5rem;
-  width: 1px;
-  background: var(--hairline);
-  display: none;
-}
-.l-spine::after {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  /* --drawn is written by the scroll hook; 0 is an undrawn spine, which is
-     simply invisible. Nothing in the section depends on it arriving. */
-  height: calc(var(--drawn, 0) * 100%);
-  background: linear-gradient(to bottom, var(--key-line), var(--key));
-}
-@media (min-width: 1180px) { .l-spine { display: block; } }
+
 /* The four stages, cross-aligned.
    These read as four identical rows because they WERE four identical rows:
    the DOM order is copy then visual, and the only order rules in the sheet
@@ -1947,7 +1806,7 @@ body:has(.landing) main {
   letter-spacing: 0.005em;
   color: var(--ink-2);
 }
-.l-footer-inner .l-label { font-size: inherit; letter-spacing: inherit; }
+
 .l-footer-mark { color: var(--key); flex: none; }
 .l-footer-nav { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 1.4rem; }
 .l-footer-nav .l-link {
@@ -1984,7 +1843,6 @@ body:has(.landing) main {
      list is only worth anything if it is kept honest: it once named four
      selectors that had been deleted in a rebuild, which is a safety net
      protecting nothing. Whenever a start state moves, it moves here too. */
-  .landing .l-label,
   .landing .l-h2,
   .landing .l-body,
   .landing .l-band,
@@ -2076,30 +1934,6 @@ body:has(.landing) main {
 .l-caret.is-done { animation: l-blink-out 1.6s ease-out forwards; }
 @keyframes l-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 @keyframes l-blink-out { 0% { opacity: 1 } 70% { opacity: 1 } 100% { opacity: 0 } }
-
-/* ── Screens resolve from soft to sharp ───────────────────────────────────
-   The blur is a static value crossfaded by opacity on a duplicate layer
-   everywhere else in this codebase, but a product screen has no duplicate
-   to fade against, so the filter animates here. It is bounded to one
-   element, runs once, and drops off the compositor when `.done` lands. */
-.landing.is-armed .l-sec .l-standards-visual {
-  filter: blur(14px);
-  transform: translateY(26px) scale(0.985);
-  transition:
-    opacity 900ms var(--ease-glide),
-    transform 1100ms var(--ease-glide),
-    filter 900ms var(--ease-glide);
-  will-change: transform, filter;
-}
-.landing.is-armed .l-sec.in .l-standards-visual {
-  filter: blur(0);
-  transform: none;
-}
-.landing.is-armed .l-sec.in.done .l-standards-visual {
-  filter: none;
-  transform: none;
-  will-change: auto;
-}
 
 /* Stage screens arrive from the side they live on, so the alternating
    layout is what the motion is about rather than a repeated rise. */
@@ -2210,76 +2044,6 @@ body:has(.landing) main {
   max-width: 64ch;
 }
 
-/* ── Proof: the interlocking grid ──────────────────────────────────────── */
-.l-ink-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-auto-flow: dense;
-  gap: 1px;
-  background: var(--hairline);
-  border: 1px solid var(--hairline);
-}
-.l-ink-cell {
-  background: var(--canvas);
-  padding: clamp(1.4rem, 2.6vh, 2rem) clamp(1.4rem, 2vw, 2rem);
-  grid-column: span 6;
-  display: grid;
-  align-content: start;
-  gap: 0.7rem;
-  opacity: 0;
-  transform: translateY(14px);
-  transition:
-    opacity 620ms var(--ease-glide),
-    transform 620ms var(--ease-glide);
-  transition-delay: calc(var(--i, 0) * 65ms);
-}
-.l-ink.is-on .l-ink-cell { opacity: 1; transform: none; }
-/* Five cells over six columns, as 3 + 3 then 2 + 2 + 2. Two full rows, no
-   dead corner. `dense` is on the grid so a cell can never leave a hole
-   behind it. */
-@media (min-width: 860px) {
-  .l-ink-cell { grid-column: span 2; }
-  .l-ink-cell-half { grid-column: span 3; }
-}
-/* The figure is the loudest thing in the cell and the only thing in gold.
-   Tabular figures so the five cells align down the grid rather than each
-   number setting its own rhythm. */
-.l-ink-fig {
-  margin: 0;
-  font-family: var(--grotesk);
-  font-weight: 600;
-  font-size: clamp(1.9rem, 4.4vw, 3.4rem);
-  line-height: 0.94;
-  letter-spacing: -0.04em;
-  color: var(--key);
-  font-variant-numeric: lining-nums tabular-nums;
-  font-optical-sizing: auto;
-}
-.l-ink-unit {
-  font-size: 0.42em;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  margin-left: 0.18em;
-  vertical-align: baseline;
-  color: var(--ink-2);
-}
-.l-ink-claim {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 0.95rem;
-  line-height: 1.55;
-  color: var(--ink);
-  max-width: 44ch;
-}
-.l-ink-src {
-  margin: 0;
-  font-family: var(--code);
-  font-size: 0.66rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
 /* ── Method: four rules, set as a ledger ─────────────────────────────────
    Not cards. Four boxes of equal size with a heading and a paragraph in
    each is the shape every generated page reaches for, and it would make
@@ -2371,7 +2135,7 @@ body:has(.landing) main {
   max-width: 36rem;
 }
 @media (prefers-reduced-motion: reduce) {
-  .l-ink-cell, .l-ink-rule {
+  .l-ink-rule {
     opacity: 1 !important;
     transform: none !important;
     transition: none !important;
@@ -2456,7 +2220,6 @@ html:has(.landing) {
   letter-spacing: 0.006em;
 }
 
-
 /* ── The small-label system ──────────────────────────────────────────────
    Every uppercase mono label on the route ran its own tracking — 0.16em on
    the hero attribution, 0.10em on the ladder tiers, 0.02em in the colophon,
@@ -2473,20 +2236,15 @@ html:has(.landing) {
 .l-band-attrib,
 .l-rung-tier,
 .l-stage-n,
-.l-ink-src,
-.l-stat-source,
-.l-cell-meta { letter-spacing: var(--tr-label); }
+.l-stat-source { letter-spacing: var(--tr-label); }
 /* Tracking adds space AFTER the last letter too, which pushes a centred or
    right-aligned label off its own edge by a full letter-space. */
 .l-band-attrib,
 .l-rung-tier,
 .l-stage-n,
-.l-ink-src,
 .l-stat-source {
   margin-right: calc(var(--tr-label) * -1);
 }
-
-
 
 /* ── Clearance under the pinned bar ──────────────────────────────────────
    The nav is pinned for the whole route, so anything crossing the top 77px

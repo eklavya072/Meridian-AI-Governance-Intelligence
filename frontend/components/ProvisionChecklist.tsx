@@ -59,7 +59,7 @@ function Chip({ name, state }: { name: string; state: ForceState }) {
   );
 }
 
-export function ProvisionChecklist({ gap }: { gap: GovernanceGap }) {
+export default function ProvisionChecklist({ gap }: { gap: GovernanceGap }) {
   const present = gap.mechanisms_present || {};
   const entries = Object.entries(present);
 
@@ -95,4 +95,3 @@ export function ProvisionChecklist({ gap }: { gap: GovernanceGap }) {
   );
 }
 
-export default ProvisionChecklist;

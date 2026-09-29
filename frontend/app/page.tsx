@@ -20,8 +20,6 @@
  * it, and every section below reveals through latching timers that never
  * consult scroll progress. A stalled compositor costs motion here, never
  * words.
- *
- * Full creative rationale and copy: docs/landing-design-package.md
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";

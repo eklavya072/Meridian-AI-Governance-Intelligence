@@ -14,13 +14,9 @@
  * visitor has to know what a policy is being measured AGAINST before a
  * verdict on it means anything.
  *
- * The OECD finding that used to open this file now plays over the hero
- * video instead, where it belongs — it is the reason the product exists,
- * and it was reading as just another section down here.
- *
  * Every panel is the product animating itself rather than a screenshot of
  * it: crisp at any resolution, no image payload, and no layout shift while
- * it loads. Copy is authored in docs/landing-design-package.md.
+ * it loads.
  */
 
 import { useEffect, useRef, useState } from "react";

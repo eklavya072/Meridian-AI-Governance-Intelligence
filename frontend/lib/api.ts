@@ -595,9 +595,5 @@ export const api = {
     getSession: (sessionId: string) =>
       request<ChatSessionDetail>(`/chat/sessions/${sessionId}`),
 
-    deleteSession: (sessionId: string) =>
-      request<{ status: string }>(`/chat/sessions/${sessionId}`, {
-        method: "DELETE",
-      }),
   },
 };

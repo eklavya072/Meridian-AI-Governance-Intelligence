@@ -46,19 +46,9 @@
   transform: none;
 }
 
-.specular-button--sm {
-  font-size: 0.85rem;
-  padding: 10px 22px;
-}
-
 .specular-button--md {
   font-size: 1rem;
   padding: 14px 30px;
-}
-
-.specular-button--lg {
-  font-size: 1.15rem;
-  padding: 18px 40px;
 }
 
 /* Middle-size variants — between the tiny text-sm originals and the huge
@@ -68,11 +58,6 @@
 .specular-button--compact {
   font-size: 1rem;
   padding: 14px 30px;
-}
-
-.specular-button--compact-wide {
-  font-size: 1rem;
-  padding: 15px 32px;
 }
 
 /* Canvas extends past the button so the rim glow can bleed outside the edge */

@@ -1297,24 +1297,6 @@ async def export_brief(workspace_id: str, format: str = "pdf"):
         )
 
 
-@app.get("/api/v1/workspace/{workspace_id}/analyses")
-async def list_analyses(workspace_id: str):
-    async with get_db() as db:
-        ws_service = WorkspaceService(db)
-        analyses = await ws_service.get_analyses_for_workspace(workspace_id)
-        return [
-            {
-                "analysis_id": str(a.id),
-                "document_name": a.document_name,
-                "summary": a.summary,
-                "total_retrieved": a.total_retrieved,
-                "generated_by": a.generated_by or {"provider": "unknown", "tier": "unknown"},
-                "created_at": _utc_iso(a.created_at),
-            }
-            for a in analyses
-        ]
-
-
 # --- Chat Schemas ---
 
 
@@ -1602,19 +1584,6 @@ async def get_chat_session(session_id: str):
                 for m in messages
             ],
         }
-
-
-@app.delete("/api/v1/chat/sessions/{session_id}")
-async def delete_chat_session(session_id: str):
-    async with get_db() as db:
-        stmt = sa_select(ChatSession).where(ChatSession.id == uuid.UUID(session_id))
-        result = await db.execute(stmt)
-        session = result.scalar_one_or_none()
-        if not session:
-            raise HTTPException(404, "Session not found")
-        await db.delete(session)
-        await db.commit()
-        return {"status": "deleted"}
 
 
 # ── The web app, served by the API itself (optional) ─────────────────────
