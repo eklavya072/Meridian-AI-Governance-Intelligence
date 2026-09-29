@@ -28,7 +28,6 @@ import AnimatedSelect from "@/components/AnimatedSelect";
 import ModuleStack, { type ModuleStackItem } from "@/components/ModuleStack";
 import SpecularButton from "@/components/SpecularButton";
 import {
-  BreadthPanel,
   CoverageDonut,
   DepthGauge,
   StageHistogram,
@@ -1356,15 +1355,6 @@ function DecisionAnalyticsCard({
           <StageHistogram analytics={analytics} />
         </motion.div>
       </div>
-      {analytics.mechanisms_total ? (
-        <motion.div
-          variants={staggerChild}
-          className="rounded-xl border border-[color:var(--border)] bg-white p-4 mt-4"
-        >
-          <p className="eyebrow mb-3">Mechanism Breadth</p>
-          <BreadthPanel analytics={analytics} />
-        </motion.div>
-      ) : null}
 
       {/* Row 2: the dimension radar — every dimension at a glance, each
           vertex on the ring of its coverage tier, sitting right below the
@@ -1805,10 +1795,11 @@ export default function AnalysisPage() {
       {analyses.length > 1 && (
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-sm font-semibold text-navy-950">Documents evaluated:</span>
-          {[...analyses].sort(byStage).map((a) => {
-            // Labelled by what was evaluated, in the order the document set
-            // grew. A workspace keeps one run per document set, so the labels
-            // are distinct without a date.
+          {[...analyses].sort((a, b) => byStage(b, a)).map((a) => {
+            // Labelled by what was evaluated: the full document set first
+            // (the country's assessment, and the run the page opens on), then
+            // each smaller set. A workspace keeps one run per document set,
+            // so the labels are distinct without a date.
             const docs = analysisDocuments(a);
             const base = docs.length > 0 ? docs.join(" + ") : "Untitled run";
             // Kept selectable, never hidden — but a reader comparing runs has
