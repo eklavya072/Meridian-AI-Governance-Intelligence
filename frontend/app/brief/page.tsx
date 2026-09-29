@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Workspace, BriefDocument } from "@/lib/api";
-import SpecularButton from "@/components/SpecularButton";
+import Button from "@/components/Button";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import { byCountryOrder } from "@/lib/countryOrder";
-import InkReveal from "@/components/InkReveal";
 
 import palette from "@/lib/palette.json";
+import PageHeader from "@/components/PageHeader";
 function SectionHeading({ index, children }: { index: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 mt-10 mb-4">
@@ -115,17 +115,7 @@ export default function BriefPage() {
 
   return (
     <div className="space-y-8">
-      {/* Centered heading block, with the InkReveal entrance (words rise,
-          a light sweeps across, a rule draws beneath). Size and colour are
-          unchanged — only the text effect is added. */}
-      <div className="text-center">
-        <h1 className="text-[clamp(3.25rem,7vw,4rem)] leading-[1.05] font-extrabold text-grey-950 tracking-tight">
-          <InkReveal text="Executive Brief" />
-        </h1>
-        <p className="text-sm text-grey-700 mt-2 max-w-2xl mx-auto">
-          A concise synthesis of the analysis.
-        </p>
-      </div>
+      <PageHeader title="Executive Brief" subtitle="A concise synthesis of the analysis." />
 
       {/* Controls */}
       <div className="bg-white rounded-xl border border-black/[0.10] shadow-sm p-5">
@@ -152,60 +142,34 @@ export default function BriefPage() {
                 }))}
             />
           </div>
-          {/* Primary action: the same black SpecularButton as the Analysis
-              page's View Analysis. Once a brief exists it becomes a plain
-              compact button — the same size as the download buttons it
-              sits beside. generate() no-ops without a selection, so it
-              never greys out; disabled only while a call is in flight. */}
+          {/* Primary action until a brief exists, then a secondary one beside
+              the downloads. generate() no-ops without a selection, so it is
+              disabled only while a call is in flight. */}
           {brief && workspaces.find((w) => w.id === selectedWs)?.locked ? null : brief ? (
-            <button
-              onClick={generate}
-              disabled={loading}
-              className="pressable border border-grey-950/20 text-grey-950 px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-grey-950/5 disabled:opacity-50 transition-colors"
-            >
+            <Button variant="secondary" onClick={generate} disabled={loading}>
               {loading ? "Generating..." : "Regenerate Brief"}
-            </button>
+            </Button>
           ) : (
-            <SpecularButton
-              size="md"
-              className="specular-button--compact"
-              radius={12}
-              tint={palette.black}
-              tintOpacity={1}
-              blur={0}
-              textColor={palette.white}
-              lineColor={palette.white}
-              baseColor={palette.black}
-              intensity={1.2}
-              shineSize={10}
-              shineFade={40}
-              thickness={1.2}
-              speed={0.35}
-              followMouse
-              proximity={250}
-              autoAnimate={false}
-              disabled={loading}
-              onClick={generate}
-            >
+            <Button disabled={loading} onClick={generate}>
               {loading ? "Generating..." : "Generate Brief"}
-            </SpecularButton>
+            </Button>
           )}
           {brief && (
             <>
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => download("pdf")}
                 disabled={exporting !== null}
-                className="pressable border border-grey-950/20 text-grey-950 px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-grey-950/5 disabled:opacity-50 transition-colors"
               >
                 {exporting === "pdf" ? "Preparing..." : "Download PDF"}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => download("docx")}
                 disabled={exporting !== null}
-                className="pressable border border-grey-950/20 text-grey-950 px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-grey-950/5 disabled:opacity-50 transition-colors"
               >
                 {exporting === "docx" ? "Preparing..." : "Download DOCX"}
-              </button>
+              </Button>
             </>
           )}
         </div>

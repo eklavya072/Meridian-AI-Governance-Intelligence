@@ -27,7 +27,8 @@ import DepthBadge from "@/components/DepthBadge";
 import AnimatedSelect from "@/components/AnimatedSelect";
 import { byCountryOrder } from "@/lib/countryOrder";
 import ModuleStack, { type ModuleStackItem } from "@/components/ModuleStack";
-import SpecularButton from "@/components/SpecularButton";
+import Button from "@/components/Button";
+import PageHeader from "@/components/PageHeader";
 import {
   CoverageDonut,
   DepthGauge,
@@ -1703,43 +1704,27 @@ export default function AnalysisPage() {
   return (
     <FrameworkLibraryContext.Provider value={frameworks}>
     <div className="space-y-8">
-      {/* Centred heading with the Ask AI button anchored right. Symmetric
-          side columns — the left one mirrors the button's reserved width —
-          keep the centre column optically centred whether or not the
-          button is present. */}
-      <div className="flex items-center">
-        <div aria-hidden className="w-24 shrink-0" />
-        <div className="min-w-0 flex-1 text-center">
-          {/* Static heading — the previous BlurText reveal effect was
-              removed at the user's request. Size, weight and colour
-              (clamp 3.25rem → 4rem, 800, #0A0A0A) are unchanged. */}
-          <h1 className="text-[clamp(3.25rem,7vw,4rem)] leading-[1.05] font-extrabold text-grey-950 tracking-tight text-center">
-            Governance Analysis
-          </h1>
-          <p className="text-grey-950 font-medium mt-4 max-w-2xl mx-auto">
-            Evidence-based gap analysis of the policy across eight governance
-            dimensions.
-          </p>
-        </div>
-        <div className="flex w-24 shrink-0 justify-end">
-        {analysis && (
-          <button
-            onClick={() => {
-              // Force advisor mode: the side chat answers ONLY about this
-              // analysis — how each finding was reached, why, the evidence
-              // and reasoning — scoped to the loaded workspace.
-              setWorkspaceId(selectedWs);
-              setFindingContext(null, null);
-              setMode("advisor");
-              openPanel();
-            }}
-            className="pressable shrink-0 bg-grey-950 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-grey-800 transition-colors"
-          >
-            Ask AI
-          </button>
-        )}
-        </div>
-      </div>
+      <PageHeader
+        title="Governance Analysis"
+        subtitle="Evidence-based gap analysis of the policy across eight governance dimensions."
+        aside={
+          analysis && (
+            <Button
+              className="px-4 py-2"
+              onClick={() => {
+                // Advisor mode, scoped to the loaded workspace: the chat
+                // answers about this analysis and the evidence behind it.
+                setWorkspaceId(selectedWs);
+                setFindingContext(null, null);
+                setMode("advisor");
+                openPanel();
+              }}
+            >
+              Ask AI
+            </Button>
+          )
+        }
+      />
 
       {/* Controls card — identical chrome to the Executive Brief page's
           Select Workspace card (same white surface, border, shadow,
@@ -1763,29 +1748,9 @@ export default function AnalysisPage() {
           </div>
           {/* Always black and always clickable-looking — loadAnalysis()
               itself no-ops when no workspace is selected. */}
-          <SpecularButton
-            size="md"
-            className="specular-button--compact"
-            radius={12}
-            tint={palette.black}
-            tintOpacity={1}
-            blur={0}
-            textColor={palette.white}
-            lineColor={palette.white}
-            baseColor={palette.black}
-            intensity={1.2}
-            shineSize={10}
-            shineFade={40}
-            thickness={1.2}
-            speed={0.35}
-            followMouse
-            proximity={250}
-            autoAnimate={false}
-            disabled={loading}
-            onClick={loadAnalysis}
-          >
+          <Button disabled={loading} onClick={loadAnalysis}>
             {loading ? "Loading..." : "View Analysis"}
-          </SpecularButton>
+          </Button>
         </div>
       </div>
 

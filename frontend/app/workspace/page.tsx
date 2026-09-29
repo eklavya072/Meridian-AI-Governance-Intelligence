@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { api, Workspace } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import TiltCard from "@/components/TiltCard";
-import SpecularButton from "@/components/SpecularButton";
-import EditorialReveal from "@/components/EditorialReveal";
+import Button from "@/components/Button";
 import SmoothInput from "@/components/SmoothInput";
 import { parseServerTime } from "@/lib/utils";
 import { byCountryOrder } from "@/lib/countryOrder";
 
 import palette from "@/lib/palette.json";
+import PageHeader from "@/components/PageHeader";
 export default function WorkspacePage() {
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -235,19 +235,10 @@ export default function WorkspacePage() {
 
   return (
     <div className="space-y-8">
-      <div className="text-center">
-        {/* Responsive size: 52px on narrow panes up to 64px on wide
-            screens — larger than the old fixed 52px everywhere a real
-            monitor can take it, without the heading wrapping to three
-            ragged lines on smaller windows. */}
-        <h1 className="text-[clamp(3.25rem,7vw,4rem)] leading-[1.05] font-extrabold text-grey-950 tracking-tight">
-          <EditorialReveal text="Country Office Workspace" />
-        </h1>
-        <p className="text-grey-700 mt-3 max-w-2xl mx-auto">
-          Create a workspace to analyze a national policy document against
-          reference frameworks.
-        </p>
-      </div>
+      <PageHeader
+        title="Country Office Workspace"
+        subtitle="Create a workspace to analyze a national policy document against reference frameworks."
+      />
 
       {error && (
         <div className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
@@ -285,37 +276,10 @@ export default function WorkspacePage() {
           Reference frameworks are selected automatically based on each
           governance dimension and the document's region.
         </div>
-
-        {/* Create button "comes alive": grey when the form is incomplete,
-            navy the instant both fields are valid — the readiness affordance
-            is kept via a conditional tint, and the specular edge shine
-            tracks the cursor (SpecularButton, React Bits). */}
-        {/* Always black and always clickable. createWorkspace() itself
-            no-ops when either field is empty — the button never greys out
-            or disables; it simply does nothing until there's real input. */}
-        <SpecularButton
-          size="md"
-          className="specular-button--compact"
-          radius={12}
-          tint={palette.black}
-          tintOpacity={1}
-          blur={0}
-          textColor={palette.white}
-          lineColor={palette.white}
-          baseColor={palette.black}
-          intensity={1.2}
-          shineSize={10}
-          shineFade={40}
-          thickness={1.2}
-          speed={0.35}
-          followMouse
-          proximity={250}
-          autoAnimate={false}
-          disabled={creating}
-          onClick={createWorkspace}
-        >
+        {/* createWorkspace() no-ops until both fields are filled. */}
+        <Button disabled={creating} onClick={createWorkspace}>
           {creating ? "Creating..." : "Create Workspace"}
-        </SpecularButton>
+        </Button>
 
         {/* Hidden picker for the freshly-created workspace (see createWorkspace). */}
         <input

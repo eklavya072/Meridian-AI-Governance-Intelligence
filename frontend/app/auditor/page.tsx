@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { api, ChatCitation, ChatSessionInfo } from "@/lib/api";
 import { EASE, DUR } from "@/lib/motion";
-import SplitText from "@/components/SplitText";
+import PageHeader from "@/components/PageHeader";
 import MarkdownLite from "@/components/MarkdownLite";
 
 interface ChatMessage {
@@ -293,23 +293,11 @@ export default function AuditorPage() {
           History was cut off. */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <SplitText
-            tag="h1"
-            text="AI Auditor"
-            className="text-3xl font-bold text-grey-950 tracking-tight"
-            splitType="chars"
-            delay={45}
-            duration={0.6}
-            ease="power3.out"
-            from={{ opacity: 0, y: 40 }}
-            to={{ opacity: 1, y: 0 }}
-            textAlign="left"
-            playOnMount
+          <PageHeader
+            compact
+            title="AI Auditor"
+            subtitle="One assistant for AI policy assessment — ask about governance dimensions and the international frameworks."
           />
-          <p className="mt-1 text-sm text-grey-700">
-            One assistant for AI policy assessment — ask about governance
-            dimensions and the international frameworks.
-          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button

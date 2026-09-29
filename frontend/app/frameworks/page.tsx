@@ -6,8 +6,8 @@ import { motion } from "motion/react";
 import { api, Framework } from "@/lib/api";
 import TiltCard from "@/components/TiltCard";
 import UnderlineLink from "@/components/UnderlineLink";
-import WarpText from "@/components/WarpText";
-import { EASE, staggerContainer, staggerChild } from "@/lib/motion";
+import PageHeader from "@/components/PageHeader";
+import { staggerContainer, staggerChild } from "@/lib/motion";
 
 import palette from "@/lib/palette.json";
 // URL-safe id for a framework card, matched by the analysis page's deep link
@@ -118,47 +118,10 @@ function FrameworksContent() {
 
   return (
     <div className="space-y-8">
-      {/* Simple header — plain surface, no texture, no gradient. The visual
-          interest belongs to the framework data itself. */}
-      <div className="px-1 py-2">
-        {/* Real heading for semantics/SEO; WarpText renders the visual. */}
-        <h1 className="sr-only">Framework Library</h1>
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: EASE.out }}
-        >
-          {/* The sr-only h1 above carries the heading semantics; the warp
-              visual is decorative, so it is hidden from assistive tech. */}
-          <div aria-hidden="true">
-            {/* Explicit min-height: the canvas is absolutely positioned and
-                WarpText's fit-logic only shrinks text to fit, so a collapsed
-                container would rasterize the heading tiny. 100px >= max
-                fontSize (4rem) / 0.78 + padding. Size matched to the other
-                page headings (clamp 3.25rem → 4rem). */}
-            <WarpText
-              text="Framework Library"
-              color={palette.black}
-              fontSize="clamp(3.25rem, 7vw, 4rem)"
-              fontWeight={800}
-              letterSpacing="-0.03em"
-              lineHeight={0.95}
-              speed={0.5}
-              warpStrength={0.09}
-              refraction={0.012}
-              style={{ minHeight: 110 }}
-            />
-          </div>
-        </motion.div>
-        <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: EASE.out, delay: 0.06 }}
-          className="text-grey-600 mt-2 max-w-2xl mx-auto text-center"
-        >
-          Reference frameworks used for analysis. Sources are config-driven.
-        </motion.p>
-      </div>
+      <PageHeader
+        title="Framework Library"
+        subtitle="Reference frameworks used for analysis. Sources are config-driven."
+      />
 
       {error && (
         <div className="bg-status-red-tint border border-status-red-line text-status-red px-4 py-3 rounded-lg text-sm">
