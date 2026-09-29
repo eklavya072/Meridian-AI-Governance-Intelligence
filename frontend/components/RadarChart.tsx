@@ -222,7 +222,7 @@ export function RadarLabels({
   const { metrics, geometry, hoverIndex } = useRadar();
   const { cx, cy, radius, angleFor } = geometry;
 
-  // Label grey = grey-600 (#737373); hovered label goes to the primary.
+  // Label grey = grey-600; hovered label goes to the primary.
   return (
     <g fontSize={fontSize}>
       {metrics.map((m, i) => {

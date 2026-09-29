@@ -23,6 +23,9 @@ module.exports = {
         chart: palette.chart,
         /* The two download formats, in the colours their readers know. */
         file: palette.file,
+        /* The landing's accent, used in the app only to mark state: focus,
+           the active page, selection, and the evidence thread. */
+        brass: palette.brass,
       },
 
       /* ── Typography: Space Grotesk (display, distinctive grotesque) +
@@ -36,6 +39,8 @@ module.exports = {
         /* IBM Plex Mono on the landing route (lib/landingFonts.ts); the
            system monospace everywhere else, where the variable is unset. */
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+        /* Newsreader, loaded by the landing and the executive brief only. */
+        serif: ["var(--font-serif)", "Iowan Old Style", "Georgia", "serif"],
       },
 
       /* Real type scale — 12/14/16/18/24/32/48 with consistent line-height

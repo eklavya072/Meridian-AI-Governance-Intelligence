@@ -210,11 +210,12 @@ body {
     transform: scaleX(1);
   }
 
-  /* Nav variant: the underline stays drawn on the active route, in a
-     light grey instead of currentColor. */
+  /* Nav variant: the underline stays drawn on the active route, in the
+     landing's gold (palette.brass.light), which is the one accent the two
+     halves of the site share. */
   .link-swipe-active::after {
     transform: scaleX(1);
-    background: #D4D4D4;
+    background: #cea850;
   }
 
   /* Auto-hiding nav — slides up out of view on scroll-down and back on
@@ -275,7 +276,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
 /* The shine button's own focus ring is a translucent version of its white
    label, which vanishes on the light app pages. */
 .shine-button:focus-visible {
-  outline: 2px solid var(--black);
+  outline: 2px solid #6c5513; /* palette.brass */
   outline-offset: 3px;
 }
 
@@ -288,4 +289,51 @@ html, body { overflow-x: hidden; overflow-x: clip; }
 .typing-dot { animation: typing-dot 1.2s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
 @media (prefers-reduced-motion: reduce) {
   .typing-dot { animation: none; opacity: 0.6; }
+}
+
+/* Selection carries the brand accent, as it does on the landing. */
+::selection {
+  background: #f3eee2; /* palette.brass.tint */
+  color: #0a0a0a;
+}
+
+/* The evidence thread (components/EvidenceThread.tsx). At rest a faint
+   rule joins claim and passage; on hover it draws in brass from the claim
+   down into the source, and the passage takes a brass tint. */
+.evidence-thread .et-base {
+  fill: none;
+  stroke: rgba(10, 10, 10, 0.14);
+  stroke-width: 1.25;
+}
+.evidence-thread .et-draw {
+  fill: none;
+  stroke: #6c5513; /* palette.brass */
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 560ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.evidence-thread .et-dot {
+  fill: rgba(10, 10, 10, 0.28);
+  transition: fill 200ms ease-out, transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.evidence-thread .et-source {
+  transition: background-color 280ms ease-out 180ms, box-shadow 280ms ease-out 180ms;
+}
+.evidence-thread:hover .et-draw,
+.evidence-thread:focus-within .et-draw { stroke-dashoffset: 0; }
+.evidence-thread:hover .et-dot,
+.evidence-thread:focus-within .et-dot { fill: #6c5513; transform: scale(1.25); }
+.evidence-thread:hover .et-source,
+.evidence-thread:focus-within .et-source {
+  background-color: #f3eee2; /* palette.brass.tint */
+  box-shadow: 0 0 0 4px #f3eee2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .evidence-thread .et-draw { transition: none; }
+  .evidence-thread .et-dot,
+  .evidence-thread .et-source { transition: none; }
 }

@@ -164,10 +164,10 @@ export function RunComparisonHeatmap({ analyses }: { analyses: Analysis[] }) {
                 >
                   {cell ? (
                     <>
-                      <span className="text-[11px] font-bold uppercase tracking-wide leading-tight text-center text-white">
+                      <span className={`text-[11px] font-bold uppercase tracking-wide leading-tight text-center ${cell.coverage === "Partial" ? "text-grey-950" : "text-white"}`}>
                         {cell.coverage}
                       </span>
-                      <span lang="en" className="text-[10px] font-medium leading-tight text-center text-white/90 hyphens-auto break-words">
+                      <span lang="en" className={`text-[10px] font-medium leading-tight text-center hyphens-auto break-words ${cell.coverage === "Partial" ? "text-grey-950/80" : "text-white/90"}`}>
                         {cell.depth}
                       </span>
                     </>
