@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Workspace, BriefDocument } from "@/lib/api";
 import SpecularButton from "@/components/SpecularButton";
 import AnimatedSelect from "@/components/AnimatedSelect";
+import { byCountryOrder } from "@/lib/countryOrder";
 import InkReveal from "@/components/InkReveal";
 
 function SectionHeading({ index, children }: { index: string; children: React.ReactNode }) {
@@ -143,6 +144,7 @@ export default function BriefPage() {
               placeholder="Choose a workspace with a completed analysis..."
               options={workspaces
                 .filter((ws) => ws.status === "complete")
+                .sort(byCountryOrder)
                 .map((ws) => ({
                   value: ws.id,
                   label: `${ws.country} — ${ws.policy_title}`,

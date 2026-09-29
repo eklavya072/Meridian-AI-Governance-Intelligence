@@ -1397,8 +1397,17 @@ async def chat_endpoint(body: ChatRequest):
             else "advisor"
         )
 
+        # A session id the database does not hold starts a new session rather
+        # than failing. The browser keeps its id across a server that lost its
+        # sessions (the demo's database is rebuilt on every restart), and the
+        # first message after that was a 500 on a foreign key.
+        known = None
         if session_id:
             session_uuid = uuid.UUID(session_id) if isinstance(session_id, str) else session_id
+            known = (
+                await db.execute(sa_select(ChatSession).where(ChatSession.id == session_uuid))
+            ).scalar_one_or_none()
+        if known is not None:
             stmt = await db.execute(
                 sa_select(ChatMessage)
                 .where(ChatMessage.session_id == session_uuid)

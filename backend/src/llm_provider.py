@@ -120,6 +120,11 @@ def _response_text(response: Any) -> str:
         ]
     text = "".join(parts)
     if text:
+        if finish.upper() == "MAX_TOKENS":
+            # Cut off at the output budget. Returned, because part of an answer
+            # beats none, but never silently: a reply that ends mid-sentence is
+            # the first thing a reader notices.
+            logger.warning("reply_truncated_at_output_budget", chars=len(text))
         return text
     feedback = getattr(response, "prompt_feedback", None)
     block = getattr(getattr(feedback, "block_reason", None), "name", "") or ""

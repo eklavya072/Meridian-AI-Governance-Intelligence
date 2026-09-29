@@ -256,3 +256,111 @@ class TestAdvisorResponses:
 
         assert "intent" in result
         assert "provider" in result
+
+
+class TestDimensionQuestionsReadTheAnalysis:
+    """A question about a dimension, asked while a run is open, is answered
+    from that dimension's stored record, not from raw document passages."""
+
+    GAP = {
+        "dimension": "Environmental Sustainability",
+        "coverage": "Partial",
+        "implementation_depth": "Emerging",
+        "coverage_reasoning": "3 provisions address it; none imposes a binding duty.",
+        "mechanisms_present": {"energy reporting": 1},
+        "mechanisms_absent": ["carbon disclosure", "e-waste / hardware lifecycle"],
+        "evidence": [
+            {
+                "text": "Providers shall document the energy consumption of the model.",
+                "document_name": "EU AI ACT.pdf",
+                "source_framework": "EU AI ACT.pdf",
+                "page_number": 12,
+            },
+            {
+                "text": "AI actors should minimise environmental impact.",
+                "document_name": "OECD_AI_Principles.pdf",
+                "source_framework": "OECD AI Principles",
+                "page_number": 3,
+            },
+        ],
+    }
+
+    def _ask(self, monkeypatch, question):
+        prompts = []
+
+        def _capture(**kw):
+            prompts.append(kw["prompt"])
+            return "reply"
+
+        monkeypatch.setattr(chat_mod, "generate_text_with_retry", _capture)
+        result = _chat(
+            user_message=question,
+            analysis_results={
+                "gaps": {"Environmental Sustainability": self.GAP},
+                "documents": ["EU AI ACT.pdf"],
+            },
+        )
+        return result, prompts[-1] if prompts else ""
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "why is environment sustainability partially covered for eu",
+            "Why did environmental sustainability only get Partial in this document?",
+            "explain the sustainability verdict",
+            "what does the EU AI Act lack on environmental sustainability?",
+        ],
+    )
+    def test_however_it_is_phrased_it_reads_the_stored_verdict(self, monkeypatch, question):
+        result, prompt = self._ask(monkeypatch, question)
+
+        assert result["mode"] == "advisor"
+        assert "Why the verdict is what it is: 3 provisions address it" in prompt
+
+    def test_the_answer_sees_what_is_missing(self, monkeypatch):
+        _, prompt = self._ask(monkeypatch, "why is environment sustainability partial")
+
+        assert "Mechanisms the document does not establish: carbon disclosure" in prompt
+        assert "Mechanisms the document provides: energy reporting" in prompt
+
+    def test_the_documents_text_is_kept_apart_from_framework_passages(self, monkeypatch):
+        _, prompt = self._ask(monkeypatch, "why is environment sustainability partial")
+
+        doc_part, framework_part = prompt.split("Reference framework passages:")
+        assert "[EU AI ACT.pdf, p. 12]" in doc_part.split("Provisions of the assessed document:")[1]
+        assert "[OECD_AI_Principles.pdf, p. 3]" in framework_part
+
+    def test_a_verdict_answer_has_room_for_examples(self, monkeypatch):
+        _, prompt = self._ask(monkeypatch, "why is environment sustainability partial")
+
+        assert "two or three concrete examples" in prompt
+        assert "under ~140 words" not in prompt
+
+    def test_a_finding_the_session_remembers_does_not_answer_a_different_dimension(
+        self, monkeypatch
+    ):
+        # "Ask about this finding" on Fairness, then a typed question about
+        # sustainability: the answer must be about sustainability.
+        _chat(
+            user_message="why is this partial?",
+            session_id="s-stale",
+            finding_context={"dimension": "Fairness", "coverage": "Partial"},
+        )
+        prompts = []
+        monkeypatch.setattr(
+            chat_mod, "generate_text_with_retry", lambda **kw: prompts.append(kw["prompt"]) or "r"
+        )
+
+        _chat(
+            user_message="why is environmental sustainability partial?",
+            session_id="s-stale",
+            analysis_results={"gaps": {"Environmental Sustainability": self.GAP}},
+        )
+
+        assert "Dimension: Environmental Sustainability" in prompts[-1]
+        assert "Dimension: Fairness" not in prompts[-1]
+
+    def test_without_an_open_run_a_document_question_still_reads_the_document(self):
+        result = _chat(user_message="what does this document say about sustainability?")
+
+        assert result["mode"] == "document_overview"

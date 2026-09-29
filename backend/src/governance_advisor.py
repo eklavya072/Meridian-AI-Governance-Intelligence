@@ -16,7 +16,6 @@ from typing import Any
 import structlog
 
 from src.analysis_prompts import DIMENSION_DEFINITIONS
-from src.gap_analyzer import GOVERNANCE_DIMENSIONS
 from src.guardrails import GREETING_PATTERNS
 
 logger = structlog.get_logger()
@@ -48,14 +47,15 @@ DIMENSION_ALIASES: dict[str, list[str]] = {
         "audit",
         "reporting",
     ],
+    # Not "responsible"/"responsibility": in AI policy they mostly mean
+    # "responsible AI", which is no dimension in particular, and they pulled
+    # "who is responsible for data protection?" away from Privacy.
     "Accountability": [
         "accountability",
-        "responsible",
         "liability",
         "oversight",
         "redress",
         "grievance",
-        "responsibility",
     ],
     "Privacy": [
         "privacy",
@@ -210,24 +210,47 @@ def _normalize(text: str) -> str:
     return text.strip().lower()
 
 
+# The dimension's own name, in the forms people type it. Checked before the
+# aliases: "why is environment sustainability partial" names a dimension
+# outright, and must not lose to a looser alias elsewhere in the sentence.
+_DIMENSION_NAMES: dict[str, str] = {
+    "Transparency": r"transparen\w*",
+    "Accountability": r"accountab\w*",
+    "Privacy": r"privacy",
+    "Safety": r"safety",
+    "Human Autonomy": r"human\s+autonomy|autonomy",
+    "Inclusivity": r"inclusiv\w*|inclusion",
+    "Fairness": r"fairness",
+    "Environmental Sustainability": r"environment(?:al)?\s+sustainab\w*|sustainab\w*|environment(?:al)?",
+}
+
+
 def _extract_dimension(text: str) -> str | None:
-    """Extract a governance dimension from text, handling aliases."""
+    """The governance dimension a message is about, or None.
+
+    A dimension named outright wins; failing that, the alias that appears
+    FIRST in the message. Aliases match whole words only — as bare
+    substrings, "audit" fired on "auditor" and "responsible" on anything that
+    mentioned who is responsible for something — and the first alias in
+    dictionary order used to win however late it came in the sentence.
+    """
     normalized = _normalize(text)
-    for dim, aliases in DIMENSION_ALIASES.items():
-        for alias in aliases:
-            if re.search(alias, normalized):
-                return dim
-    match = _DIMENSION_PATTERN.search(normalized)
-    if match:
-        matched = match.group(1).lower()
-        for dim, aliases in DIMENSION_ALIASES.items():
-            if matched in [a.lower() for a in aliases] or matched == dim.lower():
-                return dim
-        # direct match
-        for dim in GOVERNANCE_DIMENSIONS:
-            if dim.lower() == matched:
-                return dim
-    return None
+    named = [
+        (m.start(), dim)
+        for dim, pattern in _DIMENSION_NAMES.items()
+        for m in [re.search(rf"\b(?:{pattern})\b", normalized)]
+        if m
+    ]
+    if named:
+        return min(named)[1]
+    hits = [
+        (m.start(), dim)
+        for dim, aliases in DIMENSION_ALIASES.items()
+        for alias in aliases
+        for m in [re.search(rf"\b{alias}\b", normalized)]
+        if m
+    ]
+    return min(hits)[1] if hits else None
 
 
 def classify_intent(
@@ -331,9 +354,12 @@ def _build_concept_response(
     return "\n".join(lines)
 
 
-def _gap_to_finding_context(gap: dict[str, Any]) -> dict[str, Any]:
+def _gap_to_finding_context(
+    gap: dict[str, Any], documents: list[str] | None = None
+) -> dict[str, Any]:
     """Map a saved governance-gap dict (including Module 1-4 fields) to the flat
-    context shape the response generators read."""
+    context shape the response generators read. `documents` names the files
+    the run evaluated, so evidence can be told apart from framework passages."""
     m1 = gap.get("module_1") or {}
     m2 = gap.get("module_2") or {}
     m3 = gap.get("module_3") or {}
@@ -362,6 +388,12 @@ def _gap_to_finding_context(gap: dict[str, Any]) -> dict[str, Any]:
         "roadmap": m3,
         "case_intelligence": m4,
         "evidence": gap.get("evidence", []),
+        "mechanisms_present": gap.get("mechanisms_present") or {},
+        "mechanisms_absent": gap.get("mechanisms_absent") or [],
+        "priority_gaps": gap.get("priority_gaps") or [],
+        "risk_basis": gap.get("risk_basis"),
+        "confidence_method": gap.get("confidence_method"),
+        "documents": documents or [],
     }
 
 

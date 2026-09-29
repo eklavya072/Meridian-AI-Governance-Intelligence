@@ -301,3 +301,19 @@ class TestFrameworkSync:
             ).status_code
             == 403
         )
+
+
+class TestChatSessions:
+    def test_an_unknown_session_id_starts_a_new_session(self, client, monkeypatch):
+        # The browser keeps its session id when the server loses its sessions
+        # (the demo database is rebuilt on restart). That used to be a 500.
+        monkeypatch.setattr(main, "chat_fn", lambda **kw: {"reply": "ok", "citations": []})
+        stale = str(uuid.uuid4())
+
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "hello", "workspace_id": "", "session_id": stale},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["session_id"] != stale

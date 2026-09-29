@@ -34,6 +34,7 @@ from src.document_overview import (
 from src.governance_advisor import (
     Intent,
     SessionContext,
+    _extract_dimension,
     _gap_to_finding_context,
     build_concept_response,
     build_educational_response,
@@ -254,6 +255,28 @@ def build_drill_down_context(finding_context: dict[str, Any]) -> str:
     if ctx.get("confidence_method"):
         lines.append(f"Confidence method: {ctx.get('confidence_method')}")
 
+    # Which of the governance mechanisms this dimension calls for the document
+    # provides, and which it does not. This is what "why only Partial" usually
+    # comes down to, and the answer was missing it.
+    present = ctx.get("mechanisms_present") or {}
+    absent = ctx.get("mechanisms_absent") or []
+    if present or absent:
+        if present:
+            lines.append("Mechanisms the document provides: " + ", ".join(present))
+        if absent:
+            lines.append("Mechanisms the document does not establish: " + ", ".join(absent))
+    if ctx.get("priority_gaps"):
+        lines.append(
+            "Priority gaps (absent mechanisms most reference instruments expect): "
+            + "; ".join(
+                f"{p.get('mechanism')} (expected by {p.get('expected_by')})"
+                for p in ctx["priority_gaps"]
+                if isinstance(p, dict)
+            )
+        )
+    if ctx.get("risk_basis"):
+        lines.append(f"Basis for the risk level: {ctx['risk_basis']}")
+
     recommendation = ctx.get("recommendation")
     recommendations = ctx.get("recommendations") or []
     if recommendation or recommendations:
@@ -283,22 +306,32 @@ def build_drill_down_context(finding_context: dict[str, Any]) -> str:
                 f"{str(inc.get('potential_consequence', ''))[:200]}"
             )
 
-    # Evidence used for this finding.
+    # Evidence, split by where it comes from. The assessed document's own
+    # provisions are what an example should quote; a framework passage is what
+    # the document was compared against, and presenting one as the country's
+    # text is the error the brief's evidence base was fixed for.
     evidence = ctx.get("evidence", [])
-    lines.append("")
-    lines.append("Evidence used for this finding:")
-    if not evidence:
-        lines.append("  (no retrieved evidence items)")
-    for e in evidence:
-        fw = e.get("source_framework", "Uploaded Document")
-        page = f" (p. {e.get('page_number')})" if e.get("page_number") else ""
-        score = (
-            f" [similarity: {e.get('similarity_score', 'N/A')}]"
-            if e.get("similarity_score") is not None
-            else ""
-        )
-        lines.append(f"  • [{fw}{page}]{score}")
-        lines.append(f"    {e.get('text', '')[:300]}")
+    documents = set(ctx.get("documents") or [])
+
+    def _is_document(e: dict[str, Any]) -> bool:
+        name = e.get("document_name") or ""
+        if documents:
+            return name in documents
+        return bool(name) and name == e.get("source_framework")
+
+    for heading, items in (
+        ("Provisions of the assessed document", [e for e in evidence if _is_document(e)]),
+        ("Reference framework passages", [e for e in evidence if not _is_document(e)]),
+    ):
+        lines.append("")
+        lines.append(f"{heading}:")
+        if not items:
+            lines.append("  (none recorded)")
+        for e in items:
+            src = e.get("document_name") or e.get("source_framework") or "Uploaded Document"
+            page = f", p. {e.get('page_number')}" if e.get("page_number") else ""
+            lines.append(f"  • [{src}{page}]")
+            lines.append(f"    {e.get('text', '')[:400]}")
     return "\n".join(lines)
 
 
@@ -438,11 +471,30 @@ def build_llm_enrichment_prompt(
         )
 
     parts.append("")
+    if drill_down_context:
+        # A verdict question needs the verdict, its recorded reason, and the
+        # document's own provisions as examples. At ~140 words the model had
+        # room for a restatement and nothing else.
+        parts.append(
+            "Explain the verdict properly, in this order: (1) the coverage and "
+            "depth the analysis reached, and the reason it records, in plain "
+            "words; (2) two or three concrete examples, each quoting a provision "
+            "of the assessed document with its source and page from the finding "
+            "context; (3) what is missing — the mechanisms the document does "
+            "not establish — and what would move the verdict. Quote only the "
+            "assessed document as the country's text; a reference framework "
+            "passage is what the country was compared against, and must be "
+            "named as such. Up to ~260 words.\n\n"
+        )
+        budget = ""
+    else:
+        budget = (
+            "Be CONCISE: answer in under ~140 words unless the user explicitly asks "
+            "for detail, and include only the most relevant citations. A short, "
+            "precise answer beats a long one.\n\n"
+        )
     parts.append(
-        "Be CONCISE: answer in under ~140 words unless the user explicitly asks "
-        "for detail, and include only the most relevant citations. A short, "
-        "precise answer beats a long one.\n\n"
-        "Keep the formatting rules from the system prompt: answer first, short "
+        budget + "Keep the formatting rules from the system prompt: answer first, short "
         "paragraphs, bullets only for real lists, **bold** on two or three "
         "load-bearing terms at most. Do not restate the question, and do not "
         "end with an offer of further help."
@@ -795,12 +847,22 @@ def chat(
     # When a completed run is in hand, a question about the RUN beats a
     # question about the document.
     asks_about_analysis = bool(analysis_results) and is_analysis_overview_question(user_message)
+    # A question that names a dimension while a completed run is open is a
+    # question about that dimension's verdict, however it is phrased: "why is
+    # environment sustainability partially covered for eu" carries a document
+    # marker ("for eu") and was answered from raw passages of the Act, which
+    # say nothing about why the analysis reached its verdict. The stored
+    # record for the dimension does, so the question goes there.
+    asks_about_dimension = bool(analysis_results) and bool(
+        _extract_dimension(user_message) in ((analysis_results or {}).get("gaps") or {})
+    )
     routed_overview = (
         not is_qa
         and not is_overview
         and not has_finding
         and not asks_about_method
         and not asks_about_analysis
+        and not asks_about_dimension
         and bool(workspace_id)
         and is_document_specific_question(user_message)
     )
@@ -1042,17 +1104,33 @@ def chat(
 
                 drill_down_context = None
                 if not is_qa:
-                    ctx = finding_context or session.finding_context
-                    if not ctx and dimension and analysis_results:
+                    # Which finding the answer is about, most specific first:
+                    # one sent with this message, then the dimension the
+                    # question names, then the finding the session remembers.
+                    # The remembered one used to come second, so after "Ask
+                    # about this finding" on Fairness, typing "why is
+                    # environmental sustainability partial?" was answered
+                    # with Fairness's reasoning trail.
+                    ctx = finding_context
+                    named = _extract_dimension(user_message)
+                    if not ctx and named and analysis_results:
                         # Typing "why is Fairness Partial" deserves the same
                         # reasoning trail as clicking "Ask about this finding".
-                        # Only the button path built one, so a typed question —
-                        # the far more common one, and the one that asks "what
-                        # proof do you have" — reached the model with the
-                        # verdict but none of the evidence behind it.
+                        gap = (analysis_results.get("gaps") or {}).get(named)
+                        if isinstance(gap, dict):
+                            ctx = _gap_to_finding_context(
+                                gap, documents=analysis_results.get("documents") or []
+                            )
+                    if not ctx:
+                        remembered = session.finding_context
+                        if remembered and (not named or remembered.get("dimension") == named):
+                            ctx = remembered
+                    if not ctx and dimension and analysis_results:
                         gap = (analysis_results.get("gaps") or {}).get(dimension)
                         if isinstance(gap, dict):
-                            ctx = _gap_to_finding_context(gap)
+                            ctx = _gap_to_finding_context(
+                                gap, documents=analysis_results.get("documents") or []
+                            )
                     if ctx:
                         # Mode C: the FULL deterministic reasoning trail.
                         drill_down_context = build_drill_down_context(ctx)

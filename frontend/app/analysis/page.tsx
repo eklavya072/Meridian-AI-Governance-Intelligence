@@ -25,6 +25,7 @@ import HighlightedText from "@/components/HighlightedText";
 import ProviderBadge from "@/components/ProviderBadge";
 import DepthBadge from "@/components/DepthBadge";
 import AnimatedSelect from "@/components/AnimatedSelect";
+import { byCountryOrder } from "@/lib/countryOrder";
 import ModuleStack, { type ModuleStackItem } from "@/components/ModuleStack";
 import SpecularButton from "@/components/SpecularButton";
 import {
@@ -1671,12 +1672,7 @@ export default function AnalysisPage() {
         // Chat-only workspaces are AI Auditor document chats — they can
         // never have a dimension analysis, so they don't belong in the
         // workspace picker here (same rule as the Workspace page).
-        // Oldest first, so the picker reads in the order the study ran
-        // (EU -> Japan -> India -> Kenya -> Egypt) rather than the API's
-        // newest-first order, which showed the comparison backwards.
-        const usable = data
-          .filter((w) => w.status !== "chat_only")
-          .sort((a, b) => a.created_at.localeCompare(b.created_at));
+        const usable = data.filter((w) => w.status !== "chat_only").sort(byCountryOrder);
         setWorkspaces(usable);
         // ?workspace=<id> (from "View Analysis" on the Workspace page)
         // preselects that workspace and auto-loads its analysis. Read the

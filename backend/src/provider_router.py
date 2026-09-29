@@ -861,11 +861,13 @@ def log_run_summary() -> dict[str, Any]:
     return summary
 
 
-# Chat replies are deliberately concise (the prompts cap them at ~120 words),
-# so chat calls don't need the analysis path's 8192-token generation budget.
-# A smaller output cap makes flash-tier calls complete faster (the API has
-# less output headroom to reserve), while remaining far above any real reply.
-CHAT_MAX_OUTPUT_TOKENS = int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", "1024"))
+# Chat replies run from ~140 words to ~260 for a verdict explanation, so
+# they need less than the analysis path's 8192. The model's reasoning pass
+# counts against this budget too, so 1024 left
+# too little for the answer itself: an explanation of a verdict stopped
+# mid-sentence ("This places the implementation depth at Delegated, meaning
+# the"). The budget is a ceiling, not a cost — a short reply uses little of it.
+CHAT_MAX_OUTPUT_TOKENS = int(os.getenv("CHAT_MAX_OUTPUT_TOKENS", "4096"))
 
 # Wall-clock budget for a single chat turn's LLM work. The retry ladder was
 # written for the analysis pipeline, where a 120-second wait on a 429 is a
