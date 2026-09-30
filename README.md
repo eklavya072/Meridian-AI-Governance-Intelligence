@@ -30,7 +30,7 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 
 | | |
 |---|---|
-| Tests | **1,329 passed, 20 skipped** |
+| Tests | **1,346 passed, 20 skipped** |
 | Coverage (`src`) | **80%** — CI gate 76%, set from measurement |
 | Production image | **1,889 MB** (down from 5,683 MB) |
 | Vulnerabilities | **161 → 131** after remediation (3 fixable HIGH → 0) |
@@ -124,7 +124,9 @@ retried once as two halves.
 ### Deterministic framework selection
 
 Which frameworks are searched is decided **in code, never by the LLM**
-(`backend/src/framework_router.py`):- **Core normative sources** (evaluation) and **practical tools**
+(`backend/src/framework_router.py`):
+
+- **Core normative sources** (evaluation) and **practical tools**
 (recommendations) are always part of the retrieval budget.
 - **Dimension-tagged sources** are *guaranteed* a retrieval slot for their
   dimension (e.g. the World Bank's Digital Progress report is reserved for
@@ -233,21 +235,26 @@ precision the scorer exists to avoid.
 | Backend | Python 3.13, FastAPI, SQLAlchemy (async) |
 | Vector store | ChromaDB (persistent, embedded) + `BAAI/bge-small-en-v1.5` embeddings |
 | LLM | **Gemini** (quota-aware routing, per-key RPM/RPD throttles, failover and backoff across configured credentials) |
-| Verification | Verbatim containment first, then `BAAI/bge-small-en-v1.5` embedding similarity with a keyword-overlap fallback (an NLI cross-encoder was measured and removed) |
+| Verification | Verbatim containment first, then `BAAI/bge-small-en-v1.5` embedding similarity with a keyword-overlap fallback |
 | Database | PostgreSQL 16 |
 | Frontend | Next.js 14 (prerendered; standalone or static export), React 18, TypeScript, Tailwind, Motion, hand-built SVG charts |
 
 ### LLM provider strategy
 
-`LLM_PROVIDER=gemini` is the default. The provider router (`backend/src/provider_router.py`):
+One model, `gemini-3.5-flash-lite`, and one key is the supported
+configuration. The provider router (`backend/src/provider_router.py`):
 
-- rotates **multiple Gemini keys** (`GEMINI_API_KEY`, `GEMINI_API_KEY_2/3/4`)
-  to spread free-tier quota;
 - enforces a **rolling RPM throttle** and a **daily request cap** (persisted to
   `data/gemini_rpd.json` so restarts don't reset the day's count);
 - retries with **jittered backoff** so concurrent dimension calls don't
   re-collide on the same quota window;
-- honours the delay the API itself asks for when every key is exhausted.
+- honours the delay the API itself asks for when quota is exhausted, and
+  fails the run with a clear message rather than a half-finished brief.
+
+It also accepts `GEMINI_API_KEY_2`…`_9` for deployments that legitimately hold
+several credentials (separate projects per environment, or a key rotation
+window). It is not a way to multiply free-tier quota; `.env.example` explains
+why.
 
 ---
 
@@ -265,7 +272,7 @@ brought up by the targets below.
 
 ```bash
 cp .env.example .env          # add your GEMINI_API_KEY
-make up                       # API, Postgres and frontend
+make up                       # API, Postgres, Azurite and frontend
 make ready                    # blocks until /readyz reports ready
 ```
 
@@ -296,7 +303,7 @@ Run `make` with no arguments for the same list.
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg` | PostgreSQL connection |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model. Free tier: 500 requests a day, where every full Flash model allows 20. The eight showcase runs were scored on `gemini-3.5-flash`; verdicts are computed in code either way |
-| `GEMINI_API_KEY` | — | Primary Gemini key (add `_2`/`_3`/`_4` for rotation) |
+| `GEMINI_API_KEY` | — | Gemini key |
 | `CHROMA_PERSIST_DIR` | `./data/chroma` | Vector store location |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed browser origins |
 | `SUBSTANTIVE_RELEVANCE_THRESHOLD` | `0.62` | How close a passage must sit to a dimension before it is cited as a requirement (model-dependent) |
@@ -331,7 +338,7 @@ All endpoints under `/api/v1`. Interactive docs at `/docs`.
 | `GET` | `/brief/{workspace_id}` | Fetch the cached brief |
 | `GET` | `/brief/{workspace_id}/export?format=pdf\|docx` | Export the cached brief (no LLM call) |
 | `POST` | `/chat` | Chat (4 modes: `advisor`, `framework_qa`, `document_overview`, `auditor`) |
-| `GET`/`DELETE` | `/chat/sessions[...]` | List / fetch / delete chat sessions |
+| `GET` | `/chat/sessions` · `/chat/sessions/{id}` | List / fetch chat sessions |
 
 ### Typical flow
 
@@ -366,7 +373,7 @@ demo uses.
 
 | Route | Page |
 |---|---|
-| `/` | Landing — three-section glide: hero (typed tagline), the pipeline (Ingestion → Retrieval → Analysis → Brief → AI Auditor), and the 8-dimensions statement |
+| `/` | Landing — scroll-scrubbed hero film, a sideways track through the standards, the reading and the Auditor, then the method and the close |
 | `/workspace` | Create workspaces, upload policy PDFs, watch analysis status |
 | `/analysis` | Per-dimension cards: evaluation, recommendations, roadmap, and case intelligence, with collapsible evidence toggles |
 | `/brief` | Executive brief preview, coverage dashboard, PDF/DOCX export |
@@ -383,12 +390,13 @@ make test-container  # the same suite INSIDE the built image, as CI does
 make check           # lint, types and tests, in CI's order
 ```
 
-**1,329 passed, 20 skipped. Coverage 80%** on `src`. The CI gate is 76% —
+**1,346 passed, 20 skipped. Coverage 80%** on `src`. The CI gate is 76% —
 set below measured, so it catches regression without being aspirational.
 The suite writes every piece of state (index, uploads, quota ledger) to a
 throwaway directory, so it is safe to run beside a live API.
 
-The twenty skips are deliberate and need external state:
+The twenty skips are deliberate and need external state (Azurite, an indexed
+framework corpus, running services):
 
 ```bash
 RUN_INTEGRATION_TESTS=1 make test   # requires running services
@@ -438,10 +446,10 @@ See **[LAUNCH.md](LAUNCH.md)** for the full runbook. In short:
   retrieval quality.
 - **Background tasks** — FastAPI `BackgroundTasks` (adequate at portfolio scale;
   lost on restart; Celery + Redis is the planned upgrade).
-- **LLM quota** — a run makes about ten requests. A free-tier key allows 20 a
-  day per Google project, so each separately-projected key adds two runs a day;
-  `BATCH_EVALUATION=1` stretches one key to six, at a cost in citation depth. A
-  brief is one more request, and a chat reply one each.
+- **LLM quota** — a run makes about ten requests, a brief one more, a chat
+  reply one each. Free-tier quota is counted per Google project;
+  `BATCH_EVALUATION=1` cuts a run to three requests at a cost in citation
+  depth.
 
 ---
 
@@ -483,6 +491,7 @@ Meridian/
 │   │   ├── llm_provider.py           # Provider client (Gemini)
 │   │   ├── concurrency.py            # Admission control for concurrent analyses
 │   │   ├── brief_synthesis.py        # Executive brief (one synthesis call, cached)
+│   │   ├── brief_emphasis.py         # Marks the key terms in each brief paragraph
 │   │   ├── brief_export.py           # DOCX / PDF rendering from the cached brief
 │   │   ├── chat.py                   # Chat assistant (AI Auditor / Rapporteur)
 │   │   ├── governance_advisor.py     # Intent routing and advisor responses
@@ -500,6 +509,7 @@ Meridian/
 │   │   ├── metrics.py                # Prometheus metrics
 │   │   ├── logging_config.py         # Structured JSON logging
 │   │   └── utils.py                  # Shared helpers
+│   ├── scripts/                  # Index rebuild, framework resync, measurement
 │   ├── tests/                    # unit / integration / evaluation
 │   ├── main.py                   # FastAPI app
 │   ├── Dockerfile
@@ -507,9 +517,13 @@ Meridian/
 │   └── uv.lock                  # fully resolved, committed
 ├── frontend/
 │   ├── app/                      # workspace / analysis / brief / auditor / frameworks / landing
-│   ├── components/               # ModuleStack, CitationAccordion, Gauge, RadarChart, PieChart, ...
-│   └── lib/                      # Typed API client, framework links, motion helpers
-├── docker-compose.yml            # Dev: api + web + postgres
+│   ├── components/               # Page components; analysis/ holds the four module panels
+│   └── lib/                      # Typed API client, palette, framework links, motion helpers
+├── deploy/huggingface/           # Single-container demo image (Hugging Face Space)
+├── docs/                         # Runbook, measurements, incident write-up
+├── loadtest/                     # k6 load test (replay mode, no Gemini calls)
+├── observability/                # Prometheus + Grafana, dashboard as code
+├── docker-compose.yml            # Dev: api + web + postgres + azurite
 ├── docker-compose.prod.yml       # Prod: persistent volumes, healthchecks, Caddy TLS
 ├── Caddyfile                     # Caddy reverse proxy config
 ├── LAUNCH.md                     # Deployment runbook

@@ -51,15 +51,6 @@
   padding: 14px 30px;
 }
 
-/* Middle-size variants — between the tiny text-sm originals and the huge
-   lg preset: comfortable 1rem label with generous-but-not-bloated padding.
-   Declared AFTER the size presets so they win the cascade at equal
-   specificity. */
-.specular-button--compact {
-  font-size: 1rem;
-  padding: 14px 30px;
-}
-
 /* Canvas extends past the button so the rim glow can bleed outside the edge */
 .specular-button__fx {
   position: absolute;

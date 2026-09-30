@@ -186,20 +186,19 @@ from pretending it is not there.
 
 ## Test suite
 
-**Date:** 2026-08-30 · Measured on the environment above, against a clean
-`uv sync --frozen` rather than the development virtualenv.
+**Date:** 2026-09-30 · Measured on the environment above.
 
 | | |
 |---|---|
-| Result | 1,269 passed, 18 skipped |
-| Wall clock | ~10 s |
-| Coverage (`src`) | **78.1%** (9,229 statements, 2,019 missed) |
+| Result | 1,346 passed, 20 skipped |
+| Wall clock | ~16 s (~37 s with coverage) |
+| Coverage (`src`) | **80%** (8,911 statements, 1,757 missed) |
 
-The 18 skips are deliberate and all need external state: 9 Azurite storage
+The 20 skips are deliberate and all need external state: 9 Azurite storage
 integration tests (they run in CI, where Azurite is a service container),
-5 evaluation tests behind `RUN_EVALUATION_TESTS=1` (an indexed corpus),
-3 integration tests behind `RUN_INTEGRATION_TESTS=1`, and 1 needing a PDF
-with a real text layer.
+5 evaluation tests behind `RUN_EVALUATION_TESTS=1` and 2 role tests that need
+an indexed framework corpus, 3 integration tests behind
+`RUN_INTEGRATION_TESTS=1`, and 1 needing a PDF with a real text layer.
 
 ### Bugs the coverage work found
 

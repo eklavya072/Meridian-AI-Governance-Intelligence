@@ -27,14 +27,14 @@ Copy `backend/.env` → `.env.prod` and adjust:
 | Var | Value in production |
 |---|---|
 | `DATABASE_URL` | overridden by compose to the `postgres` service — keep the local value, compose wins |
-| `GEMINI_API_KEY` + `GEMINI_API_KEY_2/3/4` | your real keys (already in `backend/.env`) |
+| `GEMINI_API_KEY` | your key (already in `backend/.env`) |
 | `LLM_PROVIDER` | `gemini` |
 | `GEMINI_MODEL` | as configured |
 | `CORS_ORIGINS` | the browser origin(s), e.g. `https://meridian.example.com` (same-origin via caddy needs nothing; set it if frontend and API live on different domains) |
 | `LOG_LEVEL` | `INFO` |
 | `CHROMA_PERSIST_DIR` | `/app/data/chroma` (compose forces this) |
 
-Compose-level vars for `.env.prod` (root of `aura-sdg/`):
+Compose-level vars for `.env.prod` (repository root):
 
 | Var | Meaning |
 |---|---|
@@ -53,10 +53,10 @@ persistent disk. A $4–8/mo VPS beats every free-tier host for this workload.
 
 ```bash
 # 1. On the server: install docker + compose, clone/copy the repo
-#    (or scp the aura-sdg/ folder).
+#    (or scp the repository folder).
 
 # 2. Ship the corpus + uploads (from your dev machine):
-rsync -avz backend/data/ user@server:/path/to/aura-sdg/backend/data/
+rsync -avz backend/data/ user@server:/path/to/Meridian/backend/data/
 
 # 3. On the server, create .env.prod from backend/.env (see section 1)
 cp backend/.env .env.prod
@@ -88,10 +88,11 @@ always-on host, and the frontend polls for job completion.
 
 ```
 Vercel (frontend — free, static)
-  │  POST /upload/{workspace_id}          <- the "POST /analyses"
+  │  POST /upload/{workspace_id}          <- queues the PDF
+  │  POST /analyze/{workspace_id}/run     <- starts the run
   ▼
 FastAPI (always-on host)
-  ├── saves the PDF, queues the background worker
+  ├── starts the background worker
   └── returns {status: "processing"}     <- job_id = workspace_id, immediate
           ▼
      Background worker (in-process)
@@ -146,7 +147,7 @@ analyses and the background task, so they are not viable for the API.
 **Ship the corpus** (once, to the host's persistent disk):
 
 ```bash
-rsync -avz backend/data/ user@host:/path/to/aura-sdg/backend/data/
+rsync -avz backend/data/ user@host:/path/to/Meridian/backend/data/
 ```
 
 `backend/data` = chroma index (697 MB, the frameworks) + `uploads/` (your
@@ -161,7 +162,7 @@ the VPS itself.
 
 | Var | Value |
 |---|---|
-| `GEMINI_API_KEY` (+ `_2/_3/_4`) | your keys |
+| `GEMINI_API_KEY` | your key |
 | `LLM_PROVIDER` | `gemini` |
 | `DATABASE_URL` | hosted Postgres connection string |
 | `CORS_ORIGINS` | `https://<your-app>.vercel.app` (or custom domain) |

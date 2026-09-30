@@ -145,7 +145,7 @@
     {
       "type": "timeseries",
       "title": "Failover events",
-      "description": "key_rotation, circuit_open, capacity_exhausted. All of this used to be print() on stdout — unparseable, and where every provider signal lived.",
+      "description": "key_rotation, circuit_open, capacity_exhausted, from the structured provider log events.",
       "gridPos": { "h": 6, "w": 14, "x": 10, "y": 19 },
       "targets": [
         {

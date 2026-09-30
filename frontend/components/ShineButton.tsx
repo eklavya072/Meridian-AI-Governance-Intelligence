@@ -26,8 +26,7 @@ export default function ShineButton({
 }) {
   return (
     <SpecularButton
-      size="md"
-      className={`specular-button--compact shine-button ${className}`}
+      className={`shine-button ${className}`}
       radius={12}
       tint={palette.black}
       tintOpacity={1}

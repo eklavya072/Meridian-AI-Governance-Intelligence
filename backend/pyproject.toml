@@ -28,19 +28,15 @@ dependencies = [
     # Vector store + embeddings
     "chromadb>=1.5.9",
     "sentence-transformers>=5.6.0",
-    # Declared explicitly only so [tool.uv.sources] below can pin where it
-    # comes from. Nothing imports torch directly; sentence-transformers does.
+    # Declared so [tool.uv.sources] below can pin where it comes from;
+    # sentence-transformers is what imports it.
     "torch>=2.9.0",
-    # LLM provider. Gemini is the only one; the OpenAI-compatible fallbacks
-    # (Groq, Cerebras) were removed along with the openai client.
+    # LLM provider (Gemini).
     "google-genai>=2.13.0",
-    # Brief export. Both were imported by brief_export.py and undeclared, so
-    # PDF and DOCX export were dead in any environment built from the
-    # dependency file rather than inherited from a local venv.
+    # Brief export (PDF and DOCX).
     "reportlab>=5.0.0",
     "python-docx>=1.2.0",
-    # Framework config (config/frameworks.yaml) — read by framework_sync and
-    # framework_router, also previously undeclared.
+    # Framework config (config/frameworks.yaml).
     "pyyaml>=6.0.3",
     # Structured logging
     "structlog>=26.1.0",
@@ -61,22 +57,17 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.14.0",
     "mypy>=1.18.0",
-    # scripts_measure_verification.py reads the stored analyses straight out
-    # of Postgres; the app itself talks to it through asyncpg.
+    # scripts/measure_verification.py reads stored analyses straight out of
+    # Postgres; the app itself uses asyncpg.
     "psycopg2-binary>=2.9.10",
 ]
 
 [tool.uv]
 package = false
 
-# Torch's default PyPI wheel bundles the NVIDIA CUDA runtime — 43 nvidia-*
-# packages, one of them a single 542MB wheel — and pulled the production
-# image to 5,683MB. Meridian runs bge-small on CPU and has no GPU code path
-# anywhere, so all of it was dead weight in the image and dead surface in the
-# vulnerability scan.
-#
-# Linux resolves from PyTorch's CPU index; macOS stays on PyPI, whose darwin
-# wheels are already CPU-only and have no CUDA variant to choose from.
+# CPU-only torch. The default PyPI wheel bundles the CUDA runtime (several GB
+# of image and scan surface), and Meridian runs its embedding model on CPU.
+# Linux resolves from PyTorch's CPU index; macOS wheels are already CPU-only.
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
@@ -99,16 +90,11 @@ ignore = [
     # Several call sites bind a loop variable inside a closure intentionally
     # (dimension callbacks); flagging every one is noise.
     "B023",
-    # zip(..., strict=) would be a behaviour change, not a cleanup. Every site
-    # pairs vectors that are constructed together (query texts to embeddings,
-    # scores to chunk ids); if one ever came back short, raising mid-analysis
-    # is worse than the current shorter zip, and proving each pair equal-length
-    # is a separate piece of work from a lint pass.
+    # zip(..., strict=): every site pairs vectors built together; raising
+    # mid-analysis on a short one would be worse than the shorter zip.
     "B905",
-    # UP042 wants `class X(str, Enum)` rewritten to StrEnum. These enums are
-    # persisted as Postgres enum labels and serialized into stored analysis
-    # JSON; StrEnum changes __str__ and __format__, so the rewrite risks
-    # moving what lands in the database for a purely stylistic gain.
+    # (str, Enum) -> StrEnum changes __str__/__format__, and these enums are
+    # stored as Postgres labels and in analysis JSON.
     "UP042",
 ]
 
@@ -116,26 +102,17 @@ ignore = [
 # Tests assert on structure, not style; unused imports there are usually a
 # fixture being registered.
 "tests/**" = ["F401", "B011"]
-# main.py calls load_dotenv() before importing anything under src/, and that
-# ordering is load-bearing: modules under src/ read os.getenv into
-# module-level constants at import time (GEMINI_RPM_LIMIT, SEMANTIC_THRESHOLD,
-# LADDER_FLOOR_ENABLED and others), so hoisting the imports above the
-# load_dotenv() call would have them all resolve against an unloaded env.
-# B008 is the FastAPI dependency idiom (File(...), BackgroundTasks()).
+# main.py calls load_dotenv() before importing src/, whose modules read
+# environment variables into constants at import time. B008 is the FastAPI
+# dependency idiom (File(...), BackgroundTasks()).
 "main.py" = ["E402", "B008"]
-# The recovery scripts set HF_HUB_OFFLINE before importing sentence-transformers,
-# for the same load-bearing reason main.py sets the env before importing src/:
-# the import reads it. They previously sat outside ruff entirely, named
-# scripts_*.py at the backend root and excluded by name; they are now linted
-# like everything else apart from that one ordering.
+# The scripts set HF_HUB_OFFLINE before importing sentence-transformers, which
+# reads it on import.
 "scripts/*.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.13"
-# Scoped honestly. These are the modules with no third-party stub gaps and
-# small enough surface that a clean pass is real signal rather than a wall
-# of ignores. The scope widens as modules are typed, and the list is the
-# honest statement of what is checked today — not an aspiration.
+# The modules typed so far; the list widens as more are.
 files = [
     "src/utils.py",
     "src/validation.py",
@@ -143,10 +120,7 @@ files = [
     "src/framework_library.py",
     "src/logging_config.py",
 ]
-# Report only on the files listed above. Without this mypy follows imports
-# and reports errors in modules that are not in scope yet (chromadb-typed
-# call sites in vectorstore.py, for one), which would make the gate a
-# statement about untyped code rather than about the scope we committed to.
+# Report only on the files listed above, not on the modules they import.
 follow_imports = "silent"
 warn_unused_configs = true
 warn_redundant_casts = true
@@ -162,13 +136,10 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-# Module names, not file paths. Listing "main.py" here made coverage treat the
-# backend directory itself as a source root, which put it on the import path a
-# second time and made chromadb's Rust extension load twice —
-# "ImportError: cannot load module more than once per process" on 22 of the
-# test modules, but only under --cov.
+# Module names, not paths: a path source root puts the backend on the import
+# path twice and chromadb's native extension refuses to load a second time.
 source = ["src", "main"]
-omit = ["tests/*", ".venv/*", "scripts_*.py"]
+omit = ["tests/*", ".venv/*", "scripts/*"]
 
 [tool.coverage.report]
 show_missing = true

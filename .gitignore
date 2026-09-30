@@ -65,21 +65,15 @@ htmlcov/
 # ── Editor backups ─────────────────────────────────────────────────────
 *.bak
 
-# ── Demo PDFs staged for the landing page (large, unreferenced by code) ─
-# The DIRECTORY must stay tracked (.gitkeep): frontend/Dockerfile does
-# COPY --from=builder /app/public ./public, which fails on a clean clone if
-# nothing in public/ is committed.
+# ── Frontend public assets ──────────────────────────────────────────────
+# Only the hero film and its poster are tracked; local PDFs and alternative
+# footage stay out of commits, build contexts and image layers.
 frontend/public/*.pdf
-
-# ── Hero footage ────────────────────────────────────────────────────────
-# Everything staged for review stays out; only the chosen, graded pair is
-# tracked. The rejected candidates never reach a commit, a build context,
-# or an image layer.
 frontend/public/hero/*
 !frontend/public/hero/hero-scrub.mp4
 !frontend/public/hero/hero-poster.jpg
 
-# Local editor/assistant config and the pointer to docs/ENGINEERING-NOTES.md
+# Local editor/assistant config
 CLAUDE.md
 **/.claude/
 
@@ -90,9 +84,6 @@ handoff.md
 paper/
 docs/ENGINEERING-NOTES.md
 backend/data/benchmarks/
-
-# ── Build output of the demo scripts ────────────────────────────────────
-dist/
 
 # Local design-tool state (impeccable critique snapshots)
 .impeccable/

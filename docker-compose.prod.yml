@@ -1,7 +1,7 @@
 # Production deployment — Meridian (AI Policy Intelligence Workbench)
 #
 # Usage:
-#   1. Create .env.prod (see LAUNCH.md) with DATABASE_URL, all GEMINI_API_KEY_*,
+#   1. Create .env.prod (see LAUNCH.md) with DATABASE_URL, GEMINI_API_KEY,
 #      CORS_ORIGINS, etc. Secrets must NOT be committed.
 #   2. Ship the indexed corpus + uploads to this server (see LAUNCH.md — rsync
 #      backend/data from your dev machine; the framework library cannot be

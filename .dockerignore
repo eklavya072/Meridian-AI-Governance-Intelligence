@@ -18,8 +18,8 @@
 **/.venv
 **/venv
 
-# Runtime state, not build input: the Chroma index (447MB), the uploaded PDFs,
-# the incident backups (991MB) and generated reports.
+# Runtime state, not build input: the Chroma index, uploaded PDFs and
+# generated reports.
 backend/data/
 
 # The frontend has its own build context and its own Dockerfile.
@@ -43,10 +43,6 @@ frontend/
 .idea
 .vscode
 .claude
-.agents
-.kilo
-.zcode
-.freebuff
 
 # Docs are not build input. README.md is the one exception: pyproject.toml
 # declares it as the project readme, so the build fails without it.

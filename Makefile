@@ -19,8 +19,8 @@ UV           := uv
 RUN          := $(UV) run --project $(BACKEND)
 
 .PHONY: help setup env up down logs ready test test-container lint format \
-        typecheck check build build-prod bench bench-load observability deploy destroy \
-        clean measure ps shell
+        typecheck check build bench bench-load observability deploy destroy \
+        clean ps shell rebuild-index resync-frameworks
 
 help: ## Show the available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -37,7 +37,7 @@ env: ## Create .env from the example if it is missing
 	@test -f .env || (cp .env.example .env && \
 		echo "Created .env from .env.example — add your GEMINI_API_KEY to run an analysis")
 
-up: env ## Bring up the whole stack (API, Postgres, frontend)
+up: env ## Bring up the whole stack (API, Postgres, Azurite, frontend)
 	$(COMPOSE) up --build -d
 	@echo "API      http://localhost:8000  (docs at /docs)"
 	@echo "Frontend http://localhost:3000"
@@ -97,8 +97,6 @@ check: lint typecheck test ## Everything CI runs, in CI's order
 build: ## Build the prod image locally
 	docker build --target prod -f $(BACKEND)/Dockerfile -t $(IMAGE):$(TAG) .
 
-build-prod: build ## Alias for build
-
 rebuild-index: ## Rebuild the vector index from Chroma's own stored text (corrupt HNSW)
 	cd $(BACKEND) && $(UV) run python scripts/rebuild_chroma.py
 
@@ -115,8 +113,6 @@ bench-load: ## k6 load test against the real path, in replay mode (no Gemini cal
 	@echo "    uv run uvicorn main:app --port 8010"
 	cd loadtest && BASE_URL=$${BASE_URL:-http://localhost:8010} k6 run upload_to_brief.js
 
-measure: bench ## Alias for bench
-
 # ── Deployment ───────────────────────────────────────────────────────────
 
 deploy: ## Bring up the production stack (needs .env.prod — see LAUNCH.md)
@@ -132,4 +128,4 @@ destroy: ## Tear down the production stack AND its volumes (destructive)
 clean: ## Remove local caches and build output
 	find $(BACKEND) -name __pycache__ -type d -not -path "*/.venv/*" -exec rm -rf {} + 2>/dev/null || true
 	rm -rf $(BACKEND)/.pytest_cache $(BACKEND)/.mypy_cache $(BACKEND)/.ruff_cache \
-	       $(BACKEND)/.coverage $(BACKEND)/htmlcov frontend/.next
+	       $(BACKEND)/.coverage $(BACKEND)/htmlcov frontend/.next frontend/.next-dev frontend/out
