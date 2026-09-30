@@ -1,4 +1,4 @@
-"""Unit tests for the executive brief (Part 3): LLM synthesis assembly,
+"""Unit tests for the executive brief: LLM synthesis assembly,
 deterministic sections, markdown rendering, and DOCX/PDF exporters.
 
 The synthesis LLM call itself is NOT exercised here (network + quota) — the

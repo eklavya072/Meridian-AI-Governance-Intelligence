@@ -7,14 +7,9 @@ import { Fragment } from "react";
  * Case multi-word phrase ending in Act/Policy/Guidelines/Framework/Strategy)
  * — instead of every match, which would turn a dense paragraph into clutter.
  *
- * The division list must track the vocabulary documents actually use. It
- * originally stopped at Article/Section/Chapter/Annex, so every "Recital 27"
- * in the EU analyses rendered flat — the single most-cited division type in
- * the corpus was the one form that could never be highlighted.
- *
- * The budget scales with paragraph length. A flat cap of 2 left a 900-char
- * evaluation with the same emphasis as a one-line note, so the long panels
- * read as undifferentiated grey.
+ * The division list tracks the vocabulary documents actually use, Recital
+ * included. The budget scales with paragraph length, so a long evaluation
+ * gets more emphasis than a one-line note.
  *
  * Deliberately conservative: if nothing matches, the paragraph renders
  * exactly as plain text, unchanged.

@@ -100,7 +100,7 @@ class TestBuildRevision:
 
 @pytest.fixture
 def gaps():
-    from tests.unit.test_brief_v2 import gaps as _gaps
+    from tests.unit.test_brief_synthesis import gaps as _gaps
 
     return _gaps.__wrapped__()
 
@@ -113,7 +113,7 @@ class TestExportsCarryProvenance:
         # asserts on the real brief shape rather than a hand-written stand-in
         # that could drift from it.
         from src.brief_synthesis import assemble_brief
-        from tests.unit.test_brief_v2 import SCOPE, _synthesis
+        from tests.unit.test_brief_synthesis import SCOPE, _synthesis
 
         brief = assemble_brief(
             workspace_id="w1",

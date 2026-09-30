@@ -373,7 +373,7 @@ class TestArtifactBorneDuties:
             "Training data sets shall be subject to data governance practices.",
             "An AI system shall be designed to enable human oversight.",
         ):
-            assert _classify_base(s).tier == 0, "v2 misses it"
+            assert _classify_base(s).tier == 0, "the base ladder misses it"
             assert classify_provision(s).tier >= TIER_OBLIGATORY, s
 
     def test_government_self_direction_is_still_capped(self):

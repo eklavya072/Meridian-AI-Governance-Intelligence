@@ -130,7 +130,7 @@ export interface GovernanceGap {
   mechanism_adjudication?: string;
   module_1?: Module1Evaluation | null;
   module_2?: Module2Recommendation | null;
-  // ── Module 3 + Module 4 (conditional, Part 2) ──
+  // ── Module 3 + Module 4 (only for Partial / Missing dimensions) ──
   /** Present ONLY for Partial/Missing dimensions (null for Fully Covered — no Module 3+4 call fired). */
   module_3?: Module3Implementation | null;
   /** Present ONLY when a genuinely relevant incident match exists. */
@@ -309,8 +309,6 @@ export interface Analysis {
   /** Model calls this run: one per dimension analysed, one Module 3+4 per
    *  Partial/Missing dimension, one mechanism adjudication. */
   llm_call_count?: number;
-  /** Per-coverage-tier module_2 output sizes (chars) for token-reduction reporting. */
-  tier_stats?: Record<string, { count: number; module2_chars: number; module2_avg_chars: number }> | null;
   /** Executive decision analytics (deterministic aggregates) for dashboards & research. */
   decision_analytics?: DecisionAnalytics | null;
   /** Deterministic scope disclaimer: evaluates provided document(s), not the country's full apparatus. */

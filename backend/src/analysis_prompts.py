@@ -706,8 +706,7 @@ def _national_context_block(country: str = "") -> str:
 
 
 # The evidence headers carry chunk ids, and "cite only numbers that literally
-# appear above" reads as permission to cite one. India's Human Autonomy verdict
-# shipped "in Section 3081a297-54ab-4efd-9c8c-492521016736" three times over.
+# appear above" would otherwise read as permission to cite one as a Section.
 _CHUNK_ID_PROHIBITION = (
     "The bracketed chunk identifiers in the evidence headers are retrieval "
     "bookkeeping, not provisions — never cite one as a Section, Article or "

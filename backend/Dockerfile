@@ -7,32 +7,25 @@
 #   prod    — runtime only: no uv, no compilers, no dev group, non-root
 #
 # Build context is the REPO ROOT, not backend/: the backend reads
-# config/frameworks.yaml, which lives outside backend/. With a backend/
-# context that file never entered the image and every framework-routing
-# call raised FileNotFoundError at runtime.
+# config/frameworks.yaml, which lives outside backend/.
 #
 # Python 3.13 matches .python-version and the interpreter uv.lock is resolved
-# against. The image previously pinned 3.12 while everything was developed and
-# tested on 3.13, which is exactly the drift a lockfile is supposed to remove.
+# against.
 
 ARG PYTHON_VERSION=3.13
 
 # ── base ─────────────────────────────────────────────────────────────────
 # Shared by builder and prod so the runtime libraries cannot drift between
-# what the tests run against and what ships. libmagic1 living only in prod
-# is precisely how the first CI run failed: validation.py imports magic at
-# module scope, so every test that touches the ingestion path collected with
-# "ImportError: failed to find libmagic" in the test image while prod was
-# fine.
+# what the tests run against and what ships (validation.py imports magic at
+# module scope, so the test image needs libmagic1 too).
 FROM python:${PYTHON_VERSION}-slim AS base
 
 # python-magic is a binding, not a reimplementation: validation.py reads the
 # true content type from the file's bytes rather than trusting an extension
 # or a client-supplied MIME, and that needs the C library present.
 # `upgrade` before `install`: the base image tag lags the security archive,
-# and the first Trivy gate blocked the release on openssl 3.5.6-1~deb13u2
-# (CVE-2026-14456, fix available in 3.5.7-1~deb13u2). Pulling the patched
-# packages here is the fix; allowlisting it would not have been.
+# and pulling the patched packages here keeps fixable CVEs out of the image
+# rather than allowlisting them.
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends libmagic1 \
@@ -65,9 +58,7 @@ COPY backend/ ./
 # Config lives at /opt/config, NOT under /app, for the same reason the
 # virtualenv does: docker-compose.yml bind-mounts ./backend onto /app for hot
 # reload, and anything the image put under /app is invisible once that mount
-# is in place. /app/config was hidden exactly that way and /frameworks
-# returned 500 in the compose stack while passing in the standalone
-# container.
+# is in place.
 COPY config/ /opt/config/
 
 # ── models ───────────────────────────────────────────────────────────────
@@ -112,12 +103,9 @@ FROM base AS prod
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin meridian
 
 # The application runs entirely from /opt/venv, so the base image's system
-# pip is never invoked at runtime — and it vendors its own copies of
-# setuptools 70.3.0 and msgpack 1.1.2, both of which carry HIGH advisories
-# (CVE-2025-47273, GHSA-6v7p-g79w-8964) that blocked the first release gate.
-# They were never Meridian dependencies; our locked setuptools is 84.0.0 and
-# nothing depends on msgpack. Removing pip resolves both, drops a package
-# installer from a production image, and makes it smaller.
+# pip is never invoked at runtime — and it vendors its own setuptools and
+# msgpack, which carry HIGH advisories. Removing pip drops them, drops a
+# package installer from a production image, and makes it smaller.
 RUN python -m pip uninstall -y pip setuptools wheel >/dev/null 2>&1 || true; \
     rm -rf /usr/local/lib/python*/site-packages/pip \
            /usr/local/lib/python*/site-packages/pip-* \

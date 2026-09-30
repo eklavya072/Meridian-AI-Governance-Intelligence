@@ -40,8 +40,7 @@ from sqlalchemy.orm import sessionmaker
 from src import metrics
 from src.brief_emphasis import emphasize_brief
 from src.brief_export import render_docx, render_pdf
-from src.brief_synthesis import generate_brief as generate_brief_v2
-from src.brief_synthesis import render_brief_markdown
+from src.brief_synthesis import generate_brief, render_brief_markdown
 from src.chat import chat as chat_fn
 from src.concurrency import CapacityFull, get_slots
 from src.db_models import Base, ChatMessage, ChatSession, Report, WorkspaceStatus
@@ -1062,8 +1061,8 @@ async def get_analysis(workspace_id: str):
         analysis_list = []
         for a in analyses:
             # Analysis-level metrics persisted in the ragas_metrics JSON blob
-            # (llm_call_count / tier_stats / decision_analytics) for the
-            # frontend's call-count and decision-analytics cards.
+            # (llm_call_count / decision_analytics) for the frontend's
+            # call-count and decision-analytics cards.
             metrics = a.ragas_metrics or {}
             analysis_list.append(
                 {
@@ -1078,7 +1077,6 @@ async def get_analysis(workspace_id: str):
                     "total_processing_time": a.total_processing_time or 0.0,
                     "generated_by": a.generated_by or {"provider": "unknown", "tier": "unknown"},
                     "llm_call_count": metrics.get("llm_call_count", 0),
-                    "tier_stats": metrics.get("tier_stats"),
                     "decision_analytics": metrics.get("decision_analytics"),
                     # Deterministic scope disclaimer + evaluated document list.
                     "scope_disclaimer": (metrics.get("scope_disclaimer") or {}).get(
@@ -1143,7 +1141,7 @@ async def _save_brief(db, workspace_id: str, brief: dict, markdown: str) -> None
 
 
 @app.post("/api/v1/brief/{workspace_id}/generate")
-async def generate_brief_v2_route(workspace_id: str):
+async def generate_brief_route(workspace_id: str):
     async with get_db() as db:
         ws_service = WorkspaceService(db)
         workspace = await ws_service.get_workspace(workspace_id)
@@ -1177,7 +1175,7 @@ async def generate_brief_v2_route(workspace_id: str):
             # A model call of tens of seconds: in a thread, so the rest of the
             # API keeps answering while it runs.
             brief = await asyncio.to_thread(
-                generate_brief_v2,
+                generate_brief,
                 workspace_id=workspace_id,
                 country=workspace.country,
                 policy_title=workspace.policy_title,

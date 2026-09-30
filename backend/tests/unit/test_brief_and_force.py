@@ -254,7 +254,7 @@ class TestBriefSections:
 
 @pytest.fixture
 def gaps():
-    from tests.unit.test_brief_v2 import gaps as _gaps
+    from tests.unit.test_brief_synthesis import gaps as _gaps
 
     return _gaps.__wrapped__()
 
@@ -264,7 +264,7 @@ class TestBriefMarkdown:
         # Assembled the way the API assembles it, so the renderer is asserted
         # against the real shape rather than a hand-written stand-in.
         from src.brief_synthesis import assemble_brief
-        from tests.unit.test_brief_v2 import SCOPE, _synthesis
+        from tests.unit.test_brief_synthesis import SCOPE, _synthesis
 
         return assemble_brief(
             workspace_id="w1",
@@ -286,7 +286,7 @@ class TestBriefMarkdown:
         assert len(markdown) > 200
 
     def test_the_scope_disclaimer_survives_rendering(self, gaps):
-        from tests.unit.test_brief_v2 import SCOPE
+        from tests.unit.test_brief_synthesis import SCOPE
 
         markdown = render_brief_markdown(self._brief(gaps))
 

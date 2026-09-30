@@ -192,7 +192,7 @@ from pretending it is not there.
 |---|---|
 | Result | 1,346 passed, 20 skipped |
 | Wall clock | ~16 s (~37 s with coverage) |
-| Coverage (`src`) | **80%** (8,911 statements, 1,757 missed) |
+| Coverage (`src`) | **81%** (8,847 statements, 1,720 missed) |
 
 The 20 skips are deliberate and all need external state: 9 Azurite storage
 integration tests (they run in CI, where Azurite is a service container),

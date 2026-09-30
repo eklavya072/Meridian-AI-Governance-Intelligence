@@ -42,13 +42,11 @@ frontend/
 **/*.bak
 .idea
 .vscode
-.claude
 
 # Docs are not build input. README.md is the one exception: pyproject.toml
 # declares it as the project readme, so the build fails without it.
 docs/
 LAUNCH.md
-CLAUDE.md
 
 **/*.log
 

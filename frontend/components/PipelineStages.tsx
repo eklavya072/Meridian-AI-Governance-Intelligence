@@ -367,12 +367,8 @@ const STAGES = [
   },
 ];
 
-/* One stage, as a row. The sticky deck this replaces was a clever device
-   that cost the section its readability: three of the four cards spent most
-   of their scroll buried under the one on top, and a pipeline whose steps
-   you cannot see side by side is not showing you a pipeline. Rows let all
-   four be compared, and the alternation gives the eye somewhere new to land
-   on each one. */
+/* One stage, as a row: all four can be compared side by side, and the
+   alternation gives the eye somewhere new to land on each one. */
 function StageRow({
   stage,
   index,

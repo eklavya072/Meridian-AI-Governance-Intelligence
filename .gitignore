@@ -72,18 +72,3 @@ frontend/public/*.pdf
 frontend/public/hero/*
 !frontend/public/hero/hero-scrub.mp4
 !frontend/public/hero/hero-poster.jpg
-
-# Local editor/assistant config
-CLAUDE.md
-**/.claude/
-
-# ── Private working material (not for the public repository) ──────────
-# The session handoff, the unpublished working paper and the engineering
-# notes that carry its benchmark results, and the benchmark data itself.
-handoff.md
-paper/
-docs/ENGINEERING-NOTES.md
-backend/data/benchmarks/
-
-# Local design-tool state (impeccable critique snapshots)
-.impeccable/

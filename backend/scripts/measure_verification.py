@@ -118,12 +118,7 @@ def main() -> None:
         f"({embed_secs:.1f}s total, 2 embeds per pair)"
     )
 
-    # The NLI verification path that used to be measured here is gone. It
-    # was wired in, measured against a real Kenya run, and rejected: the
-    # cross-encoder reads 512 tokens against chunks averaging 2,374
-    # characters, so it marked 36 of 48 correct citations irrelevant. It
-    # never changed a verdict — verification is a reporting layer — so the
-    # only thing it moved was the reported citation rate, downwards. See
+    # Why the embedding check rather than an NLI cross-encoder: see
     # docs/MEASUREMENTS.md.
 
 

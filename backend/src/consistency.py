@@ -146,8 +146,7 @@ def detect_covered_synthesis_drift(synthesis: str) -> tuple[int, list[str]]:
 # The verdict is computed, and the model writes the prose around it. When a
 # Covered dimension's reason_flagged still lists explicit gaps ("does not
 # establish", "no provisions", "lacks"), the card would contradict its own
-# label. This scores that text so the contradiction is reconciled rather
-# than shipped.
+# label. This scores that text so the contradiction is reconciled.
 
 # Weight 3: unambiguous gap assertions — the text's own statement that the
 # document lacks something.
@@ -267,9 +266,7 @@ def _is_document_evidence(e: RetrievedEvidence) -> bool:
     """A passage from the assessed document rather than a reference framework.
 
     A document citation's source IS its document; a framework citation names
-    the framework and carries the framework's file as document_name. The old
-    test, source != "unknown", held for every citation, so the check that
-    needs framework evidence could never find it missing.
+    the framework and carries the framework's file as document_name.
     """
     return bool(e.document_name) and e.document_name == e.source_framework
 

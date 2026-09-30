@@ -333,8 +333,7 @@ def _is_document_evidence(e: dict[str, Any], evaluated: set[str]) -> bool:
     """Whether a piece of evidence is the assessed document's own text.
 
     A dimension's evidence also holds the framework passages it was compared
-    against, and printing one of those unlabelled under a country's
-    dimension presented a UNESCO sentence as that country's own text. The
+    against, which must never be printed as the country's own text. The
     run's list of evaluated documents is the test whenever it exists; only a
     record without one falls back to "the source is its own file".
     """

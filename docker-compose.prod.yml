@@ -1,4 +1,4 @@
-# Production deployment — Meridian (AI Policy Intelligence Workbench)
+# Production deployment — Meridian (AI Governance Intelligence Workbench)
 #
 # Usage:
 #   1. Create .env.prod (see LAUNCH.md) with DATABASE_URL, GEMINI_API_KEY,

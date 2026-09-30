@@ -628,9 +628,6 @@ class GapAnalysisResult(BaseModel):
     consistency_report: dict[str, Any] | None = None
     # LLM calls made for this analysis, reported so quota use is observable.
     llm_call_count: int = 0
-    # Per-coverage-tier output statistics (module_2 payload char counts) for
-    # reporting the token reduction of the Fully Covered tier.
-    tier_stats: dict[str, dict[str, Any]] | None = None
     # Executive decision analytics for the whole analysis (summary card and
     # dashboard charts); see compute_decision_analytics.
     decision_analytics: dict[str, Any] | None = None
@@ -4074,23 +4071,6 @@ class GapAnalyzer:
                     other_gaps=complete_results,
                 )
 
-        # Per-tier output statistics for reporting the Fully Covered token
-        # reduction (module_2 payload size, the largest per-dimension output).
-        tier_stats: dict[str, dict[str, Any]] = {}
-        for g in complete_results:
-            tier = g.coverage.value if g.coverage else "Unknown"
-            entry = tier_stats.setdefault(
-                tier, {"count": 0, "module2_chars": 0, "module2_avg_chars": 0.0}
-            )
-            entry["count"] += 1
-            if g.module_2 is not None:
-                entry["module2_chars"] += len(g.module_2.model_dump_json())
-        for entry in tier_stats.values():
-            entry["module2_avg_chars"] = (
-                round(entry["module2_chars"] / entry["count"], 1) if entry["count"] else 0.0
-            )
-        logger.info("tier_output_stats", tier_stats=tier_stats)
-
         # Executive decision analytics — computed AFTER the priority recompute
         # above so highest_priority_dimensions reflects compounding escalation.
         decision_analytics = compute_decision_analytics(complete_results)
@@ -4134,7 +4114,6 @@ class GapAnalyzer:
             },
             consistency_report=consistency_report.to_dict(),
             llm_call_count=llm_call_count,
-            tier_stats=tier_stats,
             decision_analytics=decision_analytics,
         )
         result.total_processing_time = time.time() - start_time

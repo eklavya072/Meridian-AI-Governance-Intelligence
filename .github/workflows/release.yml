@@ -8,9 +8,8 @@ name: Release
 #            pushed until this passes, so a HIGH/CRITICAL finding fails while
 #            the image is still private.
 #   build  — amd64 and arm64 in parallel, each on its NATIVE runner, pushed
-#            by digest. Emulating arm64 through QEMU took ~20 minutes for a
-#            torch-sized image, which was slow enough that queued runs piled
-#            up and got cancelled — and a cancelled run reads as a red badge.
+#            by digest (emulating arm64 through QEMU is far slower for a
+#            torch-sized image).
 #   merge  — assemble the multi-arch manifest list from those digests.
 #
 # Deliberately separate from ci.yml: a slow scan or a registry outage must
@@ -163,8 +162,7 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-latest
           - platform: linux/arm64
-            # Native arm64, free for public repositories. QEMU emulation of a
-            # torch-sized build was the single slowest thing in this pipeline.
+            # Native arm64, free for public repositories.
             runner: ubuntu-24.04-arm
 
     steps:

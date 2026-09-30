@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 export type ModuleStackItem = {
   id: string;
-  /** Card title — the module name shown on the deck card's header bar. */
+  /** Card title — the module name shown on the card's header bar. */
   title: string;
   /** Optional small status on the header bar (dot + text). */
   meta?: ReactNode;
@@ -187,7 +187,7 @@ export default function ModuleStack({
                 else if (info.offset.x > 60) go(-1);
               }}
             >
-              {/* Card chrome — unchanged from the scroll deck cards. */}
+              {/* Card chrome: header band, then the module's content. */}
               <div className="flex w-full flex-col overflow-hidden rounded-xl border border-[color:var(--border)] bg-white shadow-sm">
                 {/* Header band — reads as a real card heading: subtle tint,
                     centered display type, position counter, status meta. */}

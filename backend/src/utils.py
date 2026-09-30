@@ -54,10 +54,8 @@ def reciprocal_rank_fusion(
     """Fuse scored result lists by RANK, highest fused score first.
 
     The per-list scores are discarded on purpose — that is what makes RRF
-    robust across retrievers whose scores are not comparable. This wrapper
-    exists so there is one implementation of the formula: there were two, and
-    they disagreed about whether the first result is rank 0 or rank 1, which
-    is not something two copies of a published formula should differ on.
+    robust across retrievers whose scores are not comparable. The formula
+    itself lives in src.hybrid_search, so there is one implementation of it.
     """
     from src.hybrid_search import reciprocal_rank_fusion as _rrf
 

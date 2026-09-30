@@ -94,7 +94,7 @@ class Report(Base):
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False)
     type = Column(String(50), nullable=False)  # "executive_brief" or "powerpoint"
     file_path = Column(String(1000), nullable=True)
-    # Executive brief (Part 3): content = plain-text/markdown rendering,
+    # Executive brief: content = plain-text/markdown rendering,
     # meta = the full structured brief JSON (single source of truth for the
     # frontend preview and the DOCX/PDF exporters). Columns added via ALTER
     # TABLE in main.py's lifespan for existing installs.

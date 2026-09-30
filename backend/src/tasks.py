@@ -480,9 +480,7 @@ async def run_full_analysis_pipeline(
             analysis_dict["ragas_metrics"] = {
                 "provenance": provenance,
                 "llm_call_count": result.llm_call_count,
-                "tier_stats": result.tier_stats,
                 "decision_analytics": result.decision_analytics,
-                # Computed on every run and, until now, only logged.
                 "consistency": result.consistency_report,
                 "scope_disclaimer": scope_disclaimer,
                 "evaluated_documents": scope_disclaimer["documents"],

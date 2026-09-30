@@ -50,9 +50,9 @@ export function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: numb
   const depth = gap.module_1?.implementation_depth || gap.implementation_depth;
   const failed = Boolean(gap.analysis_error);
 
-  // Skiper16-style scroll deck: one sticky card per module, in order
-  // (Evaluation → Recommendations/Best Practices → Roadmap → Case). The deck
-  // card provides the module name + status meta, so panels are content-only.
+  // One card per module in the ModuleStack carousel, in order (Evaluation →
+  // Recommendations/Best Practices → Roadmap → Case). The card provides the
+  // module name + status meta, so panels are content-only.
   // Items are conditional per the coverage tier — Fully Covered shows Best
   // Practices (no roadmap), Partial/Missing show Recommendations + Roadmap,
   // and Case Intelligence only when a genuine curated incident match exists.
@@ -138,7 +138,7 @@ export function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: numb
       }}
     >
       {/* Header — owns its own corner rounding, because the card does not
-          clip with overflow-hidden (which would break the sticky deck). */}
+          clip with overflow-hidden. */}
       <button
         onClick={() => setOpen((v) => !v)}
         className={`pressable w-full flex items-center justify-between gap-3 px-5 py-4 text-left transition-colors ${
@@ -202,8 +202,7 @@ export function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: numb
       </button>
 
       {/* Expand/collapse: content fades in; the card's own layout animation
-          handles the height growth (no overflow-hidden, so the sticky deck
-          cards keep sticking to the viewport while scrolling). */}
+          handles the height growth. */}
       <AnimatePresence initial={false}>
         {open && (
           <motion.div

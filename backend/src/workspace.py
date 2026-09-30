@@ -115,10 +115,9 @@ class WorkspaceService:
             llm_latency=analysis_data.get("llm_latency", 0.0),
             total_processing_time=analysis_data.get("total_processing_time", 0.0),
             generated_by=analysis_data.get("generated_by"),
-            # Analysis-level metrics (llm_call_count, tier_stats,
-            # decision_analytics) ride in the existing ragas_metrics JSON
-            # column and are surfaced by GET /analyze so the frontend's
-            # call-count / decision-analytics cards actually render.
+            # Analysis-level metrics (llm_call_count, decision_analytics, the
+            # scope disclaimer) ride in the ragas_metrics JSON column and are
+            # surfaced by GET /analyze.
             ragas_metrics=analysis_data.get("ragas_metrics"),
         )
         self.db.add(analysis)

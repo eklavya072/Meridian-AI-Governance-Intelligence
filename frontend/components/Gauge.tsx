@@ -165,7 +165,7 @@ export default function Gauge({
         )}
       </defs>
 
-      {/* Track — the old gauge's full background arc */}
+      {/* Track — the full background arc */}
       <path
         d={arcPath(cx, cy, radius, START, SWEEP)}
         fill="none"

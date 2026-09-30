@@ -31,7 +31,7 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 | | |
 |---|---|
 | Tests | **1,346 passed, 20 skipped** |
-| Coverage (`src`) | **80%** — CI gate 76%, set from measurement |
+| Coverage (`src`) | **81%** — CI gate 76%, set from measurement |
 | Production image | **1,889 MB** (down from 5,683 MB) |
 | Vulnerabilities | **161 → 131** after remediation (3 fixable HIGH → 0) |
 | Fixable HIGH/CRITICAL | **3 → 0**, all fixed at source; `.trivyignore` is empty |
@@ -390,7 +390,7 @@ make test-container  # the same suite INSIDE the built image, as CI does
 make check           # lint, types and tests, in CI's order
 ```
 
-**1,346 passed, 20 skipped. Coverage 80%** on `src`. The CI gate is 76% —
+**1,346 passed, 20 skipped. Coverage 81%** on `src`. The CI gate is 76% —
 set below measured, so it catches regression without being aspirational.
 The suite writes every piece of state (index, uploads, quota ledger) to a
 throwaway directory, so it is safe to run beside a live API.
@@ -410,9 +410,9 @@ against a second verdict computation reappearing, guardrails, framework
 routing and role filtering, brief generation, stability, orphan recovery, and
 the liveness/readiness split.
 
-Least covered, stated plainly: `tasks.py` (the pipeline orchestrator) at
-41% and `workspace.py` at 43% — both mostly database and background-task
-paths — then `chat.py` at 70%. `provider_router.py` is at 92%.
+Least covered, stated plainly: `workspace.py` at 43% and `tasks.py` (the
+pipeline orchestrator) at 49% — both mostly database and background-task
+paths — then `chat.py` at 72%. `provider_router.py` is at 91%.
 
 ---
 

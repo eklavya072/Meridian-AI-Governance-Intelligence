@@ -10,7 +10,7 @@ BACKEND      := backend
 COMPOSE      := docker compose
 IMAGE        ?= ghcr.io/eklavya072/meridian
 TAG          ?= latest
-# Set from the measured suite, not aspirationally. See docs/MEASUREMENTS.md.
+# Just below the measured coverage. See docs/MEASUREMENTS.md.
 COV_MIN      ?= 76
 
 # uv runs everything Python. It resolves from uv.lock, so a target behaves

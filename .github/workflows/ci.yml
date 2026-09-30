@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  # Just below the measured coverage (80%). An aspirational threshold lands
+  # Just below the measured coverage (81%). An aspirational threshold lands
   # red on the first push and teaches everyone to ignore the badge.
   COV_MIN: "76"
 
@@ -153,11 +153,8 @@ jobs:
           echo "prod image runs as: $user"
           test "$user" = "meridian"
 
-      # Four dependencies were once imported and undeclared, so the built
-      # image raised ImportError the moment PDF export or the Groq fallback
-      # was reached — and libmagic1 was installed in prod but not in the test
-      # stage. Importing the whole app is the cheapest check that neither
-      # class of drift has come back.
+      # Importing the whole app is the cheapest check that every runtime
+      # dependency is declared and every system library is installed.
       - name: Assert the prod image can import the full runtime stack
         run: |
           docker run --rm -e GEMINI_API_KEY=ci-placeholder-not-a-real-key meridian:prod \
@@ -234,9 +231,9 @@ jobs:
         if: always()
         run: docker rm -f meridian-smoke || true
 
-  # The acceptance test from the brief, run for real: a stranger clones the
-  # repo, runs `make up`, and reaches a working app plus a passing /readyz
-  # with no instructions beyond the README. Nothing else in this workflow
+  # A stranger clones the repo, runs `make up`, and reaches a working app
+  # plus a passing /readyz with no instructions beyond the README. Nothing
+  # else in this workflow
   # exercises docker-compose.yml or frontend/Dockerfile — the container job
   # runs the API image standalone, and the frontend job builds with npm on
   # the runner. Both could be broken with every other job green.
