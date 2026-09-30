@@ -64,12 +64,12 @@ FROM (
 WHERE c.workspace_id = w.id;
 SQL
 
-# The showcase runs record the build they came from, 97f37e6. Publishing
-# the repository rewrote history to leave unpublished working material out,
-# which changed that commit's hash to 01646e4 without changing a line of its
-# code. The provenance is pointed at the commit that exists.
+# The showcase runs record the build they came from, 97f37e6, a commit ID
+# from before the repository's history was rewritten for publication. The
+# same code (tree 7b1b01d) is b1ecbb2 in the published history, so the
+# provenance is pointed at the commit a reader can open.
 pg_dump $PG --no-owner --no-privileges "$SEED_DB" \
-    | sed 's/97f37e67aacba68bc5cb023ac73c37dd75937e00/01646e49e59e1f9b3cd599c946999298748a74a6/g' \
+    | sed 's/97f37e67aacba68bc5cb023ac73c37dd75937e00/b1ecbb277f77e630f98cca06db3c5ad88f777619/g' \
     > "$OUT/seed.sql"
 dropdb $PG "$SEED_DB"
 
