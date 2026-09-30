@@ -19,7 +19,7 @@ remembering to record something.
 |---|---|---|---|
 | **Availability** — `/healthz` returns 200 | 99% monthly | *not measured — no production deployment* | A single-instance service with an in-process worker cannot honestly promise more. Three nines would require the queue and the redundancy described under "Known limits". |
 | **Successful-analysis rate** — runs reaching `COMPLETE` with no failed dimension | ≥ 95% of runs | *not measured* | The dominant failure is provider quota, which is outside our control. 95% admits the occasional exhausted budget without excusing a code defect. |
-| **Analysis latency** — upload accepted to brief available | p95 < 15 min | *not measured on a healthy provider* | A full run is about ten LLM calls; the three that matter took 20s, 38s and 28s when the model answered, so the floor is set by the provider, not by us. |
+| **Analysis latency** — upload accepted to brief available | p95 < 15 min | **78.9 s**, one live run on a healthy provider (2026-09-30, `docs/MEASUREMENTS.md`); no p95 yet | A full run is about ten LLM calls; the three that matter took 20s, 38s and 28s when the model answered, so the floor is set by the provider, not by us. |
 | **Citation pass rate** — citations that resolve and verify | ≥ 85%, alert below 80% | **88.7%** on 344 verbatim-contained excerpts (2026-08-30, `docs/MEASUREMENTS.md`) | This is the only objective measured against real data, and it is the one that matters most: it is the evidence gate's own pass rate. |
 
 The citation pass rate is the objective to watch. Availability and latency
@@ -164,6 +164,49 @@ procedure, not reported as an exercise.
 
 ---
 
+## Secrets and key rotation
+
+**Where secrets live.** `GEMINI_API_KEY`, `ADMIN_TOKEN` and
+`POSTGRES_PASSWORD` are read from `.env` (development), `.env.prod`
+(production) or the host's secret store (on Hugging Face, Space secrets).
+All three files are git-ignored. CI never holds a real key: the smoke tests
+start the image with a placeholder, and nothing in startup or either probe
+calls the provider.
+
+**Verified absent from history** (2026-09-30): no `.env`, `.env.prod` or
+`backend/.env` has ever been committed, and no commit diff contains a
+Google API key or Hugging Face token pattern. Re-check before any release:
+
+```bash
+git log --all --format=%h -- .env .env.prod backend/.env
+git log --all -p | grep -E "AIza[0-9A-Za-z_-]{30,}|hf_[A-Za-z]{30,}"
+```
+
+Both must print nothing.
+
+**Rotating the Gemini key** — on a schedule, and immediately if a key may
+have been exposed:
+
+1. Create the new key in Google AI Studio. Keep the old one live for now.
+2. Replace `GEMINI_API_KEY` where it is set (`.env.prod`, or the Space
+   secret).
+3. Restart the API: `docker compose -f docker-compose.prod.yml up -d --no-deps api`
+   (the Space restarts itself when a secret changes).
+4. Gate on readiness: `make ready`. `/readyz` reports the provider check,
+   and the next analysis or chat logs `llm_request_ok`.
+5. Revoke the old key in AI Studio.
+6. **Reset the credential's ledger entry if the old key was circuit-open or
+   out of daily budget.** The key registry labels a credential by position
+   (`geminiprovider:0`), not by value, so the new key inherits the old one's
+   record. Delete `data/provider_health.json`, or today's row in the
+   `provider_health` table (one row per day, holding every credential's
+   state) when `PROVIDER_HEALTH_DSN` is set.
+
+A key that was ever committed is compromised however quickly it was removed:
+rotate it, do not rewrite history and hope.
+
+---
+
 ## Known limits
 
 Stated because a runbook that omits them is worse than none.
@@ -174,8 +217,8 @@ Stated because a runbook that omits them is worse than none.
   `MAX_CONCURRENT_ANALYSES` (default 2) refuses runs beyond it with 429 rather
   than queueing them. The limit counts one process, not a cluster.
 - **`GEMINI_RPD_LIMIT` is our own accounting**, not a reading of Google's
-  quota. It has been observed reading 146/1000 while every credential was
-  already returning 429.
+  quota, and it is off by default. The authoritative limit is the provider's
+  refusal, which the key registry records per credential.
 - **There is no fallback provider.** Gemini is the only one. A 503 is answered
   by waiting the delay the API asks for, across `PROVIDER_MAX_RETRIES`
   attempts. If a run reports failed dimensions, lower
