@@ -23,4 +23,5 @@ the Rapporteur about any finding, or talk to the AI Auditor.
 This Space is a demo: its disk is not persistent, so your workspaces are
 cleared whenever it restarts.
 
-Source code: see the GitHub repository linked from the profile.
+Source code, tests and measurements:
+[github.com/eklavya072/Meridian-AI-Governance-Intelligence](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence)
