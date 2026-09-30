@@ -1,6 +1,7 @@
 """Framework sync: every branch, with a fake index and no network."""
 
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -176,15 +177,17 @@ class TestWithALocalCopy:
         assert "index unavailable" in result["error"]
 
     def test_a_relative_local_path_resolves_from_the_project_root(self, raw_dir, ingest):
-        # Written relative to the repository root in config/frameworks.yaml, so
-        # the sync works from any working directory.
-        relative = "backend/tests/golden/eu-ai-act-2024-1689.pdf"
+        # Written relative to the project root in config/frameworks.yaml, so
+        # the sync works from any working directory. The root differs between
+        # a checkout and the image (/app), so the path is derived, not typed.
         root = Path(fs.__file__).resolve().parents[2]
+        target = Path(__file__).resolve().parents[1] / "golden" / "eu-ai-act-2024-1689.pdf"
+        relative = os.path.relpath(target, root)
         result = fs.FrameworkSyncService(FakeIndex()).sync_framework(
             {"name": "EU AI Act", "local_path": relative}
         )
         assert result["status"] == "synced"
-        assert ingest[0]["path"] == root / relative
+        assert ingest[0]["path"].resolve() == target
 
 
 class TestMultiRoleFrameworks:
