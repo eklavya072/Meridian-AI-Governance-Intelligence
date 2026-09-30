@@ -19,7 +19,7 @@ UV           := uv
 RUN          := $(UV) run --project $(BACKEND)
 
 .PHONY: help setup env up down logs ready test test-container lint format \
-        typecheck check build bench bench-load observability deploy destroy \
+        typecheck check build bench bench-load observability deploy rollout destroy \
         clean ps shell rebuild-index resync-frameworks
 
 help: ## Show the available targets
@@ -118,13 +118,17 @@ bench-load: ## k6 load test against the real path, in replay mode (no Gemini cal
 
 deploy: ## Bring up the production stack (needs .env.prod — see LAUNCH.md)
 	@test -f .env.prod || (echo "Missing .env.prod — see LAUNCH.md"; exit 1)
-	$(COMPOSE) -f docker-compose.prod.yml up -d --build
+	$(COMPOSE) -f docker-compose.prod.yml --env-file .env.prod up -d --build
 	$(MAKE) ready
+
+rollout: ## Replace the API with IMAGE_REF, no downtime; also how a rollback is done
+	@test -n "$(IMAGE_REF)" || (echo "usage: make rollout IMAGE_REF=ghcr.io/eklavya072/meridian:sha-<commit>"; exit 1)
+	deploy/rollout.sh $(IMAGE_REF)
 
 destroy: ## Tear down the production stack AND its volumes (destructive)
 	@echo "This deletes the Postgres data and the Chroma index. Ctrl-C to abort."
 	@sleep 5
-	$(COMPOSE) -f docker-compose.prod.yml down -v
+	$(COMPOSE) -f docker-compose.prod.yml --env-file .env.prod down -v
 
 clean: ## Remove local caches and build output
 	find $(BACKEND) -name __pycache__ -type d -not -path "*/.venv/*" -exec rm -rf {} + 2>/dev/null || true

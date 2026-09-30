@@ -8,6 +8,13 @@
 #      re-synced from public URLs alone).
 #   3. docker compose -f docker-compose.prod.yml up -d --build
 #
+# Releases: set MERIDIAN_IMAGE to a published tag
+# (ghcr.io/eklavya072/meridian:sha-<commit>) and deploy with
+# deploy/rollout.sh, which replaces the API with no downtime and is also how
+# a rollback is done. A rollout runs two API containers for a few seconds, so
+# it needs the Chroma server (--profile scale, CHROMA_HOST=chroma): two
+# processes must never open one embedded index.
+#
 # Frontend URL is injected at build time via NEXT_PUBLIC_API_URL (defaults to
 # the API service on the compose network, which works only behind a reverse
 # proxy that also serves the frontend — see the caddy service below).
@@ -31,7 +38,24 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Chroma as a server, for rollouts and replicas (see the header).
+  chroma:
+    profiles: ["scale"]
+    image: chromadb/chroma:latest
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_server_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "cat < /dev/null > /dev/tcp/127.0.0.1/8000"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   api:
+    image: ${MERIDIAN_IMAGE:-meridian-api:local}
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -42,7 +66,12 @@ services:
       # Inside the compose network the DB is reached via the service name.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@postgres:5432/${POSTGRES_DB:-aura_sdg}
       CHROMA_PERSIST_DIR: /app/data/chroma
+      CHROMA_HOST: "${CHROMA_HOST:-}"
+      CHROMA_PORT: "${CHROMA_PORT:-8000}"
       LOG_LEVEL: INFO
+    # Longer than the API's own shutdown grace (SHUTDOWN_GRACE_SECONDS, 30 s),
+    # so in-flight analyses finish before the container is killed.
+    stop_grace_period: 45s
     volumes:
       - chroma_data:/app/data/chroma
       - uploads_data:/app/data/uploads
@@ -94,6 +123,7 @@ services:
 volumes:
   pgdata:
   chroma_data:
+  chroma_server_data:
   uploads_data:
   caddy_data:
   caddy_config:
