@@ -1,0 +1,368 @@
+{
+ "eu-ai-act-2024-1689.pdf": {
+  "chunks": 337,
+  "dimensions": {
+   "Accountability": {
+    "binding": 46,
+    "coverage": "Covered",
+    "depth": "Institutionalized",
+    "enforceable": 29,
+    "mechanisms_absent": [],
+    "mechanisms_present": {
+     "audit requirement": 4,
+     "grievance / redress": 1,
+     "incident reporting": 3,
+     "liability allocation": 4,
+     "named responsible body": 4,
+     "sanctions / penalties": 4
+    },
+    "scored": 114,
+    "tiers": {
+     "T0": 52,
+     "T1": 10,
+     "T2": 6,
+     "T3": 17,
+     "T4": 29
+    }
+   },
+   "Environmental Sustainability": {
+    "binding": 0,
+    "coverage": "Partial",
+    "depth": "Delegated",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "carbon disclosure",
+     "e-waste / hardware lifecycle"
+    ],
+    "mechanisms_present": {
+     "compute efficiency": 0,
+     "energy reporting": 0,
+     "green procurement / energy": 2
+    },
+    "scored": 13,
+    "tiers": {
+     "T0": 9,
+     "T1": 3,
+     "T2": 1
+    }
+   },
+   "Fairness": {
+    "binding": 4,
+    "coverage": "Covered",
+    "depth": "Institutionalized",
+    "enforceable": 2,
+    "mechanisms_absent": [
+     "fairness metrics"
+    ],
+    "mechanisms_present": {
+     "bias mitigation": 3,
+     "bias testing": 1,
+     "non-discrimination duty": 4,
+     "protected characteristics": 3
+    },
+    "scored": 62,
+    "tiers": {
+     "T0": 37,
+     "T1": 15,
+     "T2": 6,
+     "T3": 2,
+     "T4": 2
+    }
+   },
+   "Human Autonomy": {
+    "binding": 7,
+    "coverage": "Covered",
+    "depth": "Operationalized",
+    "enforceable": 1,
+    "mechanisms_absent": [],
+    "mechanisms_present": {
+     "human-in-the-loop": 3,
+     "meaningful control": 0,
+     "override capability": 0,
+     "prohibition of manipulation": 1,
+     "right to human review": 0
+    },
+    "scored": 31,
+    "tiers": {
+     "T0": 16,
+     "T1": 7,
+     "T2": 1,
+     "T3": 6,
+     "T4": 1
+    }
+   },
+   "Inclusivity": {
+    "binding": 2,
+    "coverage": "Covered",
+    "depth": "Operationalized",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "demographic representation",
+     "digital divide",
+     "language / localisation"
+    ],
+    "mechanisms_present": {
+     "disability accessibility": 3,
+     "stakeholder participation": 2
+    },
+    "scored": 26,
+    "tiers": {
+     "T0": 13,
+     "T1": 8,
+     "T2": 3,
+     "T3": 2
+    }
+   },
+   "Privacy": {
+    "binding": 24,
+    "coverage": "Covered",
+    "depth": "Operationalized",
+    "enforceable": 4,
+    "mechanisms_absent": [
+     "purpose limitation"
+    ],
+    "mechanisms_present": {
+     "anonymisation / PETs": 0,
+     "consent": 0,
+     "data minimisation": 0,
+     "data subject rights": 2,
+     "impact assessment": 3,
+     "privacy by design": 0
+    },
+    "scored": 121,
+    "tiers": {
+     "T0": 71,
+     "T1": 7,
+     "T2": 19,
+     "T3": 20,
+     "T4": 4
+    }
+   },
+   "Safety": {
+    "binding": 19,
+    "coverage": "Covered",
+    "depth": "Institutionalized",
+    "enforceable": 1,
+    "mechanisms_absent": [],
+    "mechanisms_present": {
+     "human failsafe / shutdown": 0,
+     "incident monitoring": 2,
+     "post-market monitoring": 3,
+     "pre-deployment testing": 3,
+     "risk assessment": 3,
+     "robustness requirement": 3
+    },
+    "scored": 131,
+    "tiers": {
+     "T0": 81,
+     "T1": 13,
+     "T2": 18,
+     "T3": 18,
+     "T4": 1
+    }
+   },
+   "Transparency": {
+    "binding": 156,
+    "coverage": "Covered",
+    "depth": "Institutionalized",
+    "enforceable": 19,
+    "mechanisms_absent": [],
+    "mechanisms_present": {
+     "audit trail / logging": 3,
+     "capability & limitation disclosure": 4,
+     "decision explanation": 0,
+     "model documentation": 4,
+     "public registry": 3,
+     "user disclosure": 4
+    },
+    "scored": 328,
+    "tiers": {
+     "T0": 97,
+     "T1": 32,
+     "T2": 43,
+     "T3": 137,
+     "T4": 19
+    }
+   }
+  },
+  "enforcement_regime": true,
+  "voluntary": false
+ },
+ "uk-pro-innovation-ai-regulation-2023.pdf": {
+  "chunks": 112,
+  "dimensions": {
+   "Accountability": {
+    "binding": 6,
+    "coverage": "Covered",
+    "depth": "Operationalized",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "sanctions / penalties"
+    ],
+    "mechanisms_present": {
+     "audit requirement": 1,
+     "grievance / redress": 3,
+     "incident reporting": 0,
+     "liability allocation": 3,
+     "named responsible body": 3
+    },
+    "scored": 57,
+    "tiers": {
+     "T0": 44,
+     "T1": 6,
+     "T2": 1,
+     "T3": 6
+    }
+   },
+   "Environmental Sustainability": {
+    "binding": 0,
+    "coverage": "Partial",
+    "depth": "Emerging",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "carbon disclosure",
+     "compute efficiency",
+     "e-waste / hardware lifecycle",
+     "energy reporting",
+     "green procurement / energy"
+    ],
+    "mechanisms_present": {},
+    "scored": 8,
+    "tiers": {
+     "T0": 8
+    }
+   },
+   "Fairness": {
+    "binding": 1,
+    "coverage": "Covered",
+    "depth": "Delegated",
+    "enforceable": 1,
+    "mechanisms_absent": [
+     "fairness metrics"
+    ],
+    "mechanisms_present": {
+     "bias mitigation": 0,
+     "bias testing": 0,
+     "non-discrimination duty": 2,
+     "protected characteristics": 0
+    },
+    "scored": 45,
+    "tiers": {
+     "T0": 38,
+     "T1": 3,
+     "T2": 3,
+     "T4": 1
+    }
+   },
+   "Human Autonomy": {
+    "binding": 1,
+    "coverage": "Partial",
+    "depth": "Delegated",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "meaningful control",
+     "override capability",
+     "prohibition of manipulation"
+    ],
+    "mechanisms_present": {
+     "human-in-the-loop": 0,
+     "right to human review": 3
+    },
+    "scored": 10,
+    "tiers": {
+     "T0": 7,
+     "T1": 2,
+     "T3": 1
+    }
+   },
+   "Inclusivity": {
+    "binding": 0,
+    "coverage": "Missing",
+    "depth": "Unaddressed",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "demographic representation",
+     "digital divide",
+     "disability accessibility",
+     "language / localisation"
+    ],
+    "mechanisms_present": {
+     "stakeholder participation": 0
+    },
+    "scored": 3,
+    "tiers": {
+     "T0": 3
+    }
+   },
+   "Privacy": {
+    "binding": 0,
+    "coverage": "Partial",
+    "depth": "Delegated",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "anonymisation / PETs",
+     "consent",
+     "data subject rights",
+     "impact assessment",
+     "privacy by design",
+     "purpose limitation"
+    ],
+    "mechanisms_present": {
+     "data minimisation": 0
+    },
+    "scored": 18,
+    "tiers": {
+     "T0": 15,
+     "T1": 2,
+     "T2": 1
+    }
+   },
+   "Safety": {
+    "binding": 1,
+    "coverage": "Partial",
+    "depth": "Delegated",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "human failsafe / shutdown",
+     "post-market monitoring"
+    ],
+    "mechanisms_present": {
+     "incident monitoring": 0,
+     "pre-deployment testing": 0,
+     "risk assessment": 1,
+     "robustness requirement": 0
+    },
+    "scored": 43,
+    "tiers": {
+     "T0": 36,
+     "T1": 6,
+     "T3": 1
+    }
+   },
+   "Transparency": {
+    "binding": 3,
+    "coverage": "Covered",
+    "depth": "Operationalized",
+    "enforceable": 0,
+    "mechanisms_absent": [
+     "audit trail / logging",
+     "capability & limitation disclosure"
+    ],
+    "mechanisms_present": {
+     "decision explanation": 3,
+     "model documentation": 1,
+     "public registry": 1,
+     "user disclosure": 3
+    },
+    "scored": 46,
+    "tiers": {
+     "T0": 34,
+     "T1": 9,
+     "T3": 3
+    }
+   }
+  },
+  "enforcement_regime": true,
+  "voluntary": false
+ }
+}
