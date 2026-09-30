@@ -194,8 +194,7 @@ class TestScopeDisclaimer:
         assert "not the European Union's full" in scope["disclaimer"]
 
     def test_it_stays_two_sentences(self):
-        """The data-protection note made it a paragraph; the owner asked for
-        two or three lines on every country."""
+        """Two or three lines on every country, never a paragraph."""
         scope = tasks._build_scope_disclaimer(
             _FakeVS(["EU AI ACT.pdf"]), "w1", country="European Union"
         )

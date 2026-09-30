@@ -280,7 +280,7 @@ class TestDailyBudget:
         assert provider.calls == []
 
     def test_no_cap_by_default(self, monkeypatch):
-        """The old default of 1000 was a guess that matched no real quota."""
+        """The daily cap is off unless configured; the provider's own limit decides."""
         monkeypatch.setattr(pr, "GEMINI_RPD_LIMIT", None)
         monkeypatch.setattr(pr, "_daily_gemini_requests", 10_000)
 

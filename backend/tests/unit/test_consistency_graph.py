@@ -54,11 +54,10 @@ def test_consistency_report_empty():
 def test_risk_coherence():
     """A Missing dimension rated LOW risk is incoherent and must be flagged.
 
-    This previously asserted that Partial + HIGH was a violation. It is not:
-    compute_risk deliberately escalates a core Partial dimension to HIGH when
-    a related dimension in the same cluster is also a genuine gap, so the old
-    assertion encoded a table that made the pipeline flag its own correct
-    output. Missing + LOW has no such escalation path and is a real mismatch.
+    Partial + HIGH is not a violation: compute_risk deliberately escalates a
+    core Partial dimension to HIGH when a related dimension in the same
+    cluster is also a genuine gap. Missing + LOW has no such escalation path
+    and is a real mismatch.
     """
     validator = ConsistencyValidator()
     gaps = [

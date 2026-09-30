@@ -190,15 +190,8 @@ class TestProfileAggregation:
         NOT accumulate into Covered — there is no volume of aspiration that
         substitutes for a single binding duty.
 
-        A "breadth" path to Covered (many commitment-tier sentences, no
-        binding duty required) used to exist here and made exactly this
-        pattern score Covered. It was removed after being confirmed live
-        across three independent country runs (Kenya, Nigeria, EU) as an
-        internal inconsistency: sibling dimensions in the SAME document,
-        citing near-identical evidence, landed on Partial while whichever one
-        happened to cross the repetition-count threshold got inflated to
-        Covered — a verdict that tracked sentence count, not the presence of
-        a duty.
+        A "breadth" path to Covered would make the verdict track sentence
+        count rather than the presence of a duty.
         """
         sentences = [
             f"AI business actors should consider fairness in system design, case {i}."
@@ -659,10 +652,8 @@ class TestMechanismGateReachesTheVerdict:
 
 
 class TestDelegatedStage:
-    """Emerging used to absorb three materially different profiles and pay
-    them all the same 50: a real binding duty, a named institution with no
-    duty, and a bare principle. India's Inclusivity, Human Autonomy and
-    Fairness were the live case — three different narratives, one score."""
+    """A real binding duty, a named institution with no duty, and a bare
+    principle are three different profiles and must not share one stage."""
 
     def _profile(self, scored, commitment, institutional, binding, enforceable):
         p = EvidenceProfile(dimension="Fairness")
@@ -754,9 +745,8 @@ class TestTwoAxisAnalytics:
         The dimension reaches the top STAGE because the duty is real and
         enforced, and the depth index says exactly that. Narrowness is carried
         by the OTHER axis — coverage_index 25.0 — not folded into the depth
-        score. An earlier build damped depth by breadth here, which quietly
-        restated breadth inside the force number and collapsed the separation
-        the two axes exist to draw.
+        score: damping depth by breadth would restate breadth inside the force
+        number and collapse the separation the two axes exist to draw.
         """
         from src.gap_analyzer import compute_decision_analytics
         from src.models import ImplementationDepth as G

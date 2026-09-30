@@ -1,9 +1,7 @@
 """The HTTP surface: status codes, error shapes, and the guards on each route.
 
-No test imported main.py at all before this, so every one of the 1,300-odd
-lines of route code was unexercised — including the upload size guard, the
-"already running" conflict, and the export format validation. Those are the
-paths a stranger's first request actually hits.
+Covers the paths a stranger's first request actually hits: the upload size
+guard, the "already running" conflict, the export format validation.
 
 The database is faked rather than run: these assert on route logic (what is
 rejected, what status code, what error body), not on SQLAlchemy.

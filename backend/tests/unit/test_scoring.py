@@ -92,7 +92,7 @@ class TestEnforcementBackingIsScopedToTheDocument:
 
 
 class TestEvidenceSufficiencyGate:
-    """v3. The threshold is derived from the corpus, not chosen.
+    """Evidence sufficiency: the threshold is derived from the corpus, not chosen.
 
     Binding sentences are 18.2% of scored sentences in cells that carry a
     duty, so 0.818^8 = 0.19 — below that, "no duty found" in a SAMPLE is worth
@@ -169,7 +169,7 @@ class TestDuplicateProvisions:
 
 
 class TestSentenceFunctionGate:
-    """v4 (A). Six kinds of non-operative text were scoring as duties."""
+    """Sentence function: non-operative text must not score as a duty."""
 
     def test_eu_recitals_are_not_operative(self):
         from src.grading import sentence_function
@@ -218,7 +218,7 @@ class TestSentenceFunctionGate:
 
 
 class TestStructuralRelevance:
-    """v4 (B). Duties the vocabulary gate has no word for."""
+    """Structural relevance: duties the vocabulary gate has no word for."""
 
     # EU AI Act Article 17(1)(e), verbatim shape: a duty on a named party that
     # Transparency's vocabulary has no word for ("logging", not "audit trail").
@@ -265,7 +265,7 @@ class TestStructuralRelevance:
 
 
 class TestMechanismGate:
-    """v4 (C). Three cells called a dimension governed while binding nothing."""
+    """The mechanism gate: no dimension is governed while binding nothing."""
 
     def test_operational_requires_a_bound_mechanism(self):
         from src.grading import apply_mechanism_gate
@@ -317,7 +317,7 @@ class TestListItemSeverance:
 
 
 class TestListItemRepair:
-    """v5. Statutes enumerate; the splitter severed items from their stem."""
+    """List items: statutes enumerate, and each item keeps its stem's duty."""
 
     STEM = (
         "Training, validation and testing data sets shall be subject to data "
@@ -362,7 +362,7 @@ class TestListItemRepair:
 
 
 class TestArtifactBorneDuties:
-    """v5. Product-safety drafting regulates the thing, not the person."""
+    """Artifact-borne duties: product-safety drafting regulates the thing."""
 
     def test_a_duty_on_the_artifact_binds(self):
         from src.evidence_strength import TIER_OBLIGATORY
