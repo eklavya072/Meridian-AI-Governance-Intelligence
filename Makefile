@@ -49,10 +49,11 @@ down: ## Stop the stack, keeping volumes
 logs: ## Follow the API logs
 	$(COMPOSE) logs -f api
 
-observability: env ## Bring up Prometheus + Grafana (dashboard provisioned as code)
-	$(COMPOSE) --profile observability up -d prometheus grafana
+observability: env ## Bring up Prometheus, Grafana and Jaeger, with the API exporting traces
+	OTEL_TRACES_EXPORTER=otlp $(COMPOSE) --profile observability up -d api prometheus grafana jaeger
 	@echo "Grafana    http://localhost:3001  (dashboard: Meridian — pipeline and provider)"
 	@echo "Prometheus http://localhost:9090"
+	@echo "Jaeger     http://localhost:16686 (service: meridian-api)"
 
 ps: ## Show stack status
 	$(COMPOSE) ps

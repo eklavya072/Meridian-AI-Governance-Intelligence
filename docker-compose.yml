@@ -93,6 +93,10 @@ services:
       # Replicas share one quota ledger, or each rediscovers a spent
       # credential by spending attempts on it. Same database, own table.
       PROVIDER_HEALTH_DSN: "${PROVIDER_HEALTH_DSN:-}"
+      # Traces go to Jaeger when `make observability` sets the exporter;
+      # otherwise tracing is off and costs nothing.
+      OTEL_TRACES_EXPORTER: "${OTEL_TRACES_EXPORTER:-none}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       # The startup sweep of the whole collection is an optimisation that has
       # been OOM-killed on constrained machines; off by default for dev.
       WARM_FRAMEWORK_COUNTS: "0"
@@ -107,8 +111,6 @@ services:
       # so this mount cannot shadow it.
       - ./backend:/app
       # Named volumes, so an uploaded PDF or the index survives `make down`.
-      # Without these a restart loses user data — two instances also cannot
-      # share it, which is what the storage interface addresses next.
       - chroma_data:/app/data/chroma
       - uploads_data:/app/data/uploads
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -134,6 +136,13 @@ services:
     depends_on:
       - api
 
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    profiles: ["observability"]
+    ports:
+      - "16686:16686"  # UI
+      - "4318:4318"    # OTLP over HTTP
+
   grafana:
     image: grafana/grafana:latest
     profiles: ["observability"]
@@ -150,6 +159,7 @@ services:
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
+      - jaeger
 
   web:
     build:
