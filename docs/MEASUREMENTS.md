@@ -12,7 +12,7 @@ plausible-looking placeholder.
 | Machine | Apple MacBook Air, M2, 8 GB RAM, macOS 14.6 (Darwin 23.6.0) |
 | Python | 3.13.9 |
 | Embedding model | `BAAI/bge-small-en-v1.5` (384-dim) |
-| NLI model | `cross-encoder/nli-deberta-v3-base` |
+| NLI model (measured, not adopted) | `cross-encoder/nli-deberta-v3-base` |
 | Vector store | ChromaDB 1.5.9, local persistent |
 | Database | PostgreSQL 16 |
 
@@ -394,9 +394,7 @@ scoped to exclude it.
 
 ### What this does not measure
 
-- Live provider latency. A real run adds up to 16 LLM calls paced against a
-  ~10 RPM per-credential ceiling, so real end-to-end time is dominated by
-  the provider and is **not measured**.
+- Live provider latency. See the traced live run below.
 - Citation quality. Replay fixtures produce no evidence items, so
   `meridian_citation_pass_rate` stays at its initial value here; the
   citation numbers come from the verification measurement above instead.
@@ -404,11 +402,69 @@ scoped to exclude it.
   than a production instance with a 15,468-chunk corpus, and peak RSS is
   correspondingly low.
 
+## End-to-end, traced — live and replay
+
+**Date:** 2026-09-30 · **Revision:** `83d2572` · **Gemini calls: 11** (live
+run only; replay makes none). One document, the same one as above (India AI
+Governance Guidelines, 546 KB, 8 pages), driven over HTTP through the real
+path: create workspace → upload → run → poll until complete → generate the
+brief → export the PDF. Timings come from the driver; the stage breakdown
+comes from the run's OpenTelemetry spans (`OTEL_TRACES_EXPORTER=console`).
+
+| | |
+|---|---|
+| Machine | Apple MacBook Air, M2, 8 GB RAM, macOS 14.6.1 |
+| API | uvicorn, one worker, isolated Postgres database |
+| Corpus | a copy of the production index: 43 frameworks, warm |
+| LLM | `gemini-3.5-flash-lite`, one credential, `GEMINI_RPM_LIMIT=12` |
+| Embedding | `BAAI/bge-small-en-v1.5` |
+
+### End-to-end
+
+| | Live (n=1) | Replay, warm (n=4) | Replay, cold (n=1) |
+|---|---|---|---|
+| Upload | 0.46 s | 0.35–0.62 s | 0.47 s |
+| Analysis (run → complete) | **75.4 s** | 11.7–12.7 s | 35.0 s |
+| Brief | 2.70 s | 0.07 s | 0.08 s |
+| PDF export | 0.30 s | 0.02–0.03 s | 0.12 s |
+| **Upload → exported PDF** | **78.9 s** | **12.4–13.2 s** | 35.7 s |
+
+The live figure is one run and is reported as one run, not a percentile.
+The live run completed all eight dimensions with 10 analysis calls and one
+brief call, and every one of its 39 evidence items passed verification; the
+brief records `mode: live` and the model in its provenance. The cold replay
+run is the first request after start-up, which loads the embedding model and
+warms Chroma.
+
+### By stage (spans)
+
+| Stage | Live | Replay (warm) |
+|---|---|---|
+| `validate` | 0.53 s | 0.33 s |
+| `ingest` (parse, chunk) | 0.97 s | 0.67 s |
+| `index` (embed, store) | 1.01 s | 0.38 s |
+| `analyse` | 72.4 s | 10.1 s |
+| — `retrieve` (21–23 calls) | 9.00 s total | 7.42 s total |
+| — `llm` (10 calls) | 88.2 s summed, 8.8 s mean, 18.3 s max | 0.56 s (stubbed) |
+| `verify` (8 calls) | 0.03 s | < 0.01 s |
+| `synthesise` (brief) | 2.65 s | — |
+| `export` (PDF) | 0.28 s | — |
+
+The model calls run three at a time, which is why their summed time exceeds
+the `analyse` stage that contains them. Everything under one run is a single
+trace: 46 spans in the live run, one of them without a parent (the root).
+
+Two conclusions. Live, the provider is almost all of it: about 61 of the
+72 seconds of `analyse` (the stage, less 9.0 s of retrieval and the ~2 s of
+scoring the replay run shows). Without it, Meridian's own cost is about ten
+seconds, and retrieval over the full corpus is most of that — which is also
+why warm replay here takes 12–13 s against the 4.9 s p50 of the load test
+above, whose Chroma started empty.
+
 ---
 
 ## Not yet measured
 
-- Live end-to-end latency (replay is measured above; live is provider-bound)
 - A Grafana dashboard screenshot from sustained traffic. The dashboard is
   provisioned as code (`observability/grafana/dashboards/meridian.json`) and
   the metrics behind every panel were verified live during the load test —
@@ -416,5 +472,4 @@ scoped to exclude it.
   What is missing is a rendered screenshot, which needs the compose stack
   and therefore a container runtime this machine does not have.
 - A rollback performed and timed against a running deployment
-- OpenTelemetry span timings per pipeline stage
 - Provider failover behaviour under a real 429 storm
