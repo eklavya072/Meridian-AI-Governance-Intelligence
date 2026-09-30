@@ -61,7 +61,7 @@ logger = structlog.get_logger()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg")
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
-UPLOAD_DIR = Path(__file__).parent / "data" / "uploads"
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", Path(__file__).parent / "data" / "uploads"))
 # Comma-separated list of allowed browser origins (e.g. "https://app.example.com,http://localhost:3000")
 CORS_ORIGINS = [
     o.strip()
