@@ -19,8 +19,11 @@ if command -v netfilter-persistent >/dev/null; then
     netfilter-persistent save
 fi
 
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2 docker-buildx rsync
+# A new VM installs its own updates at first boot; wait for them rather
+# than fail on the package lock.
+apt-get -o DPkg::Lock::Timeout=900 update
+DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y \
+    docker.io docker-compose-v2 docker-buildx rsync
 systemctl enable --now docker
 usermod -aG docker "$OWNER"
 
