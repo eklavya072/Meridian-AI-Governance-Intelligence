@@ -225,9 +225,6 @@ jobs:
             --data-urlencode "query.start_time_min=$then" \
             --data-urlencode "query.start_time_max=$now" \
             --data-urlencode "query.search_depth=100" -o traces.json
-          echo "Grafana's Jaeger datasource:"
-          uid=$(curl -fsS http://localhost:3001/api/datasources/name/Jaeger | python3 -c 'import json,sys; print(json.load(sys.stdin)["uid"])')
-          curl -sS "http://localhost:3001/api/datasources/uid/$uid/health"; echo
           python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY" > traces.md
           import json
           from collections import defaultdict

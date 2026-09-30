@@ -136,8 +136,11 @@ services:
     depends_on:
       - api
 
+  # Pinned: the tested version. Its query API is v3 (/api/v3/...); the
+  # legacy /api/traces endpoints Grafana's Jaeger datasource expects are
+  # gone, so traces are read in Jaeger's own UI.
   jaeger:
-    image: jaegertracing/jaeger:latest
+    image: jaegertracing/jaeger:2.21.0
     profiles: ["observability"]
     ports:
       - "16686:16686"  # UI
