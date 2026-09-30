@@ -21,6 +21,7 @@ from src.llm_provider import (
     TerminalProviderError,
 )
 from src.provider_errors import FailureKind, classify
+from src.tracing import traced
 
 logger = structlog.get_logger()
 
@@ -378,6 +379,7 @@ def _extract_retry_delay(error_str: str) -> float | None:
     return None
 
 
+@traced("llm", "operation")
 def generate_with_retry(
     provider: LLMProvider,
     prompt: str,
@@ -813,6 +815,7 @@ class ChatDeadlineExceeded(RuntimeError):
     """The turn's LLM budget ran out — caller should degrade, not retry."""
 
 
+@traced("llm", "operation")
 def generate_text_with_retry(
     provider: LLMProvider,
     prompt: str,

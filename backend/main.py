@@ -50,11 +50,13 @@ from src.guardrails import Guardrails
 from src.key_health import get_registry as get_key_registry
 from src.logging_config import log_upload_rejection, setup_logging
 from src.storage import get_storage
+from src.tracing import setup_tracing
 from src.validation import MAX_FILE_SIZE_BYTES, validate_pdf_file
 from src.vectorstore import VectorStore
 from src.workspace import WorkspaceService
 
 setup_logging()
+setup_tracing()
 logger = structlog.get_logger()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://aura:aura@localhost:5432/aura_sdg")

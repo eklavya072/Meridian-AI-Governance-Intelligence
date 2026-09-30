@@ -9,6 +9,7 @@ from typing import Any
 import structlog
 from pydantic import BaseModel
 
+from src.tracing import traced
 from src.utils import compute_keyword_overlap
 from src.vectorstore import VectorStore
 
@@ -393,6 +394,7 @@ def verify_chat_citation(
     return result
 
 
+@traced("verify")
 def verify_gap_analysis_citations(
     gap: dict[str, Any],
     vector_store: VectorStore,

@@ -24,6 +24,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from src.provider_router import generate_with_retry, get_provider
+from src.tracing import traced
 
 logger = structlog.get_logger()
 
@@ -776,6 +777,7 @@ def assemble_brief(
     }
 
 
+@traced("synthesise", "workspace_id")
 def generate_brief(
     *,
     workspace_id: str,

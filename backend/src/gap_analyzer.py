@@ -76,6 +76,7 @@ from src.models import (
 )
 from src.provider_router import generate_with_retry, get_provider, log_run_summary
 from src.retrieval import Module34RetrievalResult, ModuleRetrievalResult, RetrievalPipeline
+from src.tracing import in_context
 from src.utils import strip_chunk_id_citations
 from src.vectorstore import VectorStore
 from src.verify import (
@@ -3822,7 +3823,8 @@ class GapAnalyzer:
         with ThreadPoolExecutor(
             max_workers=max(1, min(ANALYSIS_MAX_CONCURRENCY, len(calls)))
         ) as pool:
-            for dimension, answer, error in pool.map(ask, calls):
+            bound = [in_context(ask) for _ in calls]
+            for dimension, answer, error in pool.map(lambda run, call: run(call), bound, calls):
                 if answer is None:
                     errors[dimension] = error
                 else:
@@ -4013,7 +4015,7 @@ class GapAnalyzer:
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
                         pool.submit(
-                            self._analyze_one_dimension,
+                            in_context(self._analyze_one_dimension),
                             d,
                             workspace_id,
                             num_frameworks,

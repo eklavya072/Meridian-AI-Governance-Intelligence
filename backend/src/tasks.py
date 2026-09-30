@@ -24,6 +24,7 @@ from src.logging_config import log_analysis_run
 from src.mechanism_adjudication import UNAVAILABLE
 from src.provenance import build_provenance
 from src.storage import get_storage
+from src.tracing import stage
 from src.vectorstore import VectorStore
 from src.verify import verify_gap_analysis_citations
 from src.workspace import WorkspaceService
@@ -170,7 +171,27 @@ async def run_full_analysis_pipeline(
     `documents` is [{"file_path": ..., "file_name": ...}]. The single
     file_path/file_name pair is the one-document form, accepted so a
     background task queued before a restart does not fail on signature.
+
+    The run is one trace (`analysis.run`), and every log line it emits
+    carries its workspace_id.
     """
+    structlog.contextvars.bind_contextvars(workspace_id=workspace_id)
+    try:
+        with stage("analysis.run", workspace_id=workspace_id):
+            return await _run_full_analysis_pipeline(
+                workspace_id, frameworks, documents, file_path, file_name
+            )
+    finally:
+        structlog.contextvars.unbind_contextvars("workspace_id")
+
+
+async def _run_full_analysis_pipeline(
+    workspace_id: str,
+    frameworks: list[str],
+    documents: list[dict[str, str]] | None,
+    file_path: str | None,
+    file_name: str | None,
+) -> dict[str, Any]:
     if not documents:
         if not file_path:
             raise ValueError("run_full_analysis_pipeline needs at least one document")
@@ -233,7 +254,7 @@ async def run_full_analysis_pipeline(
                 # ingest_document needs a real path because pypdf does.
                 with (
                     get_storage().local_path(doc["file_path"]) as local_pdf,
-                    metrics.timed_stage("ingest"),
+                    stage("ingest", document=doc_name),
                 ):
                     key = await asyncio.to_thread(ingest_key, local_pdf)
                     stored = await asyncio.to_thread(
@@ -282,7 +303,7 @@ async def run_full_analysis_pipeline(
                         removed_chunks=removed,
                         retired_chunks=retired,
                     )
-                with metrics.timed_stage("index"):
+                with stage("index", document=doc_name, chunks=len(doc_chunks)):
                     await asyncio.to_thread(vector_store.add_chunks, doc_chunks)
                 metrics.chunks_indexed.inc(len(doc_chunks))
                 metrics.documents_ingested.labels(outcome="ok").inc()
@@ -341,7 +362,7 @@ async def run_full_analysis_pipeline(
             )
             # Same reasoning as above: analyze() is synchronous and runs for
             # minutes, so it runs off the event loop.
-            with metrics.timed_stage("analyse"):
+            with stage("analyse"):
                 result: GapAnalysisResult = await asyncio.to_thread(
                     analyzer.analyze,
                     document_text=full_text,

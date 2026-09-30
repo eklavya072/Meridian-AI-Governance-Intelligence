@@ -6,12 +6,19 @@ import sys
 
 import structlog
 
+from src.tracing import add_trace_ids
+
 
 def setup_logging() -> None:
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 
     structlog.configure(
         processors=[
+            # Values bound with structlog.contextvars (workspace_id for a
+            # run) and the current trace ids, so one analysis's log lines can
+            # be filtered together and matched to its trace.
+            structlog.contextvars.merge_contextvars,
+            add_trace_ids,
             structlog.stdlib.add_log_level,
             structlog.stdlib.PositionalArgumentsFormatter(),
             structlog.processors.TimeStamper(fmt="iso"),

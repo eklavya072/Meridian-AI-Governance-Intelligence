@@ -20,6 +20,7 @@ from typing import Any
 from src.brief_emphasis import split_marks
 from src.brief_synthesis import format_evidence_quote, key_provision_line, precedent_lines
 from src.provenance import render_provenance_lines
+from src.tracing import traced
 
 # Design tokens — mirrors the frontend palette (app/globals.css).
 NAVY_950 = "#0A2E6E"
@@ -77,6 +78,7 @@ def _add_page_number_field(paragraph) -> None:
     run._r.append(fld_end)
 
 
+@traced("export")
 def render_docx(brief: dict[str, Any]) -> bytes:
     brief = _xml_safe(brief)
     from docx import Document
@@ -293,6 +295,7 @@ def render_docx(brief: dict[str, Any]) -> bytes:
 # ── PDF ──────────────────────────────────────────────────────────────────
 
 
+@traced("export")
 def render_pdf(brief: dict[str, Any]) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_LEFT

@@ -9,6 +9,8 @@ import magic
 import structlog
 from pydantic import BaseModel
 
+from src.tracing import traced
+
 logger = structlog.get_logger()
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB (user uploads)
@@ -52,6 +54,7 @@ class ValidationResult(BaseModel):
     notice: str = ""
 
 
+@traced("validate")
 def validate_pdf_file(
     file_bytes: bytes, filename: str, max_file_size: int | None = None
 ) -> ValidationResult:

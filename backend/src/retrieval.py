@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from src.deterministic import _chunk_matches_dimension, is_low_information_fragment
 from src.models import DimensionProfile
+from src.tracing import traced
 from src.utils import batch_fetch_chunk_metadata, l2_normalize, reciprocal_rank_fusion
 
 
@@ -696,6 +697,7 @@ class RetrievalPipeline:
             )
         return out
 
+    @traced("retrieve", "dimension")
     def retrieve_scoring_pool(
         self,
         dimension: str,
@@ -893,6 +895,7 @@ class RetrievalPipeline:
             logger.error("hybrid_search_failed", error=str(exc))
             return candidates
 
+    @traced("retrieve", "dimension")
     def retrieve_module_chunks(
         self,
         dimension: str,
@@ -1153,6 +1156,7 @@ class RetrievalPipeline:
 
     # ── Module 3 + Module 4 conditional budget retrieval ───────────────
 
+    @traced("retrieve", "dimension")
     def retrieve_module34_chunks(
         self,
         dimension: str,
