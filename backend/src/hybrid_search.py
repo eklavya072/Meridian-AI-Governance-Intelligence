@@ -21,10 +21,9 @@ cosine similarities — which are not on a comparable scale, and any fixed
 weighting between them would be a hyperparameter nobody can defend. k=60 is the
 value from the original paper, deliberately left alone.
 
-MEASURED EFFECT, so nobody has to guess: on Kenya this promotes 3-9 chunks per
-dimension that the dense sweep had not ranked, and changed no verdict on Kenya,
-Japan or the EU. It is kept for recall insurance on documents where the dense
-sweep is weaker, not because it moved a number here.
+It is recall insurance for documents where the dense sweep is weaker: on the
+study corpus it promotes a few chunks per dimension the dense sweep had not
+ranked, and changes no verdict.
 
 BM25 is implemented here rather than taken from `rank_bm25` because the scoring
 loop is thirty lines and the tokeniser has to be policy-aware — keeping

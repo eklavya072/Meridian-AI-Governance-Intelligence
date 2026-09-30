@@ -14,14 +14,11 @@ from dotenv import load_dotenv
 from sqlalchemy import select as sa_select
 from sqlalchemy import text as sa_text
 
-# Pinned to THIS directory rather than the process cwd. A bare load_dotenv()
-# walks up from wherever the server happened to be launched, and there are two
-# .env files in this tree: backend/.env for a local uvicorn, and the repo-root
-# .env that docker-compose loads through env_file. They had drifted to
-# different GEMINI_MODEL values, so which model the pipeline used depended on
-# the launch directory — a probe against one model reported quota that the
-# other did not have. Under Docker the file is absent and the container's real
-# environment is used, which load_dotenv never overrides.
+# Pinned to THIS directory rather than the process cwd, so the launch
+# directory cannot decide which .env is read (backend/.env for a local
+# uvicorn; the repo-root .env is docker-compose's). Under Docker the file is
+# absent and the container's environment is used, which load_dotenv never
+# overrides.
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from fastapi import (
@@ -102,10 +99,8 @@ def get_guardrails() -> Guardrails:
 def _utc_iso(value: datetime | None) -> str:
     """A stored timestamp as ISO 8601 carrying its UTC offset.
 
-    The columns hold naive UTC (datetime.utcnow). Sent bare, a browser reads
-    "2026-09-24T10:03:24" as its own local time: in India that placed a run's
-    start five and a half hours early, and a five-minute analysis showed an
-    elapsed time of 334 minutes.
+    The columns hold naive UTC (datetime.utcnow). Sent bare, a browser would
+    read it as its own local time and misreport every start and elapsed time.
     """
     if value is None:
         return ""
@@ -116,9 +111,9 @@ def _safe_filename(name: str | None) -> str:
     """The client's file name reduced to a bare name, safe inside a storage path.
 
     The client chooses it, and it becomes part of the path the upload is written
-    to: "../../../escaped.pdf" wrote outside the uploads folder. Directory parts
-    (either slash) and control characters go; the rest is kept, so it still
-    reads as the user's own file.
+    to, so "../../../escaped.pdf" must not escape the uploads folder. Directory
+    parts (either slash) and control characters go; the rest is kept, so it
+    still reads as the user's own file.
     """
     base = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
     base = "".join(ch for ch in base if ch.isprintable()).strip()
@@ -131,21 +126,12 @@ def _safe_filename(name: str | None) -> str:
 async def get_db():
     """DB session as a proper async context manager.
 
-    Every call site uses `async with get_db() as db: ...; return X` (see the
-    handlers below). This used to be a bare async generator consumed via
-    `async for db in get_db(): ...; return X` — returning from inside that
-    loop abandons the generator without ever running its `finally`/`__aexit__`
-    cleanup (Python only closes an async generator eagerly when it's fully
-    exhausted or explicitly `.aclose()`d; an early `return` just drops the
-    reference and leaves cleanup to eventual GC, which asyncio does not
-    guarantee promptly). Under sustained polling (the workspace/analysis
-    pages poll every few seconds) that leaked one pooled connection per
-    request, and once the pool (5 + 10 overflow = 15 connections) was
-    exhausted every subsequent request — including simple GETs with nothing
-    to do with the running analysis pipeline — hung forever waiting for a
-    connection that was never coming back. `@asynccontextmanager` guarantees
-    `__aexit__` (and therefore the session close) runs the moment the `async
-    with` block exits, return statement or not.
+    Every call site uses `async with get_db() as db: ...; return X`.
+    `@asynccontextmanager` guarantees the session closes the moment the block
+    exits, return statement or not. A bare async generator returned from
+    mid-loop is only closed by garbage collection, which leaks one pooled
+    connection per request until the pool is exhausted and every request
+    hangs.
     """
     global _engine, _session_factory
     if _session_factory is None:
@@ -167,16 +153,12 @@ async def lifespan(app: FastAPI):
     # Idempotent schema top-ups for databases that predate a given build.
     # create_all only creates missing TABLES; it never alters existing ones.
     #
-    # Each statement gets its OWN transaction, and that is the whole point.
-    # Postgres aborts an entire transaction on the first failed statement, and
-    # "ALTER TYPE ... ADD VALUE" cannot run inside a transaction block at all —
-    # so when these all shared one `begin()` block, that single failure poisoned
-    # the connection and the block's commit turned into a rollback, discarding
-    # every migration that had already succeeded. They looked fine in the logs
-    # (each failure was caught and warned individually) while none of them
-    # actually applied.
+    # Each statement gets its OWN transaction. Postgres aborts an entire
+    # transaction on the first failed statement, and "ALTER TYPE ... ADD VALUE"
+    # cannot run inside a transaction block at all, so one shared block would
+    # roll back every migration on the first already-applied one.
     migrations: list[tuple[str, str]] = [
-        # chat_sessions.mode is new in Part 3.
+        # Chat mode, per session.
         (
             "chat_sessions_mode",
             "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS "
@@ -187,7 +169,7 @@ async def lifespan(app: FastAPI):
             "chat_sessions_workspace_nullable",
             "ALTER TABLE chat_sessions ALTER COLUMN workspace_id DROP NOT NULL",
         ),
-        # Executive brief (Part 3): a generated brief is cached as structured
+        # Executive brief: a generated brief is cached as structured
         # JSON in meta plus markdown in content, so exporting it does not
         # re-run the synthesis LLM call.
         ("reports_content", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS content TEXT"),
@@ -230,11 +212,9 @@ async def lifespan(app: FastAPI):
     # Reclaim workspaces the last process died holding.
     #
     # The analysis worker runs in-process, so nothing that was mid-run can
-    # possibly have survived a restart — yet its row still says "processing",
-    # and the run endpoint refuses to start a second analysis for a workspace
-    # already in that state. A crash therefore wedged the workspace forever:
-    # the page polled a job with no worker behind it, and the only way back
-    # was editing the database by hand.
+    # have survived a restart — yet its row still says "processing", and the
+    # run endpoint refuses to start a second analysis for a workspace in that
+    # state. Without this sweep a crash would wedge the workspace for good.
     #
     # A row in "processing" at startup is orphaned by definition, so it is
     # safe to reset here. The two live states resolve differently: a
@@ -249,18 +229,10 @@ async def lifespan(app: FastAPI):
     reclaim = await reclaim.execution_options(isolation_level="AUTOCOMMIT")
     try:
         for name, statement in (
-            # A run whose analysis already landed is not lost work. Kenya
-            # finished all eight dimensions and then sat wedged in
-            # PROCESSING because its slot leaked; this sweep saw the status
-            # alone, called it orphaned and sent a verified result back to
-            # QUEUED, where the page shows the country as never analysed.
-            # The analyses row is the evidence of what actually happened, so
-            # it is what decides which way the row is reclaimed.
-            #
-            # But only an analysis saved AFTER the workspace last changed is
-            # this run's. An older one is the previous run: the restart that
-            # killed Rwanda mid-analysis reported "Analysis complete" because
-            # an earlier run existed, when nothing from this one had landed.
+            # A run whose analysis already landed is not lost work: the
+            # analyses row, not the status, decides which way the row is
+            # reclaimed. But only an analysis saved AFTER the workspace last
+            # changed belongs to this run; an older one is the previous run.
             (
                 "processing_with_results",
                 "UPDATE workspaces SET status = 'COMPLETE', status_detail = "
@@ -354,9 +326,9 @@ def _is_uuid(value: str) -> bool:
 def _ids_are_well_formed(request: Request) -> None:
     """A malformed id names nothing, so it is a 404 — not a server error.
 
-    Every route passes its id straight to uuid.UUID(), and "not-a-uuid" raised
-    out of it as a 500 on all twelve. Checked here once, for every *_id in the
-    path or the query string, before any handler runs.
+    Every route passes its id straight to uuid.UUID(), which would raise a 500.
+    Checked here once, for every *_id in the path or the query string, before
+    any handler runs.
     """
     params = list(request.path_params.items()) + list(request.query_params.items())
     for name, value in params:
@@ -391,8 +363,8 @@ class WorkspaceCreate(BaseModel):
     country: str
     policy_title: str
     # Framework selection is deterministic (per-dimension + region routing in
-    # backend code) — the client no longer chooses frameworks. Kept optional
-    # with a default so old clients and stored workspaces keep working.
+    # backend code); the client does not choose. Optional so older clients
+    # and stored workspaces keep working.
     frameworks: list[str] = []
 
 
@@ -462,12 +434,8 @@ def _workspace_response(w: Any) -> WorkspaceResponse:
 # index must not have a scheduler killing a process that is running fine.
 
 
-# The 25MB cap was enforced by validate_pdf_file AFTER `await file.read()` had
-# already pulled the whole upload into memory — so the limit ran one step too
-# late to prevent the allocation it exists to prevent. On an 8GB host a single
-# large POST was enough to matter, and Meridian accepts uploads from
-# strangers. Reading in bounded chunks and stopping the moment the ceiling is
-# crossed makes the limit mean what it says.
+# The 25MB upload cap is enforced while reading, in bounded chunks, so an
+# oversized upload is refused before it is pulled into memory.
 async def _read_upload_within_limit(file: UploadFile, limit: int) -> bytes | None:
     """Read at most `limit` bytes; None when the upload exceeds it."""
     chunks: list[bytes] = []
@@ -506,8 +474,7 @@ async def readyz(response: Response):
         checks["database"] = {"ok": False, "error": str(exc)[:200]}
 
     # Vector store: count_chunks() is the cheapest call that proves the
-    # collection is readable, and it is the call that segfaulted on a torn
-    # index — so it is the right thing to gate traffic on.
+    # collection is readable, and the one a torn index fails on.
     try:
         vs = get_vector_store()
         checks["vector_store"] = {"ok": True, "chunks": await asyncio.to_thread(vs.count_chunks)}
@@ -671,9 +638,9 @@ async def _reject_upload(
 ) -> NoReturn:
     """Refuse an upload, and leave the same record an accepted one leaves.
 
-    The upload log used to hold accepted files only, so a run of refused PDFs
-    was visible nowhere but the process log. Recording is best-effort: a
-    database hiccup must not turn a clean 400 into a 500.
+    Refused uploads are recorded too, so they are visible outside the process
+    log. Recording is best-effort: a database hiccup must not turn a clean 400
+    into a 500.
     """
     log_upload_rejection(filename=filename, error_type=error_type, error_message=message)
     metrics.uploads_rejected.labels(reason=error_type).inc()
@@ -731,9 +698,8 @@ async def upload_policy(
     file: UploadFile = File(...),
 ):
     filename = _safe_filename(file.filename)
-    # The workspace is checked before anything is read or stored: a file for
-    # a workspace that does not exist used to be written to storage first and
-    # then abandoned there by the 404.
+    # The workspace is checked before anything is read or stored, so a 404
+    # never leaves an orphaned file in storage.
     async with get_db() as db:
         if not await WorkspaceService(db).get_workspace(workspace_id):
             raise HTTPException(404, "Workspace not found")
@@ -749,8 +715,7 @@ async def upload_policy(
 
     # Through the storage interface rather than straight to container disk.
     # The reference is what gets persisted on the workspace row; for the
-    # filesystem backend it is the same absolute path as before, so rows
-    # written by older builds keep resolving.
+    # filesystem backend it is an absolute path.
     storage = get_storage()
     stored_ref = await asyncio.to_thread(storage.put, f"{uuid.uuid4()}_{filename}", file_bytes)
     logger.info(
@@ -769,11 +734,10 @@ async def upload_policy(
             await asyncio.to_thread(storage.delete, stored_ref)
             raise HTTPException(404, "Workspace not found")
 
-        # Uploading no longer starts the pipeline. The file is queued on the
-        # workspace and waits for an explicit POST to /analyze/{id}/run, which
-        # is what lets a user attach a second document (a strategy and its
-        # implementation plan, say) and have both evaluated as one body of
-        # policy instead of the first upload racing ahead on its own.
+        # Uploading does not start the pipeline. The file is queued on the
+        # workspace and waits for an explicit POST to /analyze/{id}/run, so a
+        # user can attach a second document (a strategy and its implementation
+        # plan, say) and have both evaluated as one body of policy.
         pending = list(workspace.pending_documents or [])
         # Re-uploading the same filename replaces the earlier copy rather than
         # queueing it twice — the pipeline would otherwise ingest, then
@@ -784,8 +748,7 @@ async def upload_policy(
         await ws_service.set_pending_documents(workspace_id, pending)
         # A new document changes the body of policy being scored, so no
         # dimension kept from an earlier, partial run still describes it. The
-        # cache exists to retry failed dimensions over the SAME documents; left
-        # in place, the next run mixed verdicts on the old set into the new.
+        # cache exists to retry failed dimensions over the SAME documents.
         await ws_service.clear_dimension_results(workspace_id)
         await ws_service.update_status(
             workspace_id,
@@ -829,9 +792,8 @@ async def auditor_upload(file: UploadFile = File(...)):
 
     def _ingest(workspace_id: str) -> int:
         # Parsing, OCR fallback and embedding take tens of seconds on a long
-        # statute; run on the event loop they froze every other request. The
-        # stored reference may be remote (Azure), so ingestion reads it through
-        # local_path rather than assuming a file on this disk.
+        # statute, so they run off the event loop. The stored reference may be
+        # remote (Azure), so ingestion reads it through local_path.
         from src.ingestion import ingest_document
 
         with storage.local_path(stored_ref) as path:
@@ -944,8 +906,7 @@ async def run_analysis(
         # Missing files (a wiped uploads dir between restarts) are dropped here
         # rather than failing mid-pipeline, where the workspace would be left
         # in PROCESSING with a stack trace and no obvious way back.
-        # Asked of the storage backend, not of this container's disk — an
-        # Azure-backed reference is not a local file and never was.
+        # Asked of the storage backend, not of this container's disk.
         storage = get_storage()
         present = await asyncio.to_thread(
             lambda: [storage.exists(d.get("file_path", "")) for d in pending]
@@ -1013,17 +974,11 @@ async def run_analysis(
         async def _run_and_release(**kwargs: Any) -> None:
             """Own the slot for the whole life of the background task.
 
-            The slot is taken here, in the request, and spent somewhere else,
-            in the task — so the release has to sit on the boundary between
-            the two. It used to live in the pipeline's own `finally`, which
-            is inside the `async with _get_db_session()` block and therefore
-            unreachable from the argument check and the session acquisition
-            that run ahead of it. Either of those raising returned a 200 to
-            the caller and kept the slot for the life of the process.
-
-            Two leaks is the whole limit, and then every run is refused with
-            capacity_full while nothing is running — a failure that reads
-            like a quota problem and is not one.
+            The slot is taken here, in the request, and spent in the task, so
+            the release sits on the boundary between the two: any failure
+            before the pipeline starts still returns the slot. A leaked slot
+            would refuse every later run with capacity_full while nothing is
+            running.
             """
             try:
                 await run_full_analysis_pipeline(**kwargs)
@@ -1107,9 +1062,8 @@ async def get_analysis(workspace_id: str):
         analysis_list = []
         for a in analyses:
             # Analysis-level metrics persisted in the ragas_metrics JSON blob
-            # (llm_call_count / tier_stats / decision_analytics) ride through
-            # to the frontend so the call-count and decision-analytics cards
-            # render instead of reading fields that never arrive.
+            # (llm_call_count / tier_stats / decision_analytics) for the
+            # frontend's call-count and decision-analytics cards.
             metrics = a.ragas_metrics or {}
             analysis_list.append(
                 {
@@ -1126,8 +1080,7 @@ async def get_analysis(workspace_id: str):
                     "llm_call_count": metrics.get("llm_call_count", 0),
                     "tier_stats": metrics.get("tier_stats"),
                     "decision_analytics": metrics.get("decision_analytics"),
-                    # Deterministic scope disclaimer + evaluated document list
-                    # (multi-doc workspaces: NAIS + Model AI Governance Framework).
+                    # Deterministic scope disclaimer + evaluated document list.
                     "scope_disclaimer": (metrics.get("scope_disclaimer") or {}).get(
                         "disclaimer", ""
                     ),
@@ -1304,8 +1257,7 @@ class ChatRequest(BaseModel):
     finding_context: dict[str, Any] | None = None
     mode: str = "advisor"  # "advisor" | "framework_qa" | "document_overview"
     # Which run the question is about. A workspace holds one run per document
-    # set, and the Rapporteur sits beside a run selector — without this it
-    # answered from the newest run whatever the user was looking at.
+    # set, and the Rapporteur answers about the run selected beside it.
     analysis_id: str | None = None
 
     @field_validator("workspace_id", "session_id", "analysis_id")
@@ -1377,9 +1329,8 @@ async def chat_endpoint(body: ChatRequest):
         )
 
         # A session id the database does not hold starts a new session rather
-        # than failing. The browser keeps its id across a server that lost its
-        # sessions (the demo's database is rebuilt on every restart), and the
-        # first message after that was a 500 on a foreign key.
+        # than failing: the browser keeps its id across a server that lost its
+        # sessions (the demo's database is rebuilt on every restart).
         known = None
         if session_id:
             session_uuid = uuid.UUID(session_id) if isinstance(session_id, str) else session_id
@@ -1407,14 +1358,8 @@ async def chat_endpoint(body: ChatRequest):
             db.add(new_session)
             await db.commit()
 
-        # Load analysis results for contextual awareness.
-        #
-        # Two things were wrong here. The run was always analyses[0] — the most
-        # recent — so a question about the run the user had open in the selector
-        # was answered from a different one whenever a workspace held more than
-        # one, which is every two-run country. And only the gaps were passed, so
-        # nothing cross-dimensional (coverage index, binding share, which
-        # dimension came out strongest) had any figures behind it.
+        # The run the user has open (or the default run), with its decision
+        # analytics, so cross-dimensional questions have figures behind them.
         analysis_data = None
         try:
             if workspace_id:
@@ -1442,14 +1387,9 @@ async def chat_endpoint(body: ChatRequest):
         except Exception:
             pass
 
-        # OFF THE EVENT LOOP. chat_fn is synchronous and spends most of its
-        # time waiting on the LLM — 8 to 75 seconds in measured runs. Called
-        # directly from an async endpoint it blocks the single event loop for
-        # that entire duration, so every other request (the workspace list, the
-        # analysis fetch, the status poller) queues behind whoever is chatting.
-        # That is the same defect already fixed in the analysis pipeline; it
-        # was never applied here, and it is a large part of why the Analysis
-        # page felt slow to load while the Auditor was answering.
+        # Off the event loop: chat_fn is synchronous and spends most of its
+        # time waiting on the LLM, which would otherwise stall every other
+        # request behind whoever is chatting.
         result = await asyncio.to_thread(
             chat_fn,
             workspace_id=workspace_id,
@@ -1521,10 +1461,7 @@ async def list_chat_sessions(workspace_id: str = "", mode: str | None = None):
         else:
             stmt = stmt.where(ChatSession.workspace_id.is_(None))
         stmt = stmt.order_by(ChatSession.updated_at.desc())
-        # Must match the whitelist the create endpoint accepts (line ~1009) —
-        # "auditor" was missing here, so an Auditor history request silently
-        # dropped its mode filter instead of scoping to auditor sessions,
-        # mixing in every Rapporteur ("advisor") conversation as well.
+        # Must match the modes the chat endpoint accepts.
         if mode in ("advisor", "framework_qa", "document_overview", "auditor"):
             stmt = stmt.where(ChatSession.mode == mode)
         result = await db.execute(stmt)

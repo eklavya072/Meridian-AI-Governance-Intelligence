@@ -229,10 +229,9 @@ def _extract_dimension(text: str) -> str | None:
     """The governance dimension a message is about, or None.
 
     A dimension named outright wins; failing that, the alias that appears
-    FIRST in the message. Aliases match whole words only — as bare
-    substrings, "audit" fired on "auditor" and "responsible" on anything that
-    mentioned who is responsible for something — and the first alias in
-    dictionary order used to win however late it came in the sentence.
+    FIRST in the message. Aliases match whole words only: as bare
+    substrings, "audit" would fire on "auditor" and "responsible" on anything
+    that mentions who is responsible for something.
     """
     normalized = _normalize(text)
     named = [

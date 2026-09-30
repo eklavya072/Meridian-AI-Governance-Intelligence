@@ -50,11 +50,9 @@ def parse_pdf(file_path: Path) -> list[dict[str, Any]]:
         # so no chunk id moved.
         text = (page.extract_text() or "").replace("\x00", "")
         # Some PDFs encode text with no reliable word boundaries, so the
-        # extractor returns "P osition of the European Parl iament". Measured,
-        # the EU AI Act loses 71.6 words per 1,000 this way — the instrument
-        # every other document is scored against. Repaired here, before
-        # chunking, so retrieval, cue matching and citations all see the
-        # document as it reads. See src/text_repair.
+        # extractor returns "P osition of the European Parl iament". Repaired
+        # here, before chunking, so retrieval, cue matching and citations all
+        # see the document as it reads. See src/text_repair.
         text = repair_split_words(text)
         char_count = len(text.strip())
         page_text_lengths.append(char_count)
@@ -126,14 +124,11 @@ def structure_aware_split(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     # A BOUNDARY heuristic, not a heading detector, whatever it looks like.
     # Under IGNORECASE the capitals branch matches any line that opens with a
-    # three-letter word, so on the EU AI Act it fires on 84% of lines; the
-    # small-section merge below glues those back into ~3k-character blocks,
-    # and that is the chunking every stored verdict was scored on. Tightening
-    # it would re-chunk every document and move every result, so it stays as
-    # it is and names nothing — it used to title sections too, which is how
-    # citations came to read "Section: available;" and "Section: EN OJ L,
-    # 12.7.2024". Titles come from _HEADING_RE, carried forward from the last
-    # real heading, and are left empty when a document has none.
+    # three-letter word; the small-section merge below glues those back into
+    # ~3k-character blocks. Changing it would re-chunk every document and move
+    # every stored result, so it only splits and names nothing. Titles come
+    # from _HEADING_RE, carried forward from the last real heading, and are
+    # left empty when a document has none.
     SECTION_PATTERNS = re.compile(
         r"^(#{1,3}\s+|(?:\d+\.)+\s+|[A-Z][A-Z\s\-]{2,50}|"
         r"(?:Article|Section|Clause|Chapter|Annex|Appendix)\s+\d+|"
@@ -211,7 +206,6 @@ def structure_aware_split(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 #: Part of every stored chunk's ingest key. Bump it whenever parsing, split-word
 #: repair, chunking or titling changes, so documents indexed under the old
 #: rules are read again rather than reused.
-#: 2026-09-28: the chunk window no longer skips text past a paragraph break.
 INGESTION_VERSION = "2026-09-28"
 
 
@@ -219,10 +213,9 @@ def ingest_key(file_path: Path) -> str:
     """Identifies one exact file read under one version of the ingestion rules.
 
     A run re-reads every document in its workspace, and parsing plus embedding
-    was the largest fixed cost of a run — 106 seconds for the UK's three
-    documents — spent re-deriving chunks the store already held. Chunk ids are
-    derived from the document and the chunk text, so an unchanged file under
-    unchanged rules produces exactly the chunks that are there.
+    is the largest fixed cost of a run. Chunk ids are derived from the
+    document and the chunk text, so an unchanged file under unchanged rules
+    produces exactly the chunks that are already stored.
     """
     digest = hashlib.sha256(file_path.read_bytes()).hexdigest()[:24]
     return f"{digest}:{INGESTION_VERSION}"
@@ -504,30 +497,16 @@ def recursive_character_split(
         if end >= len(text):
             break
 
-        # 25% overlap (was 50%): the previous MAX_CHUNK_CHARS // 2 produced a
-        # 51.7% exact-text duplicate rate across the collection (measured on
-        # 21,744 live chunks) — each 2800-char window re-emitted 1400 chars of
-        # the previous one. 700 chars of overlap keeps cross-boundary context
-        # while roughly halving redundant index weight and duplicate chunks.
-        # Measured against the chunk actually emitted, not the maximum. A
-        # sentence boundary can land as little as 101 chars past `start`, and
-        # a flat 700-char overlap then put `end - overlap_chars` BEHIND
-        # `start`: the `start + 1` floor took over and the window crawled
-        # forward one character at a time, re-emitting the same passage on
-        # every pass. The EU AI Act carried runs of chunks 695, 692, 689 chars
-        # long — each a three-character shift of the last — and 514 of its
-        # 1,707 chunks sat in a duplicate set. Taking the quarter from
-        # `end - start` keeps the stride at 75% of whatever was emitted, so
-        # progress is always proportional to the chunk.
+        # 25% overlap, measured against the chunk actually emitted rather than
+        # the maximum: a sentence boundary can land close to `start`, and a
+        # flat overlap would then put the next window BEHIND `start`, crawling
+        # forward a character at a time and re-emitting the same passage. The
+        # overlap keeps cross-boundary context without flooding the index with
+        # duplicates.
         overlap_chars = min(MAX_CHUNK_CHARS // 4, (end - start) // 4)
         carry_start = max(end - overlap_chars, start + 1)
         # Snap the next window to a paragraph break only INSIDE the overlap,
-        # never past `end`. The bound used to be `end + MAX_CHUNK_CHARS`, so a
-        # section with a paragraph break a page after the chunk boundary had
-        # everything in between skipped: measured on the stored uploads, Egypt's
-        # guidelines lost 2,623 characters of operative text ("The following
-        # attributes must be integrated into the system architecture...") that
-        # were never indexed or scored. The other documents lost nothing.
+        # never past `end`, or the text in between would never be indexed.
         next_para = text.find("\n\n", carry_start, end)
         start = next_para if next_para != -1 else carry_start
 
@@ -536,11 +515,8 @@ def recursive_character_split(
 
 # Chunk ids are derived from the document plus the chunk's own text rather than
 # minted fresh on every ingestion. Re-running an analysis re-ingests every
-# document in the workspace, and a uuid4 per chunk meant an unchanged file came
-# back under an entirely new set of ids: evidence carried over from a cached
-# dimension then pointed at chunks that no longer existed, and every one of its
-# citations failed the identity check while the dimension itself was fine. Same
-# bytes in, same ids out.
+# document in the workspace; stable ids keep evidence carried over from a
+# cached dimension pointing at chunks that exist. Same bytes in, same ids out.
 _CHUNK_ID_NAMESPACE = uuid.UUID("b8f2c1a4-6d3e-4f27-9a5b-0c7e1d8a3f64")
 
 

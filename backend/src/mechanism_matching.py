@@ -129,9 +129,7 @@ MECHANISM_GLOSS: dict[str, str] = {
 class MechanismMatch:
     """Which mechanisms a set of scored sentences evidences, and how.
 
-    The only mechanism result type. There used to be two detectors returning
-    two different types; production used the weaker one, and `binding_met`
-    existed on only one of them.
+    The only mechanism result type.
     """
 
     dimension: str = ""
@@ -160,18 +158,15 @@ class MechanismMatch:
     def summary(self) -> str:
         """What is missing, named, with how many instruments expect it.
 
-        This used to open "Provides 3 of 5 governance mechanisms the reference
-        frameworks expect" — a score out of a denominator, which reads as a
-        pass mark and invites the reader to treat 3/5 as 60% of good
-        governance. It is not a percentage of anything; the five are not
-        equally weighted and nobody claims a document needs all of them.
+        Not "provides 3 of 5 mechanisms": a score out of a denominator reads as a
+        pass mark, and the mechanisms are not equally weighted.
 
-        A named absence with its consensus behind it says the same thing
-        without the arithmetic: "missing pre-deployment testing, which 35 of
-        43 indexed instruments expect" is checkable, actionable, and cannot be
-        misread as a grade. Salience comes from the reference corpus only —
-        see framework_salience — so it measures agreement between instruments,
-        never anything about this document.
+            A named absence with its consensus behind it says the same thing
+            without the arithmetic: "missing pre-deployment testing, which 35 of
+            43 indexed instruments expect" is checkable, actionable, and cannot be
+            misread as a grade. Salience comes from the reference corpus only —
+            see framework_salience — so it measures agreement between instruments,
+            never anything about this document.
         """
         if not self.total:
             return ""

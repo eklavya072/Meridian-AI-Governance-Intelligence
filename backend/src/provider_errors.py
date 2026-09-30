@@ -1,26 +1,18 @@
 """One place that decides what a provider failure means.
 
-The classification was duplicated across four call sites in llm_provider.py
-as ad-hoc substring checks, and they disagreed in ways that mattered:
+Every failure is classified here and nowhere else (see FailureKind):
 
-  - A 404 ("model not found", "is no longer available") was raised as
-    QuotaExceededError. That is a TERMINAL error — the model name is wrong,
-    or the model was retired — but the router treats QuotaExceededError as
-    "this key is spent", so it rotated through every configured key, then
-    fell through to a fallback, and reported the whole thing as
-    exhausted quota. The operator sees "all keys exhausted" when the actual
-    fix is one line in .env. That happened here already: llama-3.3-70b was
-    retired from the catalog and every quota exhaustion fell through to a
-    dead fallback.
-  - "rate" matched anything containing the substring, including the word
-    "accurate" in a model's own error prose.
-  - A 400 (malformed request, prompt too long, safety block) fell through to
-    the bare `raise`, which the router's generic handler then retried
-    MAX_RETRIES times against an identical request that could not succeed.
+  - TERMINAL: a 404 ("model not found", "is no longer available") or a 400
+    (malformed request, invalid key, safety block). Retrying cannot help, so
+    it is never retried or reported as exhausted quota.
+  - QUOTA / QUOTA_DAILY: a 429 or resource-exhausted refusal, split by its
+    retry window into a rate limit that clears and a spent daily allowance.
+    Matched on specific phrases, not a bare "rate" substring, which would
+    also match "accurate".
+  - RETRYABLE: 5xx and timeouts.
 
 Retry-After is read from the exception's response headers where the SDK
-exposes them, and only falls back to scraping the message text. The previous
-code only ever scraped, so a provider that answered properly was ignored.
+exposes them, and only falls back to scraping the message text.
 """
 
 from __future__ import annotations

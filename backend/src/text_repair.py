@@ -8,27 +8,16 @@ boundaries, so extraction produces "P osition of the European Parl iament of
 Both pypdf and PyMuPDF return byte-identical damage, so it is the file's own
 encoding and not a parser choice.
 
-Measured across the indexed corpus, counting only pairs where NEITHER token is
-a word on its own but the join is (so "of the" and "in a" are not counted):
-
-    EU AI Act (Regulation 2024/1689)   71.6 broken words per 1,000
-    AI Verify Assurance Pilot          31.6
-    Japan APPI 2003                     9.6
-    Kenya AI Bill 2026                  7.2
-    China PIPL 2021                     0.7
-    UK AI Playbook                      0.0
-
-It is essentially one document — but that document is the single most
-important instrument in the corpus, serving both as a reference framework for
-every country and as the EU's own assessed text. Damage there costs retrieval
-recall, mechanism cue matches and duty detection on the one instrument
-everything else is measured against.
+It is concentrated in a few documents, but the worst of them is the EU AI Act
+(about 72 broken words per 1,000), the single most important instrument in the
+corpus: a reference framework for every country and the EU's own assessed
+text. Damage there costs retrieval recall, mechanism cue matches and duty
+detection on the instrument everything else is measured against.
 
 WHY REPAIR RATHER THAN RE-EXTRACT
 ─────────────────────────────────
 Re-extraction does not help; the damage is in the source encoding. Parsing
-EUR-Lex HTML instead would (that was src/legal_structure.py, removed 19 Sep
-because nothing ever wired it up), but that needs an HTML ingestion path this
+EUR-Lex HTML instead would, but that needs an HTML ingestion path this
 pipeline does not have.
 
 WHY THIS IS SAFE FOR CITATIONS
@@ -77,9 +66,8 @@ _EXTRA = frozenset(
 )
 
 # The bundled list comes first so every environment repairs identically.
-# Relying on the system list meant macOS (web2) repaired words, the Debian
-# image (no list) repaired none, and the same PDF produced different chunks,
-# chunk ids and possibly scores in the two. web2 is Webster's Second
+# A bundled list, so every platform repairs the same words and the same PDF
+# produces the same chunks and chunk ids everywhere. web2 is Webster's Second
 # International (1934), whose copyright has lapsed; it is the list every
 # stored run was indexed with.
 _BUNDLED_WORD_LIST = pathlib.Path(__file__).resolve().parents[1] / "resources" / "web2.txt.gz"

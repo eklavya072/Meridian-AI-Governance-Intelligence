@@ -30,21 +30,13 @@ def ocr_flexible_fragment(term: str, min_len_for_flex: int = 5) -> str:
     """Regex fragment matching `term` despite PDF intra-word space corruption.
 
     PDF text extraction routinely shatters words with spurious internal
-    spaces (kerning/ligature artifacts). Measured on the EU AI Act corpus in
-    this system, the damage is near-total for exactly the vocabulary that
-    matters most for governance scoring:
-
-        "deployers"   0 intact vs 10,496 space-broken
-        "conformity"  0 intact vs  1,992 space-broken
-        "supervis…"   0 intact vs    816 space-broken
-        "providers"   2,304 intact vs 5,216 space-broken
-        "high-risk"   24 intact vs 11,824 as "high-r isk"
-
-    A literal match therefore silently scored the single most binding
-    instrument in the corpus as though it named no duty-bearer and had no
-    enforcement machinery — a document-quality artifact masquerading as a
-    governance finding. Allowing an optional space between characters
-    recovers every one of those matches.
+    spaces (kerning/ligature artifacts). On the EU AI Act the damage is
+    near-total for exactly the vocabulary that matters most for scoring:
+    "deployers" and "conformity" never appear intact, and "high-risk" appears
+    as "high-r isk" hundreds of times more often than whole. A literal match
+    would score the most binding instrument in the corpus as naming no
+    duty-bearer. Allowing an optional space between characters recovers those
+    matches.
 
     Only applied to terms of `min_len_for_flex`+ characters: for a long word
     the chance of accidentally matching the same letters spread across

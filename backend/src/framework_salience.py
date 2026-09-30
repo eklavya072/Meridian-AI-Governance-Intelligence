@@ -111,10 +111,8 @@ def mechanism_salience() -> dict[str, int]:
 def framework_count() -> int:
     """How many instruments the salience was counted over.
 
-    Counted directly. An earlier version returned the largest salience value
-    as a "lower bound", which printed "expected by 31 of 39" when the corpus
-    holds 43 — every ratio on screen was inflated by a denominator that was
-    itself a measurement.
+    Counted directly, so every "expected by N of M" ratio has the true
+    denominator.
     """
     try:
         from src.vectorstore import iter_library_chunks, open_collection

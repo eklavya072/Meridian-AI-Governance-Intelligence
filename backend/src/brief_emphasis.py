@@ -5,9 +5,9 @@ decision-relevant terms with ``**...**``: a count, a verdict, a named body or
 law, a dimension, a governance mechanism. The brief page renders a marked
 term bold and underlined, and both exports do the same.
 
-Marks are added when a brief is served or exported, never stored. Every
-brief, including those generated before this existed, is treated alike, and
-the stored text stays exactly what the analysis produced.
+Marks are added when a brief is served or exported, never stored, so every
+brief, old or new, is treated alike and the stored text stays exactly what
+the analysis produced.
 """
 
 from __future__ import annotations

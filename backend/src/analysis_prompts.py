@@ -718,18 +718,11 @@ _CHUNK_ID_PROHIBITION = (
 def _citation_instruction(division_vocabulary: list[str] | None) -> str:
     """Tell the model to use the DOCUMENT's numbering words, not ours.
 
-    This instruction used to read "Cite ONLY article, section or recital
-    numbers...". That enumerates a closed vocabulary drawn from EU statutory
-    drafting, and most instruments this tool reads are not drafted that way.
-    Japan's AI Guidelines for Business organises itself into Parts — the word
-    "Section" appears in it zero times. Handed a document full of Parts and an
-    instruction permitting only article/section/recital, the model mapped
-    Part 4 onto the nearest allowed word and wrote "Section 4".
-
-    That reads as a fabricated citation and gets flagged as one, but the model
-    was doing what it was told; the substance of the claim was correct and the
-    surrounding references (P-7, P-4, U-6, U-7) were all real. The instruction
-    was wrong, not the answer.
+    Most instruments this tool reads are not drafted in EU statutory style.
+    Japan's AI Guidelines for Business organises itself into Parts and never
+    says "Section"; an instruction permitting only article/section/recital
+    numbers makes the model map "Part 4" onto "Section 4", which then reads as
+    a fabricated citation.
 
     So: name the forms the document actually uses when they are known, and
     otherwise tell the model to mirror the document rather than pick from a
@@ -814,11 +807,8 @@ def build_module1_2_combined_prompt(
 
     # The coverage and depth verdict is decided BEFORE this call, from the
     # document's own provisions (see _compute_deterministic_verdict). It is
-    # given to the model as a FIXED INPUT to explain, not a judgment to make.
-    # Previously the model formed its own verdict, wrote prose justifying it,
-    # and then had the verdict replaced downstream — which is why reports
-    # carried gap language underneath a Covered result and recommendations
-    # aimed at a different conclusion than the one shown.
+    # given to the model as a FIXED INPUT to explain, not a judgment to make,
+    # so the prose can never argue with the verdict it sits under.
     if determined_verdict:
         parts.append("═══ [DETERMINED VERDICT — EXPLAIN THIS, DO NOT RE-JUDGE] ═══")
         parts.append(f"Coverage: {determined_verdict.get('coverage_label')}")
@@ -909,10 +899,9 @@ def build_module1_2_combined_prompt(
 
 # ── Several dimensions, one request ──────────────────────────────────────
 #
-# A run used to cost one Module 1+2 call per dimension and one Module 3+4 call
-# per gapped dimension — 10 to 17 requests a country, when the free tier allows
-# 20 a day. Batched, a country costs three: the mechanism check, one Module 1+2
-# call and one Module 3+4 call.
+# Per dimension, a run costs one Module 1+2 call each and one Module 3+4 call
+# per gapped dimension. Batched, it costs three: the mechanism check, one
+# Module 1+2 call and one Module 3+4 call.
 #
 # What each dimension is told does not change. The instructions are the same
 # text; the only dimension-specific parts of the system prompt — its definition,

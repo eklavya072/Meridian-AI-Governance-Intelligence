@@ -224,9 +224,8 @@ def build_precedents(gaps: list[dict[str, Any]], limit: int = 4) -> list[dict[st
     """The matched incidents themselves: what happened, which dimensions it
     bears on, and the lesson, each in a sentence or two, with its source.
 
-    The section used to be one sentence naming the incidents, which told a
-    minister that precedents exist but not what any of them was. Everything
-    here is already stored with the match; nothing is written for the brief.
+    Everything here is already stored with the match; nothing is written for
+    the brief.
     """
     order: list[str] = []
     found: dict[str, dict[str, Any]] = {}
@@ -255,11 +254,9 @@ def build_precedents(gaps: list[dict[str, Any]], limit: int = 4) -> list[dict[st
 def build_dimension_assessment(
     gaps: list[dict[str, Any]], documents: list[str] | None = None
 ) -> list[dict[str, Any]]:
-    """Per-dimension detail — the substance the brief used to discard.
+    """Per-dimension detail: what was actually found for each dimension.
 
-    The brief summarised eight dimensions into three strength bullets and
-    three attention bullets, so a reader never saw what was actually found for
-    any particular dimension. Everything here is already computed and already
+    Everything here is already computed and already
     verified: the coverage tier, the depth stage, the evidence-derived risk
     basis, and which of the mechanisms the dimension calls for are absent.
 
@@ -416,10 +413,9 @@ def _assign_key_provisions(
     Per dimension: a passage that has not been quoted under another dimension
     of this brief, then one free of form glyphs (checkbox scoring grids),
     then one that states a rule, then one that opens on a sentence, then the
-    closest match. Dimensions with the fewest passages choose first, so the
-    only provision Human Autonomy has is not spent on Transparency first:
-    Rwanda's Article 21 was printed under three dimensions. A passage is
-    reused only when a dimension has nothing else.
+    closest match. Dimensions with the fewest passages choose first, so a
+    dimension's only provision is not spent on another dimension first. A
+    passage is reused only when a dimension has nothing else.
     """
     evaluated = set(documents or [])
     pools = [_provision_candidates(g, evaluated) for g in gaps]

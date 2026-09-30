@@ -147,9 +147,9 @@ class Module2Recommendation(BaseModel):
     international_standard_reference: str = ""
     framework_synthesis: str = ""
     # Structured framework synthesis — Consensus / Differences / Overall
-    # assessment. `framework_synthesis` above is the composed legacy string
-    # ("Consensus: ...\n\nDifferences: ...\n\nOverall assessment: ...") kept for
-    # every existing consumer; these three fields are the structured source.
+    # assessment. `framework_synthesis` above is the three composed into one
+    # string ("Consensus: ...\n\nDifferences: ...\n\nOverall assessment: ...")
+    # for consumers that read it whole.
     framework_synthesis_consensus: str = ""
     framework_synthesis_differences: str = ""
     framework_synthesis_overall_assessment: str = ""
@@ -321,14 +321,10 @@ class GovernanceGap(BaseModel):
     # coverage, which is a genuine finding that no evidence supports a verdict.
     analysis_error: str | None = None
     # Article/recital/section numbers the narrative cited that could NOT be
-    # located in the retrieved source text. Measured on real runs as the
-    # weakest link in the output: article numbers were reliable, but recital
-    # and section numbers were confabulated — a plausible number within a
-    # couple of the correct one, attached to a real obligation the model knew
-    # existed. Surfaced rather than silently dropped so a reader knows which
-    # specific numbers not to rely on.
-    # Real provisions the model recalled from memory: present in the uploaded
-    # document but absent from the evidence retrieved for this dimension.
+    # located in the retrieved source text, surfaced so a reader knows which
+    # numbers not to rely on. These are real provisions the model recalled
+    # from memory: present in the uploaded document but absent from the
+    # evidence retrieved for this dimension.
     unverifiable_citations: list[str] = []
     # Numbers that appear NOWHERE in the uploaded document — invented outright.
     # Separate from the above because the two need different reader responses.

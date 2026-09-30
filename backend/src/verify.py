@@ -131,11 +131,8 @@ def verify_citation(
     # workspace's uploaded document; shared corpus/framework chunks (EU AI
     # Act, NIST, CDEI, ...) never do, regardless of which workspace cites
     # them. Without this guard, a correct citation to page 89 of a 144-page
-    # framework was rejected as "exceeds document length" against an
-    # unrelated 20-36 page uploaded policy — a false negative on the
-    # framework citation, not a real problem with it (confirmed live: every
-    # rejected citation this bug produced had a high semantic-similarity
-    # score, i.e. genuinely supported the claim).
+    # framework would be rejected as "exceeds document length" against a
+    # 30-page uploaded policy.
     chunk_belongs_to_workspace_document = bool(chunk_metadata.get("workspace_id"))
     if document_total_pages and page_number and chunk_belongs_to_workspace_document:
         if page_number > document_total_pages:
@@ -582,11 +579,9 @@ def classify_narrative_citations(
                    wrote it from memory rather than from what it was shown.
                    Often still correct, but nothing here proves it.
 
-    Measured on a live EU AI Act run: of four flagged citations, one (Article
-    10, on data governance and bias examination) was real and correct but
-    unretrieved, two were real provisions attached to the wrong dimension, and
-    one pointed at an article of a DIFFERENT regulation. Reporting all four
-    with the same severity hides which is which.
+    A flagged number can be real but unretrieved, real but attached to the
+    wrong dimension, or from a different instrument altogether; reporting
+    them all with one severity hides which is which.
 
     `document_text` is optional: with no document to compare against, every
     flagged citation is reported as unsupported rather than being

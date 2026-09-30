@@ -19,14 +19,9 @@ _COUNT_CACHE: dict[int, dict[str, int]] = {}
 def _framework_chunk_counts(vector_store: VectorStore) -> dict[str, int]:
     """Count chunks per framework in ONE pass over the collection metadata.
 
-    This used to be one ChromaDB query per configured framework — 33 queries
-    for 33 frameworks, each scanning a ~38k-chunk collection. The endpoint took
-    4.5 seconds on the current corpus and 19.6 seconds on a larger one, and the
-    Analysis page awaits it before it renders anything, so the workspace
-    dropdown and the analysis body both sat empty for the duration.
-
-    One paged sweep plus a dict is the same information at a fraction of the
-    cost, and the result is cached so repeated page loads are free.
+    One paged sweep plus a dict, rather than one query per framework over a
+    ~38k-chunk collection; the Analysis page awaits this before rendering.
+    Cached, so repeated page loads are free.
     """
     total = vector_store.collection.count()
     cached = _COUNT_CACHE.get(total)

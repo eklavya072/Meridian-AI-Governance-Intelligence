@@ -24,17 +24,10 @@ def _is_near_duplicate(key: str, accepted_keys: list[str]) -> bool:
     Exact-text dedup is not enough. Chunk boundaries drift between ingestions
     and overlapping windows re-emit the same passage shifted by a few
     characters, so the same provision reappears as many textually DISTINCT
-    chunks ("...fostering sustainable growth" vs "...sustainable growth").
-    Measured on the live store after exact-duplicate cleanup: Kenya still held
-    4,973 distinct chunk texts that collapse to just 88 genuinely distinct
-    passages, and the EU AI Act 1,450 that collapse to 359.
-
-    The practical cost is retrieval recall. A fixed candidate budget spent on
-    a corpus that is ~98% near-duplicates surfaces only a few dozen real
-    passages, so the scorer never sees most of the document and reports
-    dimensions as thin when the text is simply never retrieved. Containment
-    catches truncation at either end, which is exactly the shape this
-    artifact takes.
+    chunks ("...fostering sustainable growth" vs "...sustainable growth"). A
+    fixed candidate budget spent on those copies would surface only a few real
+    passages. Containment catches truncation at either end, which is exactly
+    the shape this artifact takes.
     """
     if not key:
         return True
@@ -67,15 +60,9 @@ MODULE1_REGIONAL_RESERVE = int(os.getenv("MODULE1_REGIONAL_RESERVE", "1"))
 MODULE2_DIMENSION_RESERVE = int(os.getenv("MODULE2_DIMENSION_RESERVE", "1"))
 MODULE3_DIMENSION_RESERVE = int(os.getenv("MODULE3_DIMENSION_RESERVE", "1"))
 # Document bucket budget: the uploaded policy is the PRIMARY evidence for
-# Module 1 — the LLM judges THE DOCUMENT, not the frameworks. 4 chunks
-# (each truncated to ~800 chars) is the minimum that lets a substantive
-# national strategy show its commitments; 3 was starving it to 1-2 chunks.
-# Raised 4 -> 6: confirmed live miss on a long, dense legal text (EU AI
-# Act) where Article 99 (penalties) and Article 50 (disclosure duty) never
-# reached the Accountability/Transparency prompts at 4 — the LLM saw only
-# recital paraphrases and honestly under-reported. This costs LLM PROMPT
-# TOKENS, not extra API REQUESTS (same one call per dimension), so it does
-# not touch the Gemini free-tier request quota.
+# Module 1 — the LLM judges THE DOCUMENT, not the frameworks. Six chunks lets a
+# long legal text's operative articles (penalties, disclosure duties) reach the
+# prompt alongside its recitals. This costs prompt tokens, not extra requests.
 DOC_TOP_K = int(os.getenv("MODULE_DOC_TOP_K", "6"))
 MODULE_CHUNK_MAX_CHARS = int(os.getenv("MODULE_CHUNK_MAX_CHARS", "800"))
 
@@ -98,10 +85,9 @@ MODULE4_TOP_K = int(os.getenv("MODULE4_TOP_K", "4"))
 # from it — instead of trusting the first handful — is what gives the smaller,
 # sharper source a chance to be seen.
 #
-# MODULE4_MAX_PER_DOCUMENT: without a cap, one document routinely takes every
-# slot (Accountability, Safety and Fairness each returned the same report 3x
-# before this). Two slots lets a genuinely dominant source stay dominant while
-# still guaranteeing a second, independent case reaches the prompt.
+# MODULE4_MAX_PER_DOCUMENT: without a cap, one large report takes every slot.
+# Two slots lets a genuinely dominant source stay dominant while still
+# guaranteeing a second, independent case reaches the prompt.
 MODULE4_CANDIDATE_POOL = int(os.getenv("MODULE4_CANDIDATE_POOL", "60"))
 MODULE4_MAX_PER_DOCUMENT = int(os.getenv("MODULE4_MAX_PER_DOCUMENT", "2"))
 MODULE34_DOC_TOP_K = int(os.getenv("MODULE34_DOC_TOP_K", "2"))
@@ -113,9 +99,7 @@ MODULE34_DOC_TOP_K = int(os.getenv("MODULE34_DOC_TOP_K", "2"))
 MODULE_DEDUP_HEADROOM = int(os.getenv("MODULE_DEDUP_HEADROOM", "3"))
 
 # Sparse BM25 fused with the dense sweep by reciprocal rank fusion, applied to
-# the workspace-document bucket. Measured on Kenya: promotes 3-9 chunks per
-# dimension the dense sweep had not ranked. It changed no verdict on Kenya,
-# Japan or the EU — it is recall insurance, not a scoring change.
+# the workspace-document bucket: recall insurance, not a scoring change.
 USE_HYBRID_SEARCH = os.getenv("USE_HYBRID_SEARCH", "true").lower() == "true"
 
 # Scoring pool: feeds deterministic pattern scoring, not an LLM prompt, so it
@@ -180,17 +164,9 @@ class RetrievalPipeline:
         # leak every workspace's full chunk text across every analysis run
         # for the process lifetime). See _workspace_chunk_texts.
         self._lexical_cache: dict[str, list[tuple[str, str]]] = {}
-        # Per-workspace lock so the 8 concurrent dimension workers (the
-        # analysis loop's bounded-parallel ThreadPoolExecutor) COALESCE into
-        # one real fetch instead of racing: without this, all 8 workers can
-        # hit _workspace_chunk_texts in the same first second, before any of
-        # them has populated the cache, each independently re-fetching the
-        # entire workspace document from Chroma. On a large document (the EU
-        # AI Act runs ~1000+ chunks) that is 7 wasted full-collection fetches
-        # stacking up as real wall-clock time — a self-inflicted latency
-        # regression from the lexical-hybrid fix, not the intended cost of
-        # having it. Locking makes it "fetch once, every worker reads the
-        # same cached list" as originally intended.
+        # Per-workspace lock so concurrent dimension workers coalesce into one
+        # fetch of the workspace document instead of each re-fetching it
+        # before the cache is warm. See _workspace_chunk_texts.
         self._lexical_cache_locks: dict[str, threading.Lock] = {}
         self._lexical_cache_locks_guard = threading.Lock()
 
@@ -310,9 +286,7 @@ class RetrievalPipeline:
 
         core = {"Transparency", "Accountability", "Fairness", "Privacy", "Safety", "Human Autonomy"}
 
-        # Stored, not just returned: the early return above is the cache, and
-        # without this assignment it never fired, so every dimension rebuilt
-        # the same eight profiles.
+        # Stored, not just returned: the early return above is the cache.
         for dim, definition in definitions.items():
             DIMENSION_PROFILES[dim] = DimensionProfile(
                 dimension=dim,
@@ -444,10 +418,7 @@ class RetrievalPipeline:
         if len(text_lower) < 150:
             return True
         # vectorstore.retrieve() / _retrieve_doc_bucket_multi_query() carry
-        # page_number inside metadata, NOT at the top level. Reading only the
-        # top-level key made page default to 0 for EVERY doc chunk, which
-        # silently dropped every chunk under 400 chars as a "cover page" — a
-        # systematic doc-bucket starvation bug.
+        # page_number inside metadata, not at the top level.
         md = chunk.get("metadata") or {}
         raw_page = chunk.get("page_number") or md.get("page_number")
         try:
@@ -502,12 +473,10 @@ class RetrievalPipeline:
         if cached is not None:
             return cached
 
-        # Coalesce concurrent callers onto ONE fetch. The 8-worker analysis
-        # loop can have every dimension call this within the same instant,
-        # before the cache is warm — without a lock, each would independently
-        # re-fetch the entire workspace document from Chroma (real wall-clock
-        # cost on a large document). Per-workspace (not a single global lock)
-        # so unrelated workspaces never block each other.
+        # Coalesce concurrent callers onto ONE fetch: every dimension worker can
+        # call this in the same instant, before the cache is warm. Per-workspace
+        # (not a single global lock) so unrelated workspaces never block each
+        # other.
         locks_guard = getattr(self, "_lexical_cache_locks_guard", None)
         if locks_guard is None:
             # Same defensive fallback as the cache itself (tests via __new__).
@@ -579,33 +548,21 @@ class RetrievalPipeline:
         hybrid half of retrieval that dense-embedding search (which caps at
         a candidate window) can silently miss entirely.
 
-        Fixes a confirmed live gap: the EU AI Act's Article 99 penalty
-        regime and Article 50 disclosure duty never reached the Accountability
-        / Transparency dimension prompts because embedding similarity ranked
-        recital/preamble paraphrases above the operative articles within the
-        small candidate window. A term-overlap score against the dimension's
-        own high-precision vocabulary (DIMENSION_CORE_TERMS) plus the query
-        text catches exact statutory language ("penalties", "Article 99",
-        "shall notify") that a paraphrase-trained embedding can under-rank,
-        and — because it scores every chunk in the document, not just the
-        embedding model's top-N — it can surface a chunk dense search never
-        returned as a candidate at all.
+        Embedding similarity can rank recital paraphrases above the operative
+        articles within the dense candidate window. A term-overlap score against
+        the dimension's high-precision vocabulary (DIMENSION_CORE_TERMS) plus
+        the query text catches exact statutory language ("penalties",
+        "Article 99", "shall notify"), and because it scores every chunk in the
+        document it can surface a chunk dense search never returned at all.
         """
         from src.deterministic import DIMENSION_CORE_TERMS
 
         # Core terms (curated, high-precision governance vocabulary — "data
         # protection", "grievance", "carbon footprint") are kept SEPARATE
-        # from the incidental words in query_texts. query_texts is usually
-        # the dimension's full definition + aspect prose (several sentences,
-        # not a short keyword list), so pooling every >3-char word from it
-        # into one undifferentiated term set let generic overlap with that
-        # prose (articles, connectives, topic-adjacent words) outscore a
-        # chunk that only matches the curated core terms — exactly the
-        # exact-statutory-language signal this hybrid pass exists to protect.
-        # Confirmed live: a chunk containing "Enforce the Data Protection &
-        # Privacy law" (2 core-term hits) ranked below dozens of chunks that
-        # merely shared incidental words with a six-sentence Privacy
-        # definition, so it never reached the lexical top-K at all.
+        # from the incidental words in query_texts, which is usually a
+        # dimension's full definition prose. Pooled together, generic overlap
+        # with that prose would outscore a chunk that only matches the curated
+        # core terms — exactly the signal this hybrid pass exists to protect.
         core_terms = {t.lower() for t in DIMENSION_CORE_TERMS.get(dimension, ())}
         query_terms: set[str] = set()
         for qt in query_texts:
@@ -648,16 +605,10 @@ class RetrievalPipeline:
         The document bucket is the PRIMARY evidence for Module 1 — the LLM
         judges THE DOCUMENT, not the frameworks. A single string query cannot
         represent a governance dimension: national strategies address each
-        dimension across many sections using varied terminology. The original
-        retrieve_for_dimension used multi-query RRF (dimension definition +
-        aspects, embedded separately, RRF-fused); retrieve_module_chunks
-        regressed to one plain string query, which systematically missed the
-        document's substantive commitments (e.g. the NITI Aayog strategy's
-        "Explainable AI (XAI) program" — an explicit implementation
-        commitment — never reached the Transparency prompt, so the LLM
-        honestly reported Partial/Missing). This restores multi-query recall
-        for the document bucket only; module buckets keep their single query
-        (they are small, role-tagged framework sets).
+        dimension across many sections using varied terminology. So the
+        dimension's definition and aspects are embedded separately and
+        RRF-fused. Module buckets keep a single query (they are small,
+        role-tagged framework sets).
 
         HYBRID: a lexical/keyword rank list (see _lexical_candidates) is
         RRF-fused alongside the dense rank lists, so exact statutory
@@ -669,15 +620,10 @@ class RetrievalPipeline:
 
         where: dict[str, Any] = {"workspace_id": {"$in": [workspace_id]}}
         # The bare dimension name ("Accountability") is the LEAST specific
-        # query vector — it is what ranked a UN advisory-body participation
-        # paragraph (sim 0.859) and an events-calendar paragraph (sim
-        # 0.869-0.875) into the Accountability / Inclusivity document
-        # buckets. The definition + aspect queries ARE the constrained
-        # phrasing (liability/redress/grievance for Accountability;
-        # accessibility/non-discrimination/digital divide for Inclusivity);
-        # the bare name only adds generic recall without topical precision.
-        # Drop it unless dim_query carries real user intent (e.g. chat),
-        # where it must be preserved verbatim.
+        # query vector and ranks off-topic paragraphs (an events calendar) into
+        # the bucket. The definition + aspect queries carry the constrained
+        # phrasing, so the bare name is dropped unless dim_query carries real
+        # user intent (e.g. chat), where it is preserved verbatim.
         query_texts: list[str] = []
         if dim_query.strip().lower() != dimension.strip().lower():
             query_texts.append(dim_query)
@@ -691,11 +637,8 @@ class RetrievalPipeline:
         # Best dense similarity per chunk (max across the query variants) so
         # downstream confidence scoring gets a real 0-1 score instead of 0.0.
         best_sim: dict[str, float] = {}
-        # One batched embed call for all query variants (definition +
-        # aspects, typically 4-6 texts) instead of one individual call per
-        # variant — same embeddings, less per-call model overhead. This
-        # function runs twice per dimension (document bucket + evidence
-        # pool), so the saving compounds across the 8-dimension pipeline.
+        # One batched embed call for all query variants (definition + aspects,
+        # typically 4-6 texts) instead of one call per variant.
         try:
             query_embs = list(self.vectorstore.embedding_service.embed(query_texts))
             if len(query_embs) != len(query_texts):
@@ -715,18 +658,13 @@ class RetrievalPipeline:
         # paraphrase embedding under-ranks (or never surfaces as a dense
         # candidate at all) still win a budget slot.
         #
-        # Weighted 3x in the fusion, not 1x. A confirmed live miss (Rwanda's
-        # "Enforce the Data Protection & Privacy law" — one line inside an
-        # otherwise-unrelated 2787-char implementation-plan table) ranked #1
-        # on the lexical pass across the ENTIRE workspace corpus, yet still
-        # lost every fused-list slot: with `query_texts` typically expanding
-        # to 4-7 dense variants (definition + aspects), a chunk that merely
-        # ranks decently across several of them accumulates more combined RRF
-        # score than a single rank-0 lexical vote can offset (1/(k+0) from
-        # one list vs. several 1/(k+rank) contributions from many). Appending
-        # the lexical list multiple times gives its exact-term signal real
-        # weight against that dilution without touching the shared, generic
-        # reciprocal_rank_fusion() utility used elsewhere.
+        # Weighted 3x in the fusion, not 1x. The query texts expand to 4-7
+        # dense variants, and a chunk that ranks decently across several of
+        # them accumulates more RRF score than a single rank-0 lexical vote can
+        # offset — so a one-line statutory duty inside an unrelated table would
+        # never win a slot. Appending the lexical list several times gives its
+        # exact-term signal real weight without changing the shared
+        # reciprocal_rank_fusion() utility.
         lexical = self._lexical_candidates(workspace_id, dimension, query_texts, candidates)
         if lexical:
             rank_lists.extend([lexical] * 3)
@@ -979,8 +917,8 @@ class RetrievalPipeline:
         src/framework_router.resolve_frameworks() — when provided, Module 1
         retrieval is restricted to exactly those framework names (core +
         dimension-specific + regional). Module 2 and the workspace document
-        are never framework-filtered. When omitted, behaviour is unchanged
-        (all module_1_normative sources are eligible).
+        are never framework-filtered. When omitted, all module_1_normative
+        sources are eligible.
 
         `module1_regional_frameworks` is the country's region-routed subset
         (e.g. Singapore Model AI Governance Framework for ASEAN) from
@@ -1036,11 +974,10 @@ class RetrievalPipeline:
             top_k=module2_top_k * MODULE_DEDUP_HEADROOM,
             role_filter=["module_2_practical"],
         )
-        # Workspace document (top_k=4, preamble-filtered). Multi-query RRF
-        # restores the recall the old pipeline had; fetch extra raw candidates
-        # because recursive splitting produces many text-identical overlapping
-        # chunks — dedup needs enough distinct material to fill the small
-        # document budget.
+        # Workspace document (preamble-filtered), by multi-query RRF. Fetch extra
+        # raw candidates because recursive splitting produces many
+        # text-identical overlapping chunks — dedup needs enough distinct
+        # material to fill the small document budget.
         doc_raw: list[dict[str, Any]] = []
         if workspace_id:
             doc_raw = self._retrieve_doc_bucket_multi_query(
@@ -1233,11 +1170,8 @@ class RetrievalPipeline:
         retrieval:
 
         - The dimension's ASPECT-SPECIFIC query texts (definition + aspects)
-          are used instead of a bare dimension-name query — the same fix that
-          stopped the Module 1+2 doc-bucket leak. The bare name is the least
-          specific vector and ranks off-topic content; aspects carry the
-          constrained vocabulary (liability/redress for Accountability,
-          accessibility/digital divide for Inclusivity, etc.).
+          are used instead of a bare dimension-name query, which is the least
+          specific vector and ranks off-topic content.
         - Module 4 incident chunks additionally require the dimension-grounding
           check downstream (gap_analyzer), so an off-topic incident can never
           match on raw similarity alone.
@@ -1247,8 +1181,7 @@ class RetrievalPipeline:
         profile = profiles.get(dimension)
         query_texts: list[str] = []
         if profile is not None:
-            # Constrained, aspect-specific phrasing — NOT the bare dimension
-            # name (the Module 1+2 retrieval fix, applied here too).
+            # Constrained, aspect-specific phrasing — NOT the bare dimension name.
             query_texts.append(profile.definition)
             query_texts.extend(profile.aspects)
         if not query_texts:
@@ -1274,13 +1207,10 @@ class RetrievalPipeline:
                 framework_filter=module3_dimension_frameworks,
             )
         # Grounding is applied HERE, not only downstream. gap_analyzer re-checks
-        # every incident with the same _chunk_matches_dimension gate before it
-        # writes a Module 4 entry, so an ungrounded chunk retrieved into this
-        # bucket is not merely useless — it silently consumes one of the few
-        # slots and the dimension ends up reporting fewer cases than it paid
-        # for. Privacy was shipping 1 usable case out of 3 for exactly this
-        # reason. Filtering first costs nothing and spends every slot on a
-        # chunk that can actually survive to the output.
+        # every incident with the same _chunk_matches_dimension gate, so an
+        # ungrounded chunk retrieved into this bucket would silently consume one
+        # of the few slots. Filtering first spends every slot on a chunk that
+        # can survive to the output.
         module4_raw = self._select_incident_pool(
             self.vectorstore.retrieve(
                 query=combined_query,

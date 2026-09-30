@@ -6,11 +6,8 @@ off-sense phrases masked out first), which make a passage name a body, a
 reporting duty or an enforcement route, how a chunk is split into sentences,
 and how glossary fragments are recognised.
 
-It no longer decides anything. The keyword "ladder" that once raised coverage
-(R1 Missing->Partial, R2 Partial->Covered) and derived depth from keyword
-flags was superseded by the evidence profile (evidence_strength.py) and
-removed; every verdict is now computed from graded provisions in
-gap_analyzer._compute_deterministic_verdict.
+It decides nothing on its own: every verdict is computed from graded
+provisions (evidence_strength.py) in gap_analyzer._compute_deterministic_verdict.
 """
 
 from __future__ import annotations
@@ -184,9 +181,7 @@ def _word_pattern(phrase: str) -> re.Pattern:
     sides, so a stem never reaches inside a longer word: "minister*" never
     matches "administration" (no boundary before "minist"), and
     "indicatio*" never matches "indicator" or "indicative" (their stems
-    diverge after "indicat"). This is the same boundary discipline as the
-    earlier program/programming fix, applied deliberately where whole-word
-    families share a prefix.
+    diverge after "indicat").
     """
     stem_key = phrase.endswith("*")
     cached = _KEYWORD_PATTERN_CACHE.get(phrase)
@@ -281,10 +276,9 @@ def _is_negated_occurrence(text: str, idx: int) -> bool:
 def _contains_commitment_phrase(text: str, phrases: tuple[str, ...]) -> bool:
     """True when any phrase occurs in `text` on a non-negated, whole-word occurrence.
 
-    Word-boundary matching (fixes substring false positives): "program"
-    no longer matches inside "programming"/"programme", "roadmap" no
-    longer matches inside "roadmapping", etc. Negated occurrences
-    ("will not support", "not committed to") never count.
+    Word-boundary matching: "program" does not match inside "programming",
+    "roadmap" not inside "roadmapping". Negated occurrences ("will not
+    support", "not committed to") never count.
     """
     for phrase in phrases:
         pattern = _word_pattern(phrase)
@@ -317,10 +311,8 @@ def text_contains_mechanism(text: str) -> bool:
 # ── Dimension grounding (topical relevance) ─────────────────────────────
 #
 # A chunk must be topically related to a dimension before it can serve as
-# that dimension's incident match, roadmap citation or fallback citation. On
-# vocabulary alone a UN-advisory-body paragraph passed for Accountability and
-# an events calendar for Inclusivity. This list is the broad RECALL gate; the
-# core terms below are the precision gate.
+# that dimension's incident match, roadmap citation or fallback citation. This
+# list is the broad RECALL gate; the core terms below are the precision gate.
 DIMENSION_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "Transparency": (
         "transparen",
@@ -467,13 +459,9 @@ DIMENSION_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
 # ── Core-term precision gate (anti false-positive, collision fix) ───────
 #
 # DIMENSION_TOPIC_KEYWORDS (above) is deliberately broad — it is a RECALL
-# gate for the loose relevance check. That breadth has a failure mode:
-# vocabulary that is topically adjacent but NOT about the dimension can
-# still match a broad keyword. Confirmed live case: a Korea AI Basic Act
-# sentence listing "healthcare, energy, public services" as HIGH-IMPACT AI
-# SECTORS matches "Environmental Sustainability" via the bare word "energy"
-# even though the sentence is about sector scoping, not AI's own
-# environmental or carbon footprint.
+# gate. That breadth lets topically adjacent vocabulary match: a sentence
+# listing "healthcare, energy, public services" as high-impact AI sectors
+# matches Environmental Sustainability on the bare word "energy".
 #
 # CORE_TERMS is a tighter, higher-precision anchor per dimension: unlike
 # the topic list, every phrase here is nearly unambiguous evidence the
@@ -482,8 +470,7 @@ DIMENSION_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
 # profile only on a core-term hit (gap_analyzer._dimension_profile).
 # ── Sense-disambiguation guard (anti topic-collision) ────────────────────
 # Some core terms are genuinely the right vocabulary for a dimension but
-# carry a second, unrelated sense in policy prose. Three such collisions were
-# confirmed live and each one inflated a verdict:
+# carry a second, unrelated sense in policy prose:
 #
 #   "sustainable growth and innovation"      -> economic, not environmental
 #   "relevant, accessible and comprehensible" -> availability, not disability
@@ -570,25 +557,16 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
     "Accountability": (
         # Incident-reporting vocabulary is included because
         # DIMENSION_MECHANISMS lists "incident reporting" as an Accountability
-        # mechanism. Without it the two tables contradicted each other: the
-        # mechanism audit looked for a mechanism whose own vocabulary this gate
-        # filtered out, so the EU AI Act's Article 73 serious-incident duty —
-        # present in the retrieved pool — was reported as "incident reporting:
-        # not addressed". A mechanism the table expects must have vocabulary
-        # the gate admits.
+        # mechanism: a mechanism the table expects must have vocabulary the
+        # gate admits.
         "accountab",
         # KNOWN OVERLAP, KEPT DELIBERATELY. "liable", "sanction", "penalt"
         # and "fine" are also the words CONSEQUENCE_RE reads to decide a
         # provision is Enforceable, so a penalty sentence enters this
-        # dimension and earns its tier on one signal. Six of seven
-        # jurisdictions therefore return Institutionalized here, the least
-        # discriminating cell in the set. Removing them was tried and
-        # measured: it costs Kenya its Accountability verdict, because
-        # Kenya's accountability regime IS its penalty regime (AI Bill 2026,
-        # KES 5m and two years), and the binding-force correlation fell from
-        # +0.70 to +0.40. The overlap is a real methodological caveat and
-        # belongs in the write-up; removing the vocabulary removes the
-        # finding with it.
+        # dimension and earns its tier on one signal. That makes this the
+        # least discriminating cell, but for many jurisdictions the penalty
+        # regime IS the accountability regime; removing the vocabulary would
+        # remove the finding with it.
         "liabilit",
         "liable",
         "redress",
@@ -637,14 +615,9 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         "meaningful control",
         "opt-out",
         # "human oversight" is EU drafting. Other traditions express the same
-        # binding duty in their own words, and matching only the EU phrasing
-        # silently reports the duty as absent. Korea's AI Framework Act,
-        # Article 34(1)(4), requires "Human management and supervision of
-        # high-impact AI" under a "must implement the following measures"
-        # obligation — Meridian scored Human Autonomy as Missing / Unaddressed
-        # / High risk for a law that mandates human oversight of its highest
-        # risk tier. GDPR Article 22's "human intervention" was missing for
-        # the same reason.
+        # binding duty in their own words: Korea's AI Framework Act requires
+        # "Human management and supervision of high-impact AI", GDPR
+        # Article 22 speaks of "human intervention".
         #
         # All bigrams beginning with "human", deliberately: bare "supervision"
         # and "management" collide with regulatory supervision and corporate
@@ -658,26 +631,15 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         "human judgement",
     ),
     "Inclusivity": (
-        # Bare "accessib" is deliberately NOT listed (removed after a
-        # confirmed live false positive): AI-instrument transparency
-        # provisions routinely require information to be "accessible" in the
-        # sense of understandable/available ("relevant, accessible and
-        # comprehensible information" — EU AI Act Article 13), a Transparency
-        # concept with nothing to do with disability/demographic inclusion.
-        # A sandbox confidentiality clause restricting data to be "accessible
-        # only to market surveillance authorities" hit the same collision.
-        # Genuine disability-accessibility content is still caught via
-        # "persons with disabilities", "disabilit", and "digital divide"
-        # below, so nothing is lost by anchoring the compound instead.
+        # Bare "accessib" is deliberately NOT listed: transparency provisions
+        # require information to be "accessible" in the sense of available
+        # ("relevant, accessible and comprehensible information" — EU AI Act
+        # Article 13), which has nothing to do with disability inclusion.
         "inclusiv",
         "inclusion",
         # The disability sense is carried by compounds, never by bare
-        # "accessib". The EU AI Act's own accessibility duty — "providers
-        # ensure full compliance with accessibility requirements, including
-        # Directive (EU) 2016/2102 and Directive (EU) 2019/882" — names the
-        # two accessibility directives and was the only binding inclusivity
-        # provision in the Act, so excluding the compound along with the bare
-        # stem cost the cell its entire evidence base.
+        # "accessib" — including the compounds naming accessibility
+        # requirements and directives, as the EU AI Act's own duty does.
         "accessibility requirement",
         "accessibility standard",
         "accessibility need",
@@ -704,35 +666,19 @@ DIMENSION_CORE_TERMS: dict[str, tuple[str, ...]] = {
         "stereotype",
     ),
     "Environmental Sustainability": (
-        # NOTE: a bare "sustainab" stem is deliberately NOT listed. In policy
-        # documents "sustainable" overwhelmingly modifies ECONOMIC growth
-        # ("sustainable growth and innovation", "sustainable socio-economic
-        # transformation"), which is a different dimension entirely — that
-        # collision was scoring a skills-and-curricula sentence as an
-        # environmental-sustainability provision. Only environment-anchored
-        # forms of the word are counted.
-        # "ecosystem" alone is excluded for the same reason as bare
-        # "sustainab": in technology policy it overwhelmingly means an
-        # INNOVATION ecosystem ("catalyze the AI ecosystem"), not an
-        # ecological one — that collision scored a start-up partnership
-        # sentence as environmental-sustainability governance.
-        # Bare "environment" is deliberately NOT listed either (removed after
-        # a confirmed live false positive): EU AI Act incident-reporting
-        # language lists "damage to property or the environment" as one of
-        # several possible incident consequences alongside critical-
-        # infrastructure disruption and fundamental-rights infringements —
-        # a real, binding Article 73 SAFETY provision, misclassified as
-        # environmental-sustainability governance purely because its last
-        # six words happened to contain the bare stem.
+        # Bare "sustainab" is deliberately NOT listed: in policy documents
+        # "sustainable" overwhelmingly modifies ECONOMIC growth. Bare
+        # "ecosystem" usually means an INNOVATION ecosystem. Bare
+        # "environment" appears in safety provisions ("damage to property or
+        # the environment" among incident consequences). Only
+        # environment-anchored forms are counted.
         "environmentally sustainable",
         "environmental sustainability",
         "sustainable development",
-        # Bare "ecological" is deliberately NOT listed. In Chinese internet
+        # Bare "ecological" is deliberately NOT listed: in Chinese internet
         # regulation 生态 is rendered "ecological" and means the CONTENT
-        # ecosystem: "strengthen the ecological management of algorithm
-        # recommendation service pages" is a content-moderation duty, and it
-        # was the single binding environmental provision Meridian found in the
-        # whole Chinese corpus. The genuine senses are anchored below.
+        # ecosystem ("ecological management of algorithm recommendation
+        # service pages"). The genuine senses are anchored below.
         "ecological footprint",
         "ecological impact",
         "natural ecosystem",

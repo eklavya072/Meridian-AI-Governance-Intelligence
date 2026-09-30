@@ -298,11 +298,9 @@ def build_corpus_context(vector_store: Any) -> str:
     empty string on failure — a chat turn should never fail because the
     roster could not be counted.
     """
-    # The frameworks config, not the vector store's metadata. A scan of chunk
-    # metadata also sweeps up every uploaded country document and each name
-    # variant a sync has ever written, which is how an earlier version of this
-    # answered "97 sources" when the library holds 33. The config is the same
-    # list the Frameworks page renders, so the two cannot disagree.
+    # The frameworks config, not the vector store's metadata, which also holds
+    # every uploaded country document and old name variants. The config is
+    # the same list the Frameworks page renders, so the two cannot disagree.
     try:
         from src.framework_library import get_framework_library
 

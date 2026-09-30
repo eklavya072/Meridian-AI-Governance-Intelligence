@@ -103,13 +103,7 @@ def build_provenance(
     from src.vectorstore import EMBEDDING_MODEL_NAME
     from src.verify import SEMANTIC_THRESHOLD, SEMANTIC_VERIFICATION
 
-    # Name the check that actually ran. The README claimed NLI for months
-    # while the flag defaulted to off and embedding similarity did the work;
-    # a provenance record that repeats that claim would launder it. The NLI
-    # path has since been removed outright — it was measured on a live Kenya
-    # run and rejected 74% of citations that were verbatim quotes of the chunk
-    # they cite, because a 512-token cross-encoder cannot read a 2,374-char
-    # chunk of extracted PDF.
+    # Name the check that actually ran.
     if SEMANTIC_VERIFICATION:
         verification = {
             "method": "embedding_similarity",

@@ -125,12 +125,8 @@ class WorkspaceService:
 
         # A cached executive brief belongs to the analysis it was written
         # from. The cache is keyed on workspace alone, so once a workspace is
-        # re-analysed the stored brief describes verdicts that no longer
-        # exist — and GET /brief serves it unconditionally while
-        # /brief/export renders it straight to PDF. Two of these were sitting
-        # in the database: the EU's brief was from 26 Aug against an analysis
-        # re-scored seven times since. Exporting one would hand someone a
-        # document contradicting the analysis page it came from.
+        # re-analysed the stored brief would describe verdicts that no longer
+        # exist, and an export would contradict the analysis page.
         #
         # Dropped rather than regenerated, because regenerating costs an LLM
         # call the user did not ask for. The brief page already handles

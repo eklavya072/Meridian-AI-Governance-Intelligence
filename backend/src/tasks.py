@@ -167,10 +167,9 @@ async def run_full_analysis_pipeline(
 ) -> dict[str, Any]:
     """Ingest every queued document, then score the workspace as one corpus.
 
-    `documents` is the current shape: [{"file_path": ..., "file_name": ...}].
-    The single file_path/file_name pair is the older one-document call and is
-    still accepted so an in-flight background task queued before a restart
-    does not fail on signature.
+    `documents` is [{"file_path": ..., "file_name": ...}]. The single
+    file_path/file_name pair is the one-document form, accepted so a
+    background task queued before a restart does not fail on signature.
     """
     if not documents:
         if not file_path:
@@ -189,13 +188,8 @@ async def run_full_analysis_pipeline(
     async with _get_db_session() as db:
         ws_service = WorkspaceService(db)
 
-        # Declared BEFORE the try. The except block below reads this to
-        # persist whatever finished, and it used to be assigned only after
-        # ingestion — so any failure during ingestion (a corrupt PDF, a
-        # missing file, an unreachable vector store) made the handler itself
-        # raise UnboundLocalError. That masked the real error AND skipped the
-        # update_status(ERROR) call, leaving the workspace wedged in
-        # PROCESSING with nothing to explain why.
+        # Declared BEFORE the try: the except block below reads this to persist
+        # whatever finished, including after a failure during ingestion.
         completed_dimensions: list[tuple[str, dict, dict]] = []
 
         try:
@@ -231,14 +225,8 @@ async def run_full_analysis_pipeline(
                 doc_name = _display_name(doc.get("file_name"))
                 document_names.append(doc_name)
                 # ingest_document / add_chunks are synchronous, CPU-bound calls
-                # (PDF parsing, chunking, embedding). Calling them directly here
-                # would block this single-threaded event loop for the entire
-                # pipeline's duration — every other request (GET /workspace,
-                # GET /workspace/{id}, chat, etc.) would hang until the pipeline
-                # finished, which is why the workspace list appeared to "vanish"
-                # on reload while an analysis was running. Running them via
-                # to_thread hands the blocking work to a worker thread so the
-                # event loop stays free to serve concurrent requests.
+                # (PDF parsing, chunking, embedding), so they run in a worker
+                # thread and the event loop stays free for other requests.
                 # Resolved through the storage interface: a filesystem
                 # reference yields the file in place, an Azure reference is
                 # downloaded to a temporary file and cleaned up on exit.
@@ -352,9 +340,7 @@ async def run_full_analysis_pipeline(
                 country=ws_country,
             )
             # Same reasoning as above: analyze() is synchronous and runs for
-            # minutes (up to 16 LLM calls across 8 dimensions). Off the event
-            # loop, via to_thread, so the workspace list and status polling
-            # keep working for the whole duration of the run.
+            # minutes, so it runs off the event loop.
             with metrics.timed_stage("analyse"):
                 result: GapAnalysisResult = await asyncio.to_thread(
                     analyzer.analyze,
@@ -371,11 +357,8 @@ async def run_full_analysis_pipeline(
                 workspace_id=workspace_id,
                 stage="gap_analysis_complete",
                 dimensions_analyzed=len(result.governance_gaps),
-                # One Module 1+2 call per dimension analysed this run, one
-                # Module 3+4 call per Partial/Missing one, and one mechanism
-                # adjudication call for the workspace. The breakdown is logged
-                # by the analyzer, which counted the calls; subtracting here
-                # went negative on a resumed run, where cached dimensions cost
+                # The per-module breakdown is logged by the analyzer, which
+                # counted the calls; cached dimensions on a resumed run cost
                 # nothing.
                 total_llm_calls=result.llm_call_count,
                 covered=sum(
@@ -476,10 +459,8 @@ async def run_full_analysis_pipeline(
                 "details": citation_results,
             }
             # Analysis-level metrics the DB has no dedicated columns for are
-            # persisted in the ragas_metrics JSON blob (already a nullable
-            # JSON column) and surfaced by main.py's GET /analyze response,
-            # so the frontend can render the call-count / decision-analytics
-            # cards instead of reading fields that never arrive.
+            # persisted in the ragas_metrics JSON blob and surfaced by main.py's
+            # GET /analyze response.
             # Deterministic scope disclaimer (never LLM-generated): the
             # analysis evaluates ONLY the specific document(s) uploaded to this
             # workspace — never a country's complete governance apparatus.
@@ -529,17 +510,9 @@ async def run_full_analysis_pipeline(
                         "Re-run when quota is available for a full result."
                     ),
                 )
-                # Deliberately NOT clearing dimension_results here. This cache is
-                # what lets a re-upload skip dimensions that already succeeded
-                # (see the existing_dim/existing_gaps load near the top of this
-                # function) and only retry the ones that actually failed.
-                # Clearing it unconditionally (the old behaviour) wiped every
-                # successful dimension's result the moment the run finished —
-                # so the NEXT re-upload re-analyzed all 8 dimensions from
-                # scratch instead of just the failed ones, burning far more
-                # quota than needed and making which dimensions happened to
-                # succeed pure luck-of-the-draw each retry, including ones
-                # that had just succeeded seconds earlier.
+                # Deliberately NOT clearing dimension_results here: this cache
+                # lets a re-run skip dimensions that already succeeded and
+                # retry only the ones that failed.
             else:
                 # Every dimension landed, but if mechanism adjudication did not
                 # run, the depth stages rest on raw cue matches and can read

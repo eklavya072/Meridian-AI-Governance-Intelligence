@@ -44,16 +44,14 @@ DEFAULT_MAX_OUTPUT_TOKENS = 8192
 #: temperature=0.1 alone does not do this. The model still samples, and the
 #: floating-point reduction order inside the inference kernels varies with
 #: whatever batch the request lands in — which depends on other traffic on a
-#: shared endpoint, not on anything we control. Measured on this workload:
-#: three identical prompts at temperature 0.1 returned three different
-#: answers, the closest pair only 31% similar. With a seed set, the same
-#: three calls came back byte-identical.
+#: shared endpoint, not on anything we control. Three identical prompts at
+#: temperature 0.1 return three different answers; with a seed set, the same
+#: three calls come back byte-identical.
 #:
-#: This matters beyond tidiness. The verdict is computed from the document
-#: and never from the model (see gap_analyzer._compute_deterministic_verdict),
-#: so scores were already reproducible — but the NARRATIVE a ministry reads
-#: was not. Re-running the same document produced a differently worded brief,
-#: which reads like the tool changed its mind when nothing had changed.
+#: The verdict is computed from the document, never from the model (see
+#: gap_analyzer._compute_deterministic_verdict), but the NARRATIVE a ministry
+#: reads is the model's. Without a seed, re-running the same document would
+#: produce a differently worded brief.
 #:
 #: Google documents this as best effort, not a guarantee, so it is a large
 #: reduction in variance rather than a promise of none. Nothing downstream
@@ -72,9 +70,8 @@ class RetryableError(Exception):
 class TerminalProviderError(Exception):
     """Retrying cannot help: bad credential, retired model, malformed request.
 
-    Previously these were raised as QuotaExceededError, so the router rotated
-    through every configured credential and then reported exhausted quota for
-    what was actually a one-line configuration fix.
+    Kept apart from QuotaExceededError, so a configuration mistake is never
+    reported as exhausted quota after rotating through every credential.
     """
 
 

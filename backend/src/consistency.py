@@ -52,14 +52,8 @@ _COVERED_SYNTHESIS_STRONG_PHRASES: tuple[str, ...] = (
 # convert this high-level commitment into an actionable framework". This is
 # the same gap-filling template as the enumerated STRONG_PHRASES above
 # ("would strengthen", "will translate", ...), just with a different verb.
-# Confirmed live: two real Covered verdicts (EU Inclusivity, Kenya
-# Environmental Sustainability) used this exact template with paraphrased
-# verbs ("transform", "convert") that the hand-picked phrase list didn't
-# cover, so each scored only 1 point (the generic "would"/"lacks" soft hit)
-# instead of the 3 needed to trigger the auto-downgrade — the safeguard
-# correctly fires on "would strengthen" but was blind to any other verb
-# filling the same "turn a principle into a mechanism" role. A regex on the
-# construction itself, not the specific verb, closes that gap.
+# Matching the construction rather than specific verbs catches paraphrases
+# ("transform", "convert") the phrase list does not enumerate.
 _COVERED_SYNTHESIS_TRANSFORM_RE = re.compile(
     r"\b(?:would|will)\s+[\w-]+(?:\s+[\w-]+){0,5}\s+into\b",
     re.IGNORECASE,
@@ -68,10 +62,8 @@ _COVERED_SYNTHESIS_TRANSFORM_RE = re.compile(
 # Weight 3: "transition/move/shift from [current state] to [target state]" —
 # a distinct gap-filling idiom from the "would/will ... into" one above, but
 # the same underlying tell: describing where the document should GO, not
-# where it already IS. Confirmed live: India's Accountability synthesis used
-# "must transition from directional proposals to concrete enforcement
-# rules" — no would/will/should present at all, so it scored 0 under every
-# other check and shipped as an unflagged "Covered" verdict.
+# where it already IS ("must transition from directional proposals to
+# concrete enforcement rules").
 _COVERED_SYNTHESIS_FROM_TO_RE = re.compile(
     r"\b(?:transition|move|shift|evolve|progress)(?:s|ing|ed)?\s+from\b[^.]{0,80}?\bto\b",
     re.IGNORECASE,
@@ -262,10 +254,8 @@ def detect_gap_assertions(reasoning: str) -> tuple[int, list[str]]:
 # step (LOW->MEDIUM, MEDIUM->HIGH). A core Partial dimension therefore
 # legitimately reaches HIGH.
 #
-# PARTIAL previously allowed only [LOW, MEDIUM], so the validator flagged the
-# pipeline's OWN correct output as a "risk_coverage_mismatch" error every time
-# compounding fired — an internal contradiction between two components that
-# were each individually right. The table now reflects the escalation rule.
+# The table reflects that escalation, so the validator never flags the
+# pipeline's own compounding as a risk_coverage_mismatch.
 RISK_COVERAGE_MAP: dict[CoverageLevel, list[RiskLevel]] = {
     CoverageLevel.COVERED: [RiskLevel.LOW],
     CoverageLevel.PARTIAL: [RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH],
@@ -325,13 +315,7 @@ class ConsistencyReport:
 
 
 class ConsistencyValidator:
-    """Cross-checks on a finished run. Flags for review; never moves a verdict.
-
-    A relationship graph over broader governance concepts ("Explainability",
-    "Data Protection", "Liability") used to drive two further checks. None of
-    its edges joined two of the eight assessed dimensions, so neither could
-    ever fire, and both were removed rather than left looking like coverage.
-    """
+    """Cross-checks on a finished run. Flags for review; never moves a verdict."""
 
     def validate(
         self,

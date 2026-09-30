@@ -7,14 +7,11 @@ its cues. The cues are deliberately loose ("testing", "evaluat", "continuous",
 "disclos"), so over a large corpus that combination reliably selects a penalty
 or enforcement clause that merely contains the keyword.
 
-Audited over four countries and three dimensions, 55 cue matches: 13 pointed
-at a provision that actually establishes the mechanism. 23%. Of the 35 scored
-as BOUND — the count the mechanism gate reads — 7 were right. 20%.
-
-The damage is not mainly to the score. A mechanism wrongly marked present is
-a gap that DISAPPEARS from the priority-gaps panel, so Kenya reported nothing
-missing on Transparency while its cue matches were a Public Service Commission
-complaints provision and "the Office shall have all powers necessary".
+Audited against the provisions they pointed at, only about one cue match in
+five is a provision that actually establishes the mechanism. The damage is
+not mainly to the score: a mechanism wrongly marked present is a gap that
+DISAPPEARS from the priority-gaps panel (a complaints-handling provision read
+as a transparency mechanism, say).
 
 WHAT THIS DOES, AND WHAT IT DELIBERATELY DOES NOT
 ─────────────────────────────────────────────────
@@ -93,9 +90,7 @@ class _Picks(BaseModel):
 #: Words the PDF extractor breaks across a line: "shal l maintain", "s hall".
 #: The cue matcher already tolerates this through ocr_flexible_fragment, which
 #: is why the cue pass FINDS these provisions — but the model is handed raw
-#: text, read "shal l" as two tokens and did not see a duty. Measured here the
-#: damage is now rare (5 of 1,562 "shall") and all five sit in Kenya's AI Bill;
-#: two are the public-register provision the adjudicator wrongly rejected.
+#: text, read "shal l" as two tokens and would not see a duty.
 #:
 #: Repaired ONLY in the text shown to the model. The citation still quotes the
 #: original, so verbatim verification against the source is unaffected.
@@ -164,18 +159,15 @@ def _rank_candidates(sentences: list[Any], pattern: re.Pattern[str]) -> list[Any
     sentence is ABOUT, but on its own it favours whatever is shortest.
     "Data subject" is a third of "monitoring of data subjects on a large
     scale;" and a tenth of "Article 20 – Right to personal data portability:
-    The data subject has the right to request...". All eight of Rwanda's slots
-    went to fragments like the first; the model rightly answered that none
-    established data subject rights, and a data-protection statute was
-    reported to lack them.
+    The data subject has the right to request...". Density alone fills every
+    slot with fragments like the first, and a data-protection statute is
+    then reported to lack data subject rights.
 
-    Ranking every norm-stating sentence first was measured and rejected: a
-    long "shall" clause that merely contains the cue word ("notified bodies
-    shall have the capability...") then displaced the on-point sentence ("such
-    information should include the capabilities and limitations of the
-    system"), and the EU AI Act lost mechanisms it plainly has.
+    Ranking every norm-stating sentence first fails the other way: a long
+    "shall" clause that merely contains the cue word displaces the on-point
+    sentence.
 
-    So the slots are split. Half go to the densest hits, as before; the rest
+    So the slots are split. Half go to the densest hits; the rest
     to the densest hits that state a norm; anything left over is filled by
     density. Contents lines and bare fragments are never offered.
     """
@@ -259,12 +251,9 @@ def adjudicate_batch(
         if not slots:
             return out
 
-        # Through the router, not straight to the provider. This is the one
-        # model call whose answer reaches the verdict, and it used to be the
-        # least protected call in the run: one attempt on one credential, no
-        # throttle, no quota accounting — while the prose calls around it got
-        # five retries across every key. A 503 spike therefore dropped it far
-        # more often than anything else, and dropped it silently.
+        # Through the router, not straight to the provider: this is the one
+        # model call whose answer reaches the verdict, so it gets the same
+        # throttle, retries and quota accounting as every other call.
         from src.provider_router import generate_with_retry
 
         reply = generate_with_retry(

@@ -1,31 +1,22 @@
 """Where uploaded documents and exported briefs actually live.
 
-Uploads were written straight to container disk with `file_path.write_bytes`,
-and the absolute path was persisted on the workspace row. Two consequences,
-both real rather than theoretical:
-
-  - a restart on ephemeral disk loses the file while the database still
-    points at it. `run_analysis` already carries a defensive branch for
-    exactly this ("The uploaded files are no longer on disk. Please upload
-    them again"), which is the symptom, not the fix.
-  - two API instances cannot share state, so the instance that serves the
-    run may not be the one that received the upload.
+Writing uploads straight to container disk has two consequences: a restart
+on ephemeral disk loses the file while the database still points at it, and
+two API instances cannot share state.
 
 This module puts one interface in front of both, selected by config:
 
-    STORAGE_BACKEND=filesystem   (default — byte-for-byte current behaviour)
+    STORAGE_BACKEND=filesystem   (default)
     STORAGE_BACKEND=azure
 
 Azure specifically because UNDP's own engineering runs on it. Azurite is in
 docker-compose.yml, so the Azure code path is exercised locally and in CI
 with no cloud account and no credentials.
 
-A stored reference is deliberately a plain string, and for the filesystem
-backend it is the same absolute path that was stored before this module
-existed — so every pending_documents row written by an older build keeps
-resolving. Azure references carry an `azure://container/key` scheme, and any
-reference without a scheme is read from the filesystem regardless of the
-configured backend. That is what makes the switch safe to flip on a
+A stored reference is deliberately a plain string: for the filesystem
+backend, an absolute path. Azure references carry an `azure://container/key`
+scheme, and any reference without a scheme is read from the filesystem
+regardless of the configured backend, so the switch is safe to flip on a
 database that already holds rows.
 """
 

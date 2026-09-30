@@ -308,8 +308,7 @@ def build_drill_down_context(finding_context: dict[str, Any]) -> str:
 
     # Evidence, split by where it comes from. The assessed document's own
     # provisions are what an example should quote; a framework passage is what
-    # the document was compared against, and presenting one as the country's
-    # text is the error the brief's evidence base was fixed for.
+    # the document was compared against, never the country's own text.
     evidence = ctx.get("evidence", [])
     documents = set(ctx.get("documents") or [])
 
@@ -577,14 +576,9 @@ def _library_framework_names(vector_store) -> list[str]:
     every workspace's document names here let a reply cite another visitor's
     upload as a source.
 
-    Keyed on the collection size rather than a 5-minute clock. The old TTL
-    meant that every five minutes some unlucky message paid for TWO full
-    paged scans of the store — 37k chunks, ~1000 rows a page, once for
-    framework names and again for document names — inside the request. The set
-    only changes when something is ingested or purged, and both move the total,
-    so the size is both a correct and a much cheaper invalidation signal.
-
-    The two scans are also now one pass: they read the same metadata."""
+    Keyed on the collection size rather than a clock: the set only changes
+    when something is ingested or purged, and both move the total. One paged
+    pass reads both framework and document names."""
     global _known_source_cache
     try:
         size = vector_store.collection.count()
@@ -815,7 +809,7 @@ def chat(
       section-stratified retrieval, per-claim [DOC-n] grounding.
     - Mode C ("advisor" + finding context): per-finding drill-down using the
       already-computed deterministic reasoning trail.
-    - "framework_qa": knowledge-base-only Framework Q&A bot (unchanged).
+    - "framework_qa": knowledge-base-only Framework Q&A bot.
     """
     start_time = time.time()
     mode = mode if mode in CHAT_MODES else "advisor"
@@ -1107,10 +1101,6 @@ def chat(
                     # Which finding the answer is about, most specific first:
                     # one sent with this message, then the dimension the
                     # question names, then the finding the session remembers.
-                    # The remembered one used to come second, so after "Ask
-                    # about this finding" on Fairness, typing "why is
-                    # environmental sustainability partial?" was answered
-                    # with Fairness's reasoning trail.
                     ctx = finding_context
                     named = _extract_dimension(user_message)
                     if not ctx and named and analysis_results:

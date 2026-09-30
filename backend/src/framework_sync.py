@@ -150,10 +150,9 @@ class FrameworkSyncService:
                 found=current_hash,
             )
 
-        # INGEST FIRST, then delete the old chunks. Deleting before ingestion
-        # means an interrupted sync (crash, download/parse failure, process
-        # kill) silently leaves the framework with ZERO chunks — this is what
-        # happened to the ASEAN Guide during an interrupted backend re-sync.
+        # INGEST FIRST, then delete the old chunks: an interrupted sync
+        # (crash, download/parse failure, process kill) must never leave the
+        # framework with zero chunks.
         try:
             chunks = ingest_document(
                 file_path=local_path,
