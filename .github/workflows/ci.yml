@@ -14,9 +14,9 @@ permissions:
   contents: read
 
 env:
-  # Just below the measured coverage (81%). An aspirational threshold lands
+  # Just below the measured coverage (82%). An aspirational threshold lands
   # red on the first push and teaches everyone to ignore the badge.
-  COV_MIN: "76"
+  COV_MIN: "80"
 
 jobs:
   quality:
