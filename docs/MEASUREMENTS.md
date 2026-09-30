@@ -18,6 +18,29 @@ plausible-looking placeholder.
 
 ---
 
+## Citations verified across the worked examples
+
+**Date:** 2026-09-30 · **Gemini calls:** 0 · **Source:** the verification
+result each run records for its workspace ("N/M citations verified"), read
+from the demo database for the eight read-only example workspaces.
+
+| Jurisdiction | Documents analysed | Verified |
+|---|---|---|
+| China | Interim Measures for Generative AI, PIPL, algorithmic recommendation and deep synthesis provisions | 44 / 45 |
+| Egypt | National Guidelines for Trustworthy and Responsible AI | 39 / 40 |
+| European Union | EU AI Act (Regulation (EU) 2024/1689) | 43 / 45 |
+| India | AI Governance Guidelines, Digital Personal Data Protection Act 2023 | 41 / 42 |
+| Japan | AI Guidelines for Business, AI Promotion Act, APPI | 45 / 45 |
+| Kenya | National AI Strategy 2025–2030, Artificial Intelligence Bill 2026 | 41 / 43 |
+| Rwanda | National AI Policy, Law on the Protection of Personal Data and Privacy | 27 / 27 |
+| United Kingdom | AI regulation white paper, AI Playbook for Government, Data Protection Act 2018 | 38 / 43 |
+| **Total** | | **318 / 330 (96.4%)** |
+
+The same instance serves a reference library of 43 instruments indexed as
+8,687 passages (`GET /api/v1/health`).
+
+---
+
 ## Citation verification: embedding vs NLI
 
 **Date:** 2026-08-30 · **Gemini calls:** 0 (reads stored analyses, Chroma and

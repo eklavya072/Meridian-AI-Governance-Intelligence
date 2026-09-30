@@ -2,8 +2,9 @@
 
 The same single-container image as the Hugging Face Space
 (`deploy/huggingface`), on any Linux VM with Docker, behind Caddy for
-HTTPS. The public demo runs on an Oracle Cloud Always Free Ampere
-instance; nothing below is specific to Oracle except the firewall steps.
+HTTPS. The public demo runs this setup on a cloud VM. The steps below use an
+Oracle Cloud Always Free Ampere instance as the example; nothing is specific
+to Oracle except the firewall steps.
 
 ## 1. The machine
 
