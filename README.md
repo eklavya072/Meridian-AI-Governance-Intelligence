@@ -20,7 +20,7 @@ stack — API, Postgres, frontend, Azurite — from a clean clone:
 make up && make ready
 ```
 
-**Live demo:** not yet deployed.
+**Live demo:** [meridian-ai-governance.duckdns.org](https://meridian-ai-governance.duckdns.org) — the eight country analyses as read-only examples; create a workspace to run your own.
 
 ## Measured
 
