@@ -10,15 +10,13 @@
     # }
 
     # The API may run as more than one container during a rollout
-    # (deploy/rollout.sh). Resolving `api` every second picks up the new
-    # container as soon as it exists, and retrying for a few seconds covers
-    # the moment the old one is removed.
+    # (deploy/rollout.sh). `api` is resolved on every connection, so both
+    # containers are candidates while both exist; a container that refuses
+    # (still starting, or draining) is skipped for the other, and retrying for
+    # a few seconds covers the moment the old one is removed.
     @api path /api/* /healthz /readyz
     handle @api {
-        reverse_proxy {
-            dynamic a api 8000 {
-                refresh 1s
-            }
+        reverse_proxy api:8000 {
             lb_try_duration 5s
             lb_try_interval 250ms
         }

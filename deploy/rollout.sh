@@ -9,8 +9,8 @@
 #    the old one serving: a failed rollout changes nothing.
 # 3. Stop the old container (it drains in-flight analyses first) and remove it.
 #
-# Caddy resolves `api` every second, so traffic reaches the new container as
-# soon as it is up and stops reaching the old one as soon as it is gone.
+# Caddy resolves `api` on every connection, so traffic reaches the new
+# container as soon as it is up and stops reaching the old one once it is gone.
 # Requires the Chroma server (--profile scale, CHROMA_HOST=chroma in
 # .env.prod): two containers must never open one embedded index.
 set -euo pipefail
