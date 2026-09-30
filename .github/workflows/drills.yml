@@ -216,15 +216,18 @@ jobs:
 
       - name: Collect traces and metrics
         run: |
-          curl -fsS "http://localhost:16686/api/traces?service=meridian-api&operation=analysis.run&limit=20" -o traces.json
           curl -fsS http://localhost:8000/metrics -o metrics.txt
+          echo "services known to Jaeger:"; curl -sS http://localhost:16686/api/services; echo
+          curl -sS "http://localhost:16686/api/traces?service=meridian-api&limit=100&lookback=1h" -o traces.json
+          head -c 400 traces.json; echo
           python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY" > traces.md
           import json
           from collections import defaultdict
-          traces = json.load(open("traces.json"))["data"]
-          print(f"### Traces\n\n{len(traces)} `analysis.run` traces from Jaeger.\n")
+          data = json.load(open("traces.json")).get("data") or []
+          traces = [t for t in data if any(s["operationName"] == "analysis.run" for s in t["spans"])]
+          print(f"### Traces\n\n{len(data)} traces from Jaeger, {len(traces)} of them `analysis.run`.\n")
           if traces:
-              spans = traces[0]["spans"]
+              spans = max(traces, key=lambda t: len(t["spans"]))["spans"]
               agg = defaultdict(list)
               for s in spans:
                   agg[s["operationName"]].append(s["duration"] / 1e6)
