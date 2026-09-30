@@ -431,9 +431,12 @@ See **[LAUNCH.md](LAUNCH.md)** for the full runbook. In short:
 - **Recommended:** a single VPS (4 GB RAM / ~30 GB disk) running
   `docker-compose.prod.yml` with Caddy TLS — the only option that survives
   long in-process analyses without sleeping.
-- **Demo:** a single-container build for a Hugging Face Docker Space lives in
+- **Demo:** a single-container build lives in
   [deploy/huggingface](deploy/huggingface) — Postgres, the API and the static
-  frontend in one image, with the eight country analyses as read-only examples.
+  frontend in one image, with the eight country analyses as read-only
+  examples. It runs as a Hugging Face Docker Space, or on any VM behind Caddy
+  ([deploy/vm](deploy/vm), which the public demo uses on Oracle Cloud's
+  Always Free tier).
 - **Critical:** `backend/data/chroma` (the indexed corpus — much of it ingested
   from local files with **no public URL**) and `backend/data/uploads` **cannot
   be recreated** and must be shipped with the app.
@@ -527,7 +530,7 @@ Meridian/
 │   ├── app/                      # workspace / analysis / brief / auditor / frameworks / landing
 │   ├── components/               # Page components; analysis/ holds the four module panels
 │   └── lib/                      # Typed API client, palette, framework links, motion helpers
-├── deploy/                       # rollout.sh (zero-downtime deploy and rollback), Hugging Face demo image
+├── deploy/                       # rollout.sh (zero-downtime deploy and rollback), the demo image and its VM setup
 ├── docs/                         # Runbook, measurements, incident write-up
 ├── loadtest/                     # k6 load test (replay mode, no Gemini calls)
 ├── observability/                # Prometheus + Grafana, dashboard as code

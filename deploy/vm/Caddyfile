@@ -1,0 +1,7 @@
+# The demo's proxy (compose.yml). SITE_ADDRESS is either a hostname that
+# resolves to this machine, for which Caddy obtains and renews a certificate,
+# or :80 for plain HTTP by IP address.
+{$SITE_ADDRESS} {
+    encode zstd gzip
+    reverse_proxy meridian:7860
+}

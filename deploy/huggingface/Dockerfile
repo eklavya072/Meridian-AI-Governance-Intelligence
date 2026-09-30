@@ -1,4 +1,5 @@
-# Meridian as a single container, for a Hugging Face Docker Space.
+# Meridian as a single container: the Hugging Face Space, and the demo on a
+# plain VM (deploy/vm).
 #
 # A Space runs exactly one container, so this image holds all three parts:
 # Postgres, the API, and the web app as a static export that the API serves
@@ -7,8 +8,22 @@
 # application differs between them.
 #
 # The showcase data (the vector index and a database seed with the eight
-# country analyses) is not in the code repository. It is pulled at build
-# time from a private dataset, using the Space's HF_TOKEN secret.
+# country analyses) is not in the code repository. By default it is pulled at
+# build time from a private dataset, using the Space's HF_TOKEN secret; a
+# build given a `seed` context (--build-context seed=<dir>) copies it from
+# that directory instead and never touches the dataset.
+
+# ── seed: the showcase index and database seed ───────────────────────────
+FROM python:3.13-slim AS seed-download
+RUN pip install --no-cache-dir "huggingface_hub<2"
+ARG MERIDIAN_DATA_REPO
+RUN --mount=type=secret,id=HF_TOKEN,mode=0444,required=true \
+    python -c "import os; from huggingface_hub import snapshot_download; \
+snapshot_download(repo_id=os.environ['MERIDIAN_DATA_REPO'], repo_type='dataset', \
+local_dir='/seed', token=open('/run/secrets/HF_TOKEN').read().strip())"
+
+FROM scratch AS seed
+COPY --from=seed-download /seed /
 
 # ── web: the frontend as plain HTML, CSS and JS ──────────────────────────
 FROM node:20-alpine AS web
@@ -16,9 +31,9 @@ WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-# The Space's public address (https://<user>-<space>.hf.space), set as a
-# Space variable. Link previews need it: a shared link's preview image must
-# be an absolute URL.
+# The site's public address: on a Space, https://<user>-<space>.hf.space set
+# as a Space variable. Link previews need it: a shared link's preview image
+# must be an absolute URL.
 ARG SITE_URL=""
 ENV NEXT_OUTPUT=export \
     NEXT_PUBLIC_API_URL=/api/v1 \
@@ -52,13 +67,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 RUN /opt/venv/bin/python -c \
     "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
 
-# The showcase index and database seed, from the private dataset.
-ARG MERIDIAN_DATA_REPO
-RUN --mount=type=secret,id=HF_TOKEN,mode=0444,required=true \
-    /opt/venv/bin/python -c "import os; from huggingface_hub import snapshot_download; \
-snapshot_download(repo_id=os.environ['MERIDIAN_DATA_REPO'], repo_type='dataset', \
-local_dir='/opt/seed', token=open('/run/secrets/HF_TOKEN').read().strip())" \
-    && test -f /opt/seed/seed.sql && test -d /opt/seed/chroma
+COPY --from=seed /seed.sql /opt/seed/seed.sql
+COPY --from=seed /chroma /opt/seed/chroma
 
 COPY backend/ ./
 COPY config/ /opt/config/

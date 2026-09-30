@@ -210,12 +210,18 @@ and mount the disk at `/opt/render/project/src/backend/data`.
 
 ---
 
-## 6. Option D — Hugging Face Space (the hosted demo)
+## 6. Option D — the single-container demo (VM or Hugging Face Space)
 
 One container holds Postgres, the API and the frontend as a static export the
 API serves itself. The eight country analyses ship as read-only examples;
 visitors create their own workspaces, run analyses, chat and export briefs.
-The Space's disk is not persistent, so a restart returns it to the showcase.
+The container's disk is not persistent, so a new one returns to the showcase.
+
+The public demo runs it on a VM: [deploy/vm](deploy/vm) has the setup for an
+Oracle Cloud Always Free instance (or any Linux VM with Docker), with Caddy
+for HTTPS. The steps below are the Hugging Face alternative, which needs a PRO
+account: Hugging Face hosts Docker Spaces on its free hardware only for PRO
+subscribers.
 
 Files: [deploy/huggingface](deploy/huggingface) — `Dockerfile`,
 `entrypoint.sh`, the Space card (`README.md`), and two scripts.
@@ -224,14 +230,14 @@ Files: [deploy/huggingface](deploy/huggingface) — `Dockerfile`,
 hf auth login                                   # once, with a write token
 
 # 1. The showcase data, into a PRIVATE dataset. Stop the local API first:
-#    the index is copied as files.
-deploy/huggingface/make_seed.sh dist/seed
-hf repo create <user>/meridian-demo-data --repo-type dataset --private
+#    the index is copied as files. PGUSER is a role that can create databases.
+PGUSER=<superuser> deploy/huggingface/make_seed.sh dist/seed
+hf repos create <user>/meridian-demo-data --repo-type dataset --private
 hf upload <user>/meridian-demo-data dist/seed . --repo-type dataset
 
 # 2. The Space, from COMMITTED files only (git archive: no .env can leak).
 deploy/huggingface/build_space.sh dist/space
-hf repo create <user>/meridian --repo-type space --space_sdk docker
+hf repos create <user>/meridian --repo-type space --space-sdk docker
 hf upload <user>/meridian dist/space . --repo-type space
 ```
 
@@ -239,9 +245,10 @@ Then, in the Space's **Settings → Variables and secrets**:
 
 | Name | Kind | Value |
 |---|---|---|
-| `GEMINI_API_KEY` (and `_2` … `_5`) | secret | Gemini keys — they exist only here, never in the repository |
+| `GEMINI_API_KEY` | secret | one Gemini key; it exists only here, never in the repository |
 | `HF_TOKEN` | secret | a read token that can see the private dataset (used at build time) |
 | `MERIDIAN_DATA_REPO` | variable | `<user>/meridian-demo-data` |
+| `SITE_URL` | variable | `https://<user>-meridian.hf.space`, for link previews |
 
 The Space rebuilds on every settings change. Showcase ids are fixed in the
 Dockerfile (`LOCKED_WORKSPACE_IDS`); uploading to or re-running one of them

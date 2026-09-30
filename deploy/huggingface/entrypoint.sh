@@ -14,6 +14,9 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
     "$PGBIN/initdb" -D "$PGDATA" -U aura --auth=trust -E UTF8 >/dev/null
     fresh=1
 fi
+# A container restarted after an unclean stop keeps the old server's lock
+# file, and nothing else in this container can be holding it.
+rm -f "$PGDATA/postmaster.pid"
 "$PGBIN/pg_ctl" -D "$PGDATA" -l "$STATE/postgres.log" -w \
     -o "-c listen_addresses=127.0.0.1 -c port=5432 -k $STATE" start
 

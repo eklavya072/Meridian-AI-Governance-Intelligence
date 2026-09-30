@@ -1,0 +1,45 @@
+# The public demo on one VM: the single-container image from
+# deploy/huggingface, behind Caddy for TLS. Run it through deploy.sh, which
+# assembles the build context and reads the settings from $MERIDIAN_HOME/.env.
+#
+# The app keeps its state inside the container, as on a Space: a restart
+# keeps it, a new container (every deploy) starts again from the showcase.
+name: meridian-demo
+
+services:
+  meridian:
+    image: meridian-demo:local
+    build:
+      context: ${MERIDIAN_HOME:-/srv/meridian}/space
+      additional_contexts:
+        seed: ${MERIDIAN_HOME:-/srv/meridian}/seed
+      args:
+        SITE_URL: ${SITE_URL:-}
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - meridian
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
