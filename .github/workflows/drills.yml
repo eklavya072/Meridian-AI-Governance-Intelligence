@@ -216,27 +216,49 @@ jobs:
 
       - name: Collect traces and metrics
         run: |
+          set -o pipefail
           curl -fsS http://localhost:8000/metrics -o metrics.txt
-          echo "services known to Jaeger:"; curl -sS http://localhost:16686/api/services; echo
-          curl -sS "http://localhost:16686/api/traces?service=meridian-api&limit=100&lookback=1h" -o traces.json
-          head -c 400 traces.json; echo
+          echo "services (Jaeger API v3):"; curl -fsS http://localhost:16686/api/v3/services; echo
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ); then=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
+          curl -fsS -G http://localhost:16686/api/v3/traces \
+            --data-urlencode "query.service_name=meridian-api" \
+            --data-urlencode "query.start_time_min=$then" \
+            --data-urlencode "query.start_time_max=$now" \
+            --data-urlencode "query.search_depth=100" -o traces.json
+          echo "Grafana's Jaeger datasource:"
+          uid=$(curl -fsS http://localhost:3001/api/datasources/name/Jaeger | python3 -c 'import json,sys; print(json.load(sys.stdin)["uid"])')
+          curl -sS "http://localhost:3001/api/datasources/uid/$uid/health"; echo
           python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY" > traces.md
           import json
           from collections import defaultdict
-          data = json.load(open("traces.json")).get("data") or []
-          traces = [t for t in data if any(s["operationName"] == "analysis.run" for s in t["spans"])]
-          print(f"### Traces\n\n{len(data)} traces from Jaeger, {len(traces)} of them `analysis.run`.\n")
-          if traces:
-              spans = max(traces, key=lambda t: len(t["spans"]))["spans"]
+          raw, decoder, docs, i = open("traces.json").read(), json.JSONDecoder(), [], 0
+          while i < len(raw):
+              raw_i = raw[i:].lstrip()
+              if not raw_i:
+                  break
+              doc, n = decoder.raw_decode(raw_i)
+              docs.append(doc)
+              i = len(raw) - len(raw_i) + n
+          traces = defaultdict(list)
+          for doc in docs:
+              for rs in (doc.get("result") or doc).get("resourceSpans", []):
+                  for ss in rs.get("scopeSpans", []):
+                      for sp in ss.get("spans", []):
+                          traces[sp["traceId"]].append(sp)
+          runs = {t: s for t, s in traces.items() if any(x["name"] == "analysis.run" for x in s)}
+          print(f"### Traces\n\n{len(traces)} traces from Jaeger, {len(runs)} of them `analysis.run`.\n")
+          if runs:
+              spans = max(runs.values(), key=len)
               agg = defaultdict(list)
-              for s in spans:
-                  agg[s["operationName"]].append(s["duration"] / 1e6)
-              print(f"Most recent trace: {len(spans)} spans.\n")
+              for sp in spans:
+                  agg[sp["name"]].append((int(sp["endTimeUnixNano"]) - int(sp["startTimeUnixNano"])) / 1e9)
+              print(f"Largest run trace: {len(spans)} spans.\n")
               print("| stage | count | total s |")
               print("|---|---|---|")
               for name, ds in sorted(agg.items(), key=lambda kv: -sum(kv[1])):
                   print(f"| {name} | {len(ds)} | {sum(ds):.2f} |")
           PY
+          test -s traces.md
           grep -E '^meridian_analysis_runs_total|^meridian_citation' metrics.txt | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Stack logs
