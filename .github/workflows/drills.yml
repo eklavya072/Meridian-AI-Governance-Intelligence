@@ -169,10 +169,15 @@ jobs:
               environment:
                 GF_RENDERING_SERVER_URL: http://renderer:8081/render
                 GF_RENDERING_CALLBACK_URL: http://grafana:3000/
+                GF_RENDERING_RENDERER_TOKEN: ${RENDER_TOKEN}
             renderer:
               image: grafana/grafana-image-renderer:latest
               profiles: ["observability"]
+              environment:
+                AUTH_TOKEN: ${RENDER_TOKEN}
           EOF
+          # Grafana refuses the renderer's default shared token.
+          echo "RENDER_TOKEN=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
           docker pull -q "$API_IMAGE"
 
       - name: Start the observability stack
