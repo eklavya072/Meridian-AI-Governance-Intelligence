@@ -1,0 +1,767 @@
+{
+ "model": "gemini-3.5-flash-lite",
+ "recorded": "2026-09-30",
+ "requests": 10,
+ "answers": {
+  "3a9944ae6342f977a6b23a3f01d8e068fee61a680e9305efb3c31e655b1fb96f": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Accountability",
+    "coverage": "Covered",
+    "gap_detected": false,
+    "reason_flagged": "",
+    "verdict_challenge": "",
+    "coverage_reasoning": "",
+    "coverage_example": "The document establishes liability mechanisms for providers who fail to comply with supervisory requirements under Article 21, and empowers the Authority to supervise compliance and issue administrative fines.",
+    "principle_acknowledged": true,
+    "operational_mechanisms": [
+     "Authority (named body)",
+     "administrative fine (enforcement / penalty)"
+    ],
+    "document_evidence": [
+     {
+      "chunk_id": "chunk-accountability-1",
+      "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+      "page_number": 9,
+      "claim": "Providers face liability and administrative fines for non-compliance enforced by the Authority."
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-accountability-1",
+      "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+      "page_number": 9,
+      "claim": "Normative requirement for supervisory oversight and liability frameworks for non-compliance."
+     }
+    ],
+    "recommendations": [],
+    "priority": "",
+    "future_strengthening_opportunities": [
+     "Extend the Authority's supervisory mandate under Article 21 to include explicit provisions for independent audit requirements and incident reporting."
+    ],
+    "international_examples": [],
+    "international_standard_reference": "OECD AI Principles on Accountability",
+    "framework_synthesis": {
+     "consensus": "International frameworks require clear allocation of responsibility and enforcement mechanisms for AI systems.",
+     "differences": "While normative instruments like the OECD framework outline broad accountability principles, the uploaded policy directly operationalises this through Article 21 via explicit administrative fines and supervisory enforcement by the Authority.",
+     "overall_assessment": "The policy satisfies the international accountability expectations by establishing mandatory compliance oversight and liability mechanisms under Article 21, administered directly by the Authority."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-accountability-1",
+      "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+      "page_number": 9,
+      "claim": "Establishes administrative liability and supervisory enforcement."
+     }
+    ]
+   }
+  },
+  "47b0bddf45e9ebb0d593e145e7f302447148516a054b21a551799b024aeadc3f": {
+   "schema": "_Picks",
+   "answer": {
+    "picks": [
+     {
+      "m": 1,
+      "pick": 1
+     },
+     {
+      "m": 2,
+      "pick": 0
+     },
+     {
+      "m": 3,
+      "pick": 1
+     }
+    ]
+   }
+  },
+  "4cc8b66c636017b6f3c8693c08e344a36d2e0fcc32e405d40429dd5dd928652d": {
+   "schema": "BatchedReply",
+   "answer": {
+    "dimensions": [
+     {
+      "dimension": "Transparency",
+      "phases": [
+       {
+        "phase": "Phase 1",
+        "timeline": "",
+        "objective": "Extend Article 13 transparency obligations to mandate direct user disclosure and decision explanations.",
+        "steps": [
+         "Draft guidelines extending Article 13 provider duties to include direct user disclosures.",
+         "Establish mechanisms for decision explanations alongside automatic logs."
+        ]
+       },
+       {
+        "phase": "Phase 2",
+        "timeline": "",
+        "objective": "Operationalise a public registry and monitor compliance through the supervisory authority.",
+        "steps": [
+         "Introduce a public registry for high-risk AI systems building upon logging requirements.",
+         "Supervise compliance and enforce administrative fines for non-compliance under Article 21."
+        ]
+       }
+      ],
+      "responsible_agency": "The Authority",
+      "responsible_agency_grounding": "document_named",
+      "documentation_requirements": [
+       "Automatic logs for the lifetime of the system under Article 13",
+       "Public registry entries for high-risk AI systems",
+       "Records of user disclosures and decision explanations"
+      ],
+      "monitoring_checklist": [
+       "Verify high-risk systems maintain automatic logs throughout their lifetime",
+       "Check that deployers can interpret system outputs",
+       "Ensure public registry listings are up to date",
+       "Audit compliance with user disclosure requirements"
+      ],
+      "implementation_citations": [
+       {
+        "chunk_id": "chunk-transparency-1",
+        "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+        "page_number": 5,
+        "claim": "Establish foundational transparency and logging mechanisms for high-risk systems."
+       },
+       {
+        "chunk_id": "chunk-accountability-1",
+        "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+        "page_number": 9,
+        "claim": "Supervise compliance and enforce penalties for transparency violations."
+       }
+      ],
+      "incident_matches": [],
+      "matched": false
+     },
+     {
+      "dimension": "Privacy",
+      "phases": [
+       {
+        "phase": "Phase 1",
+        "timeline": "",
+        "objective": "Establish foundational data protection obligations for personal data used in AI training and inference.",
+        "steps": [
+         "Draft mandatory requirements for informed consent and data minimization.",
+         "Incorporate privacy-by-design principles into AI development guidelines."
+        ]
+       },
+       {
+        "phase": "Phase 2",
+        "timeline": "",
+        "objective": "Operationalize privacy oversight and auditing mechanisms.",
+        "steps": [
+         "Empower the supervisory authority to audit personal data handling practices.",
+         "Establish reporting frameworks for data protection compliance."
+        ]
+       }
+      ],
+      "responsible_agency": "Not specified by policy — implementation responsibility should be assigned by the adopting government.",
+      "responsible_agency_grounding": "none_identified",
+      "documentation_requirements": [
+       "Data protection impact assessments",
+       "Records of informed consent for training data collection",
+       "Anonymization and de-identification logs"
+      ],
+      "monitoring_checklist": [
+       "Verify informed consent mechanisms are active",
+       "Check compliance with data minimization principles",
+       "Audit data security measures against unauthorized access"
+      ],
+      "implementation_citations": [
+       {
+        "chunk_id": "chunk-accountability-1",
+        "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+        "page_number": 9,
+        "claim": "Supervise general compliance mechanisms."
+       }
+      ],
+      "incident_matches": [],
+      "matched": false
+     },
+     {
+      "dimension": "Safety",
+      "phases": [
+       {
+        "phase": "Phase 1",
+        "timeline": "",
+        "objective": "Establish mandatory safety testing and validation requirements before deploying AI systems.",
+        "steps": [
+         "Adopt safety testing and validation standards referencing frameworks like the NIST AI RMF.",
+         "Implement systematic impact assessment processes to identify AI-related risks prior to deployment."
+        ]
+       },
+       {
+        "phase": "Phase 2",
+        "timeline": "",
+        "objective": "Operationalize safety monitoring and incident reporting mechanisms.",
+        "steps": [
+         "Establish continuous monitoring and incident reporting protocols for deployed AI systems.",
+         "Empower the supervisory authority to oversee safety compliance."
+        ]
+       }
+      ],
+      "responsible_agency": "Not specified by policy — implementation responsibility should be assigned by the adopting government.",
+      "responsible_agency_grounding": "none_identified",
+      "documentation_requirements": [
+       "Pre-deployment safety testing reports",
+       "Risk identification and impact assessment documentation",
+       "Incident monitoring and reporting logs"
+      ],
+      "monitoring_checklist": [
+       "Verify completion of pre-deployment safety validation",
+       "Review impact assessment documentation before system release",
+       "Monitor incident reporting channels for active systems"
+      ],
+      "implementation_citations": [
+       {
+        "chunk_id": "chunk-accountability-1",
+        "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+        "page_number": 9,
+        "claim": "Supervise compliance with safety and accountability standards."
+       }
+      ],
+      "incident_matches": [],
+      "matched": false
+     },
+     {
+      "dimension": "Human Autonomy",
+      "phases": [
+       {
+        "phase": "Phase 1",
+        "timeline": "",
+        "objective": "Establish explicit human oversight requirements for high-stakes AI deployments.",
+        "steps": [
+         "Define human-in-the-loop and human-on-the-loop standards for automated systems.",
+         "Incorporate mechanisms ensuring human judgment prevails in critical contexts."
+        ]
+       },
+       {
+        "phase": "Phase 2",
+        "timeline": "",
+        "objective": "Operationalize human review rights and supervisory enforcement.",
+        "steps": [
+         "Establish formal procedures for individuals to request human review of AI decisions.",
+         "Empower supervisory authorities to audit human oversight compliance."
+        ]
+       }
+      ],
+      "responsible_agency": "Not specified by policy — implementation responsibility should be assigned by the adopting government.",
+      "responsible_agency_grounding": "none_identified",
+      "documentation_requirements": [
+       "Human oversight protocols and intervention logs",
+       "Records of human reviews conducted on automated decisions",
+       "Training records for human supervisors"
+      ],
+      "monitoring_checklist": [
+       "Verify active human-in-the-loop controls for high-stakes decisions",
+       "Check adherence to right-to-human-review procedures",
+       "Audit intervention logs for quality assurance"
+      ],
+      "implementation_citations": [
+       {
+        "chunk_id": "chunk-accountability-1",
+        "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+        "page_number": 9,
+        "claim": "Supervise regulatory compliance including human oversight duties."
+       }
+      ],
+      "incident_matches": [],
+      "matched": false
+     },
+     {
+      "dimension": "Inclusivity",
+      "phases": [
+       {
+        "phase": "Phase 1",
+        "timeline": "",
+        "objective": "Introduce non-discrimination, fairness, and accessibility requirements for AI systems.",
+        "steps": [
+         "Establish binding non-discrimination and fairness guidelines referencing international principles.",
+         "Incorporate clear accessibility standards for persons with disabilities."
+        ]
+       },
+       {
+        "phase": "Phase 2",
+        "timeline": "",
+        "objective": "Operationalize public consultation and inclusivity monitoring.",
+        "steps": [
+         "Implement public consultation mechanisms involving underrepresented groups in AI governance.",
+         "Establish supervisory oversight to assess accessibility and fairness."
+        ]
+       }
+      ],
+      "responsible_agency": "Not specified by policy — implementation responsibility should be assigned by the adopting government.",
+      "responsible_agency_grounding": "none_identified",
+      "documentation_requirements": [
+       "Accessibility compliance assessments",
+       "Public consultation records and stakeholder feedback logs",
+       "Non-discrimination review documentation"
+      ],
+      "monitoring_checklist": [
+       "Verify accessibility standards are met in AI deployment",
+       "Review participation records of underrepresented groups in governance",
+       "Audit systems for equitable access and non-discrimination"
+      ],
+      "implementation_citations": [
+       {
+        "chunk_id": "chunk-accountability-1",
+        "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+        "page_number": 9,
+        "claim": "Supervise adherence to established standards."
+       }
+      ],
+      "incident_matches": [],
+      "matched": false
+     },
+     {
+      "dimension": "Fairness",
+      "phases": [
+       {
+        "phase": "Phase 1",
+        "timeline": "",
+        "objective": "Establish binding fairness and bias-testing obligations across the AI lifecycle.",
+        "steps": [
+         "Introduce requirements for demographic parity assessments for high-risk deployments.",
+         "Establish bias testing and mitigation protocols across AI development stages."
+        ]
+       },
+       {
+        "phase": "Phase 2",
+        "timeline": "",
+        "objective": "Operationalize auditing and supervisory oversight for discriminatory outcomes.",
+        "steps": [
+         "Task the designated supervisory authority with auditing AI systems for discriminatory outcomes.",
+         "Establish remediation pathways for identified demographic disparities."
+        ]
+       }
+      ],
+      "responsible_agency": "Not specified by policy — implementation responsibility should be assigned by the adopting government.",
+      "responsible_agency_grounding": "none_identified",
+      "documentation_requirements": [
+       "Lifecycle bias testing reports",
+       "Demographic parity assessment documentation",
+       "Audit trails for fairness evaluations"
+      ],
+      "monitoring_checklist": [
+       "Verify execution of bias testing across development phases",
+       "Check demographic parity metrics for high-risk deployments",
+       "Audit corrective actions taken following discriminatory outcome detections"
+      ],
+      "implementation_citations": [
+       {
+        "chunk_id": "chunk-accountability-1",
+        "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+        "page_number": 9,
+        "claim": "Supervise compliance including fairness and auditing standards."
+       }
+      ],
+      "incident_matches": [],
+      "matched": false
+     },
+     {
+      "dimension": "Environmental Sustainability",
+      "phases": [
+       {
+        "phase": "Phase 1",
+        "timeline": "",
+        "objective": "Introduce provisions requiring providers to measure and report energy consumption and carbon footprint.",
+        "steps": [
+         "Establish standardized methodologies for measuring energy consumption in AI training and inference.",
+         "Draft mandatory carbon footprint reporting requirements aligned with international standards."
+        ]
+       },
+       {
+        "phase": "Phase 2",
+        "timeline": "",
+        "objective": "Operationalize environmental reporting and regulatory oversight.",
+        "steps": [
+         "Integrate environmental disclosures into the broader supervisory reporting framework.",
+         "Enforce compliance with sustainability reporting duties through administrative measures."
+        ]
+       }
+      ],
+      "responsible_agency": "Not specified by policy — implementation responsibility should be assigned by the adopting government.",
+      "responsible_agency_grounding": "none_identified",
+      "documentation_requirements": [
+       "Energy consumption measurement reports for training and inference",
+       "Carbon footprint reporting documentation",
+       "Computational resource optimization logs"
+      ],
+      "monitoring_checklist": [
+       "Verify energy consumption tracking is active for model training",
+       "Review annual carbon footprint reports submitted by providers",
+       "Audit compliance with environmental sustainability disclosures"
+      ],
+      "implementation_citations": [
+       {
+        "chunk_id": "chunk-accountability-1",
+        "quote": "Article 21. The Authority shall supervise compliance and a provider who fails to comply shall be liable to an administrative fine.",
+        "page_number": 9,
+        "claim": "Supervise regulatory reporting compliance."
+       }
+      ],
+      "incident_matches": [],
+      "matched": false
+     }
+    ]
+   }
+  },
+  "71b86726a616dd8c5d996535fb85cb1ddcbf5f2c0088af253bd48db1631026cd": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Privacy",
+    "coverage": "Missing",
+    "gap_detected": true,
+    "reason_flagged": "The document contains no provisions or mechanisms dedicated to protecting personal data, ensuring informed consent, or implementing privacy-by-design principles in AI systems.",
+    "verdict_challenge": "",
+    "coverage_reasoning": "The uploaded document contains no references to privacy, data protection, informed consent, or anonymization. The text does not establish any mechanisms or duties governing the handling of personal data in AI training or inference.",
+    "coverage_example": "",
+    "principle_acknowledged": false,
+    "operational_mechanisms": [],
+    "document_evidence": [
+     {
+      "chunk_id": "insufficient evidence for citation",
+      "quote": "insufficient evidence for citation",
+      "page_number": null,
+      "claim": "The document contains no provisions addressing the privacy dimension."
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Normative frameworks expect structured operational transparency and logging requirements."
+     }
+    ],
+    "recommendations": [
+     "Establish data protection obligations requiring informed consent and data minimization for personal data used in AI training and inference, per data protection standards."
+    ],
+    "priority": "High",
+    "future_strengthening_opportunities": [],
+    "international_examples": [],
+    "international_standard_reference": "OECD AI Principles and NIST AI RMF",
+    "framework_synthesis": {
+     "consensus": "International frameworks require robust privacy protections, informed consent, and secure data handling for personal information used in AI systems.",
+     "differences": "Normative frameworks emphasise data governance and privacy safeguards, whereas the uploaded document lacks any provisions addressing personal data protection.",
+     "overall_assessment": "The uploaded document completely omits the privacy dimension. Introducing data protection duties, anonymization standards, and privacy-by-design requirements is necessary to align with international expectations."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Operational requirements for system accountability and logging."
+     }
+    ]
+   }
+  },
+  "7a890925f083db46ecfd579c305840191feb103dd4866962eefcd80d8dea4e2f": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Fairness",
+    "coverage": "Missing",
+    "gap_detected": true,
+    "reason_flagged": "No governing provision found for this dimension.",
+    "verdict_challenge": "",
+    "coverage_reasoning": "The document contains no provisions addressing fairness, bias testing, demographic parity, or equitable treatment across population groups.",
+    "coverage_example": "",
+    "principle_acknowledged": false,
+    "operational_mechanisms": [],
+    "document_evidence": [
+     {
+      "chunk_id": "insufficient evidence for citation",
+      "quote": "insufficient evidence for citation",
+      "page_number": null,
+      "claim": "No document chunks retrieved for this dimension"
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Normative frameworks establish requirements for high-risk AI systems."
+     }
+    ],
+    "recommendations": [
+     "Establish binding fairness and bias-testing obligations across the AI lifecycle per OECD AI Principles.",
+     "Introduce requirements for demographic parity assessments for high-risk deployments per international standards.",
+     "Task a designated supervisory authority with auditing AI systems for discriminatory outcomes."
+    ],
+    "priority": "High",
+    "future_strengthening_opportunities": [],
+    "international_examples": [],
+    "international_standard_reference": "OECD AI Principles and CDEI Fairness and Bias Guidance",
+    "framework_synthesis": {
+     "consensus": "International frameworks require equitable treatment and active bias mitigation throughout the AI lifecycle.",
+     "differences": "The uploaded policy lacks any provisions addressing fairness, whereas international instruments mandate specific protections against discrimination based on protected characteristics.",
+     "overall_assessment": "The policy entirely omits fairness requirements, failing to meet the normative expectations set by international frameworks for equitable treatment and bias testing."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Practical guidance expects structured approaches to AI governance."
+     }
+    ]
+   }
+  },
+  "7f2e82956f5c8d570f7fd6f4e6314acd86363f385d5adaebe46db60ddac94756": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Human Autonomy",
+    "coverage": "Missing",
+    "gap_detected": true,
+    "reason_flagged": "The uploaded document contains no provisions addressing human autonomy, meaningful human control, or human oversight over automated decisions.",
+    "verdict_challenge": "",
+    "coverage_reasoning": "The document lacks any provisions concerning human autonomy or supervision over AI-generated outcomes. Since no relevant text appears in the uploaded document, the dimension is completely unaddressed.",
+    "coverage_example": "",
+    "principle_acknowledged": false,
+    "operational_mechanisms": [],
+    "document_evidence": [
+     {
+      "chunk_id": "insufficient evidence for citation",
+      "quote": "insufficient evidence for citation",
+      "page_number": null,
+      "claim": "No document evidence available for this dimension."
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Normative standards expect systems to maintain transparency supporting user interpretation."
+     }
+    ],
+    "recommendations": [
+     "Establish explicit human oversight requirements for high-stakes AI deployments to ensure meaningful human control over automated determinations."
+    ],
+    "priority": "High",
+    "future_strengthening_opportunities": [],
+    "international_examples": [],
+    "international_standard_reference": "OECD AI Principles on Human-Centred Values and Fairness",
+    "framework_synthesis": {
+     "consensus": "International normative frameworks require robust mechanisms to preserve human autonomy and oversight in AI-driven decisions.",
+     "differences": "Normative benchmarks mandate specific transparency and supervision duties, whereas the uploaded document entirely omits provisions on human autonomy.",
+     "overall_assessment": "The policy falls short of international benchmarks by failing to incorporate any provisions or mechanisms addressing human autonomy, meaning that critical decisions lack the required human-in-the-loop or review safeguards."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Transparency requirements support the interpretability needed for human oversight."
+     }
+    ]
+   }
+  },
+  "83728f0620ebb96bf1db78b4b2a01990846f3efc8f5ba1a2307f32c376597fe4": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Safety",
+    "coverage": "Missing",
+    "gap_detected": true,
+    "reason_flagged": "The uploaded document contains no provisions addressing the safety dimension, such as risk identification, impact assessments, or safety testing.",
+    "verdict_challenge": "",
+    "coverage_reasoning": "The document contains no governing provisions or mechanisms addressing safety, systematic risk identification, impact assessment processes, safety testing, or mitigation measures.",
+    "coverage_example": "",
+    "principle_acknowledged": false,
+    "operational_mechanisms": [],
+    "document_evidence": [
+     {
+      "chunk_id": "insufficient evidence for citation",
+      "quote": "insufficient evidence for citation",
+      "page_number": null,
+      "claim": "No document chunks retrieved addressing safety."
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Normative frameworks require system monitoring and operational safeguards."
+     }
+    ],
+    "recommendations": [
+     "Establish mandatory safety testing and validation requirements before deploying AI systems, referencing international standards like the NIST AI RMF.",
+     "Implement systematic impact assessment processes to identify and mitigate AI-related risks prior to deployment."
+    ],
+    "priority": "Critical",
+    "future_strengthening_opportunities": [],
+    "international_examples": [],
+    "international_standard_reference": "NIST AI Risk Management Framework",
+    "framework_synthesis": {
+     "consensus": "International frameworks require systematic risk identification, safety testing, and impact assessments before deploying AI systems.",
+     "differences": "Normative standards establish binding safety and logging duties, whereas the uploaded document lacks any provisions covering this dimension entirely.",
+     "overall_assessment": "The uploaded document lacks any provisions addressing the safety dimension. Introducing risk assessment and safety testing mechanisms would align the policy with international normative expectations."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Reference standard establishing systematic operational safeguards."
+     }
+    ]
+   }
+  },
+  "d7eecf82ca523811c4352e5a9dff1b4918ba5fc00ad840cec7607c8623b9cdac": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Transparency",
+    "coverage": "Partial",
+    "gap_detected": true,
+    "reason_flagged": "The document lacks user disclosure, decision explanation, model documentation, audit trail details, public registries, and capability and limitation disclosures for transparency.",
+    "verdict_challenge": "",
+    "coverage_reasoning": "The uploaded document contains a binding transparency provision in Article 13 requiring high-risk AI system providers to ensure operation is transparent enough for deployers to interpret outputs and keep automatic logs, but it lacks broader user disclosure, decision explanations, model documentation, and public registries.",
+    "coverage_example": "",
+    "principle_acknowledged": true,
+    "operational_mechanisms": [
+     "Article 13 provider transparency and automatic logging"
+    ],
+    "document_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Providers must ensure transparent operations for deployers and maintain automatic logs."
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Normative benchmark requiring operational transparency and automatic logs."
+     }
+    ],
+    "recommendations": [
+     "Extend the transparency obligations under Article 13 to mandate direct user disclosure and decision explanations, operationalising the OECD AI Principles' transparency expectations.",
+     "Introduce a public registry for high-risk AI systems building upon the logging requirements in Article 13, per practical guidance on model documentation.",
+     "Incorporate detailed capability and limitation disclosures into the provider duties specified in Article 13."
+    ],
+    "priority": "High",
+    "future_strengthening_opportunities": [],
+    "international_examples": [],
+    "international_standard_reference": "OECD AI Principles and Practical Toolkits for Transparency",
+    "framework_synthesis": {
+     "consensus": "International frameworks require comprehensive transparency measures including user disclosures, system capability information, and explainability for affected individuals.",
+     "differences": "The normative framework establishes high-level duties for transparency and logging, whereas practical toolkits require granular artifacts like model cards, public registries, and direct user notices that the uploaded policy lacks.",
+     "overall_assessment": "The uploaded document partially addresses transparency through Article 13 by requiring operational transparency and automatic logs for deployers, but it falls short of international expectations due to the absence of user-facing disclosures, decision explanations, and public registries."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Reference standard for operational transparency and logging."
+     }
+    ]
+   }
+  },
+  "dfbea17989fa51cefd01851c407120c6584dc5ebcdb353b5716397eb6187546c": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Inclusivity",
+    "coverage": "Missing",
+    "gap_detected": true,
+    "reason_flagged": "The uploaded document contains no provisions addressing inclusivity, non-discrimination, fairness across demographic groups, accessibility, or the participation of underrepresented groups in AI governance.",
+    "verdict_challenge": "",
+    "coverage_reasoning": "The document contains no provisions or mechanisms dedicated to inclusivity, non-discrimination, or accessibility for persons with disabilities.",
+    "coverage_example": "",
+    "principle_acknowledged": false,
+    "operational_mechanisms": [],
+    "document_evidence": [
+     {
+      "chunk_id": "insufficient evidence for citation",
+      "quote": "insufficient evidence for citation",
+      "page_number": null,
+      "claim": "The document contains no provisions addressing inclusivity."
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Normative expectations focus on high-risk system transparency rather than inclusivity."
+     }
+    ],
+    "recommendations": [
+     "Introduce a dedicated non-discrimination and fairness requirement for AI developers, referencing the OECD AI Principles on inclusive growth, sustainable development, and well-being.",
+     "Establish clear accessibility standards for AI deployment affecting persons with disabilities.",
+     "Incorporate public consultation mechanisms to ensure underrepresented groups participate in AI governance."
+    ],
+    "priority": "High",
+    "future_strengthening_opportunities": [],
+    "international_examples": [],
+    "international_standard_reference": "OECD AI Principles and UNESCO Recommendation on the Ethics of Artificial Intelligence",
+    "framework_synthesis": {
+     "consensus": "International frameworks require AI systems to promote inclusivity, fairness, non-discrimination, and accessibility.",
+     "differences": "The uploaded document focuses exclusively on high-risk transparency and supervisory fines, completely omitting the inclusivity and non-discrimination dimensions emphasized by normative instruments.",
+     "overall_assessment": "The policy lacks any provisions addressing inclusivity or non-discrimination, failing to meet international normative benchmarks in this dimension."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Practical frameworks emphasize operational compliance mechanisms that should be expanded to cover bias and fairness."
+     }
+    ]
+   }
+  },
+  "e6affc44dae45abc0d7a22d2a146ffd76f0e608ffda78582c84093a2f5f3a783": {
+   "schema": "CombinedModuleSchema",
+   "answer": {
+    "dimension": "Environmental Sustainability",
+    "coverage": "Missing",
+    "gap_detected": true,
+    "reason_flagged": "The uploaded document contains no provisions addressing environmental sustainability, energy efficiency, carbon footprint reporting, or hardware lifecycle management.",
+    "verdict_challenge": "",
+    "coverage_reasoning": "The document contains no provisions or mechanisms dedicated to environmental sustainability. No obligations are established regarding energy efficiency in AI training and inference, carbon footprint reporting, or e-waste management.",
+    "coverage_example": "",
+    "principle_acknowledged": false,
+    "operational_mechanisms": [],
+    "document_evidence": [
+     {
+      "chunk_id": "insufficient evidence for citation",
+      "quote": "insufficient evidence for citation",
+      "page_number": null,
+      "claim": "The document contains no provisions addressing environmental sustainability."
+     }
+    ],
+    "framework_evidence": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Normative frameworks establish governance obligations for AI systems, though specific environmental standards are globally expected in comprehensive AI governance."
+     }
+    ],
+    "recommendations": [
+     "Introduce provisions requiring providers to measure and report the energy consumption and carbon footprint of training and running high-risk AI models, aligning with international environmental sustainability expectations."
+    ],
+    "priority": "Low",
+    "future_strengthening_opportunities": [],
+    "international_examples": [],
+    "international_standard_reference": "OECD AI Principles and NIST AI RMF",
+    "framework_synthesis": {
+     "consensus": "International frameworks emphasize responsible AI development which increasingly encompasses environmental impact and resource optimization.",
+     "differences": "The uploaded policy focuses exclusively on transparency and accountability mechanisms without extending to environmental dimensions present in broader international toolkits.",
+     "overall_assessment": "The uploaded policy completely omits environmental sustainability considerations. Introducing energy reporting and computational resource optimization requirements would align the policy with comprehensive international governance standards."
+    },
+    "standard_citations": [
+     {
+      "chunk_id": "chunk-transparency-1",
+      "quote": "Article 13. Providers of high-risk AI systems shall ensure that the operation is sufficiently transparent to enable deployers to interpret the output, and shall keep automatic logs for the lifetime of the system.",
+      "page_number": 5,
+      "claim": "Practical toolkits emphasize robust system governance and monitoring."
+     }
+    ]
+   }
+  }
+ }
+}

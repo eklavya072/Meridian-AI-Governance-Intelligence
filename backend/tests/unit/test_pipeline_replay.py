@@ -10,10 +10,14 @@ allowed to change:
     that stage is code and any diff there is a genuine bug
   * a dimension that fails is excluded, never guessed at
 
-The provider is a scripted fake rather than a recording of real Gemini
-traffic, so there is nothing to scrub — no keys, no PII, no captured
-customer text ever enters the repository.
+Every invariant runs twice: against a scripted fake that fills each schema,
+and against real Gemini answers recorded once and replayed by request hash
+(tests/recorded_provider.py). The fake keeps the gate independent of any
+recording; the recording checks the invariants against what the model
+actually returns.
 """
+
+import json
 
 import pytest
 
@@ -179,12 +183,18 @@ class FakeVectorStore:
         }
 
 
-@pytest.fixture
-def analyzer():
-    store = FakeVectorStore()
-    provider = ScriptedProvider(chunk_ids=[c["chunk_id"] for c in CHUNKS])
-    instance = GapAnalyzer(vector_store=store, provider=provider)
-    return instance
+@pytest.fixture(params=["scripted", "recorded"])
+def analyzer(request):
+    if request.param == "recorded":
+        from tests.recorded_provider import RecordedProvider, load_recording
+
+        recording = load_recording()
+        if recording is None:
+            pytest.skip("no recording; run scripts/record_replay_fixtures.py")
+        provider = RecordedProvider(recording)
+    else:
+        provider = ScriptedProvider(chunk_ids=[c["chunk_id"] for c in CHUNKS])
+    return GapAnalyzer(vector_store=FakeVectorStore(), provider=provider)
 
 
 DOCUMENT = "\n\n".join(c["text"] for c in CHUNKS)
@@ -360,10 +370,50 @@ class TestFailureHandling:
         assert all(g.coverage == CoverageLevel.INSUFFICIENT_EVIDENCE for g in failed)
 
     def test_an_empty_document_does_not_invent_findings(self, analyzer):
-        analyzer.vector_store = FakeVectorStore(chunks=[])
+        # A new analyzer, not a swapped attribute: the retrieval pipeline
+        # holds its own reference to the store it was built with.
+        analyzer = GapAnalyzer(vector_store=FakeVectorStore(chunks=[]), provider=analyzer.provider)
 
         result = _run(analyzer, document_text="")
 
         for gap in result.governance_gaps:
             # With no context at all, there is nothing to cite.
             assert not gap.evidence
+
+
+class TestRecording:
+    """The recorded Gemini answers themselves (tests/fixtures/replay)."""
+
+    @pytest.fixture
+    def recording(self):
+        from tests.recorded_provider import load_recording
+
+        data = load_recording()
+        if data is None:
+            pytest.skip("no recording; run scripts/record_replay_fixtures.py")
+        return data
+
+    def test_a_run_makes_exactly_the_recorded_requests(self, recording):
+        # A prompt edit changes a request hash. This fails first and names
+        # the fix, rather than leaving a dimension to fail somewhere below.
+        from tests.recorded_provider import RecordedProvider
+
+        provider = RecordedProvider(recording)
+        _run(GapAnalyzer(vector_store=FakeVectorStore(), provider=provider))
+        made = {c["key"] for c in provider.calls}
+        assert made == set(recording["answers"]), (
+            "Requests differ from the recording; re-record with "
+            "uv run python scripts/record_replay_fixtures.py"
+        )
+
+    def test_the_recorded_answers_cite_real_passages(self, recording):
+        # The point of recording: real answers carry citations the scripted
+        # fake never produces, so the invariants above are exercised on them.
+        text = json.dumps(recording["answers"])
+        assert any(c["chunk_id"] in text for c in CHUNKS)
+
+    def test_nothing_secret_shaped_was_recorded(self, recording):
+        from tests.recorded_provider import FIXTURE_FILE, SECRET_PATTERNS
+
+        raw = FIXTURE_FILE.read_text(encoding="utf-8")
+        assert not any(p.search(raw) for p in SECRET_PATTERNS)
