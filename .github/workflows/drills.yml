@@ -1,0 +1,240 @@
+name: Drills
+
+# Operational exercises that need a container runtime, run on demand against
+# published images. Nothing here calls the model: the rollout serves health
+# probes only, and the dashboard traffic runs in replay mode.
+#
+#   rollout    start on one release, roll out another with deploy/rollout.sh
+#              while a prober hits the proxy every 100 ms, then roll back.
+#              Reports every failed probe and how long each switch took.
+#   dashboard  the observability profile on a published image, k6 driving the
+#              real upload-to-brief path in replay mode, then the Grafana
+#              dashboard rendered to PNG and the traces pulled from Jaeger.
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_sha:
+        description: Full commit SHA of the release to start on (and roll back to)
+        required: true
+      to_sha:
+        description: Full commit SHA of the release to roll out (and run the dashboard on)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  rollout:
+    name: rollout · rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FROM_IMAGE: ghcr.io/${{ github.repository_owner }}/meridian:sha-${{ inputs.from_sha }}
+      TO_IMAGE: ghcr.io/${{ github.repository_owner }}/meridian:sha-${{ inputs.to_sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Production environment for the drill
+        run: |
+          cat > .env.prod <<EOF
+          POSTGRES_PASSWORD=drill-${{ github.run_id }}
+          GEMINI_API_KEY=ci-placeholder-not-a-real-key
+          CHROMA_HOST=chroma
+          SITE_ADDRESS=:80
+          WARM_FRAMEWORK_COUNTS=0
+          EOF
+
+      - name: Pull both releases
+        run: |
+          docker pull -q "$FROM_IMAGE"
+          docker pull -q "$TO_IMAGE"
+
+      - name: Start the stack on the first release
+        run: |
+          compose() { docker compose -f docker-compose.prod.yml --env-file .env.prod --profile scale "$@"; }
+          MERIDIAN_IMAGE="$FROM_IMAGE" compose up -d --no-build postgres chroma api
+          compose up -d --no-build --no-deps caddy
+          for i in $(seq 1 180); do
+            if curl -fsS http://localhost/readyz >/dev/null 2>&1; then echo "ready after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          compose logs --tail 80; exit 1
+
+      - name: Probe the proxy every 100 ms
+        run: |
+          nohup python3 - > probes.jsonl 2>/dev/null <<'PY' &
+          import json, os, time, urllib.error, urllib.request
+          while not os.path.exists("/tmp/stop-probe"):
+              t = time.time()
+              try:
+                  code = urllib.request.urlopen("http://localhost/healthz", timeout=2).status
+              except urllib.error.HTTPError as e:
+                  code = e.code
+              except Exception:
+                  code = 0
+              print(json.dumps({"t": t, "code": code}), flush=True)
+              time.sleep(0.1)
+          PY
+          sleep 3
+
+      - name: Roll out the second release
+        run: |
+          echo "start=$(python3 -c 'import time; print(time.time())')" > rollout.times
+          deploy/rollout.sh "$TO_IMAGE" | tee rollout.txt
+          echo "end=$(python3 -c 'import time; print(time.time())')" >> rollout.times
+          docker inspect --format '{{.Config.Image}}' $(docker compose -f docker-compose.prod.yml --env-file .env.prod ps -q api) | tee serving-after-rollout.txt
+          sleep 5
+
+      - name: Roll back to the first release
+        run: |
+          echo "start=$(python3 -c 'import time; print(time.time())')" > rollback.times
+          deploy/rollout.sh "$FROM_IMAGE" | tee rollback.txt
+          echo "end=$(python3 -c 'import time; print(time.time())')" >> rollback.times
+          docker inspect --format '{{.Config.Image}}' $(docker compose -f docker-compose.prod.yml --env-file .env.prod ps -q api) | tee serving-after-rollback.txt
+          sleep 5
+          touch /tmp/stop-probe
+          sleep 1
+
+      - name: Report
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY" > report.md
+          import json
+          probes = [json.loads(line) for line in open("probes.jsonl")]
+          def window(name):
+              marks = dict(line.strip().split("=") for line in open(f"{name}.times"))
+              start, end = float(marks["start"]), float(marks["end"])
+              inside = [p for p in probes if start <= p["t"] <= end]
+              failed = [p for p in inside if p["code"] != 200]
+              return end - start, len(inside), len(failed)
+          print("### Rollout and rollback\n")
+          print("| | wall time | probes | failed probes |")
+          print("|---|---|---|---|")
+          for name in ("rollout", "rollback"):
+              wall, n, bad = window(name)
+              print(f"| {name} | {wall:.1f} s | {n} | {bad} |")
+          print(f"\nAll probes: {len(probes)}, failed: {sum(p['code'] != 200 for p in probes)}\n")
+          for name in ("rollout", "rollback"):
+              print(f"`{name}`: {open(name + '.txt').read().strip()}  ")
+          print(f"\nServing after rollout: `{open('serving-after-rollout.txt').read().strip()}`  ")
+          print(f"Serving after rollback: `{open('serving-after-rollback.txt').read().strip()}`")
+          print(f"\nRunner: {open('/proc/cpuinfo').read().count('processor')} vCPU, "
+                f"{int(open('/proc/meminfo').readline().split()[1]) // 1024**2} GB")
+          PY
+
+      - name: Stack logs
+        if: always()
+        run: docker compose -f docker-compose.prod.yml --env-file .env.prod --profile scale logs --no-color --tail 150 > stack.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rollout-drill
+          path: |
+            report.md
+            probes.jsonl
+            rollout.txt
+            rollback.txt
+            stack.log
+          if-no-files-found: warn
+
+  dashboard:
+    name: dashboard · traces
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_IMAGE: ghcr.io/${{ github.repository_owner }}/meridian:sha-${{ inputs.to_sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Environment and overrides
+        run: |
+          sed -e 's/^GEMINI_API_KEY=.*/GEMINI_API_KEY=unused/' .env.example > .env
+          echo "MERIDIAN_REPLAY=1" >> .env
+          # The published image instead of a source build, with no bind
+          # mount or reload, plus Grafana's image renderer.
+          cat > drill.override.yml <<'EOF'
+          services:
+            api:
+              image: ${API_IMAGE}
+              command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+              volumes: !override
+                - chroma_data:/app/data/chroma
+                - uploads_data:/app/data/uploads
+            grafana:
+              environment:
+                GF_RENDERING_SERVER_URL: http://renderer:8081/render
+                GF_RENDERING_CALLBACK_URL: http://grafana:3000/
+            renderer:
+              image: grafana/grafana-image-renderer:latest
+              profiles: ["observability"]
+          EOF
+          docker pull -q "$API_IMAGE"
+
+      - name: Start the observability stack
+        run: |
+          OTEL_TRACES_EXPORTER=otlp docker compose -f docker-compose.yml -f drill.override.yml \
+            --profile observability up -d --no-build \
+            postgres azurite api prometheus grafana jaeger renderer
+          for i in $(seq 1 180); do
+            if curl -fsS http://localhost:8000/readyz >/dev/null 2>&1; then echo "ready after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          docker compose -f docker-compose.yml -f drill.override.yml logs --tail 80 api; exit 1
+
+      - name: Drive the real path (replay mode, k6)
+        working-directory: loadtest
+        run: BASE_URL=http://localhost:8000 k6 run --summary-export ../k6-summary.json upload_to_brief.js
+
+      - name: Let Prometheus scrape and the spans flush
+        run: sleep 45
+
+      - name: Render the dashboard
+        run: |
+          curl -fsS --max-time 180 -o dashboard.png \
+            "http://localhost:3001/render/d/meridian-overview/meridian?orgId=1&from=now-15m&to=now&width=1600&height=2000&tz=UTC&theme=light&kiosk&timeout=150"
+          file dashboard.png
+          test "$(stat -c %s dashboard.png)" -gt 50000
+
+      - name: Collect traces and metrics
+        run: |
+          curl -fsS "http://localhost:16686/api/traces?service=meridian-api&operation=analysis.run&limit=20" -o traces.json
+          curl -fsS http://localhost:8000/metrics -o metrics.txt
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY" > traces.md
+          import json
+          from collections import defaultdict
+          traces = json.load(open("traces.json"))["data"]
+          print(f"### Traces\n\n{len(traces)} `analysis.run` traces from Jaeger.\n")
+          if traces:
+              spans = traces[0]["spans"]
+              agg = defaultdict(list)
+              for s in spans:
+                  agg[s["operationName"]].append(s["duration"] / 1e6)
+              print(f"Most recent trace: {len(spans)} spans.\n")
+              print("| stage | count | total s |")
+              print("|---|---|---|")
+              for name, ds in sorted(agg.items(), key=lambda kv: -sum(kv[1])):
+                  print(f"| {name} | {len(ds)} | {sum(ds):.2f} |")
+          PY
+          grep -E '^meridian_analysis_runs_total|^meridian_citation' metrics.txt | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Stack logs
+        if: always()
+        run: docker compose -f docker-compose.yml -f drill.override.yml logs --no-color --tail 150 > stack.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard-drill
+          path: |
+            dashboard.png
+            k6-summary.json
+            traces.json
+            traces.md
+            metrics.txt
+            stack.log
+          if-no-files-found: warn
