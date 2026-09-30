@@ -476,6 +476,7 @@ every response is recorded.
 |---|---|---|---|---|
 | [36694167380](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/runs/36694167380) | 8.9 s (ready 7.3 s) | 8.8 s (ready 7.3 s) | 302 | **0** |
 | [36694895440](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/runs/36694895440) | 9.2 s (ready 7.3 s) | 9.1 s (ready 7.2 s) | 307 | **0** |
+| [36696095899](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/runs/36696095899) | 9.4 s | 9.4 s | 312 | **0** |
 
 "Ready" is the new container's `/readyz`; the rest is draining and removing
 the old one. Both images were already pulled (0.2–0.4 s), so a cold pull of
@@ -486,7 +487,7 @@ reads the running container's image, and it matched the release requested.
 refreshed each second). In one run 3 of 148 probes stalled for the full 2 s
 timeout, and Caddy logged `failed getting dynamic upstreams; falling back to
 static upstreams: lookup api: operation was canceled`. A plain `api:8000`
-upstream is resolved on every connection instead; the two runs above are
+upstream is resolved on every connection instead; the three runs above are
 after that change.
 
 ---

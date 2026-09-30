@@ -157,9 +157,9 @@ removed and the old one keeps serving: a failed rollout changes nothing. It
 needs the Chroma server (`--profile scale`, `CHROMA_HOST=chroma` in
 `.env.prod`), because two containers must never open one embedded index.
 
-**Measured** (`docs/MEASUREMENTS.md`, two drill runs on a GitHub runner,
-images pre-pulled): a rollout or rollback takes 8.8–9.2 s, the new container
-is ready after 7.2–7.3 s, and 0 of 609 probes through the proxy failed. A
+**Measured** (`docs/MEASUREMENTS.md`, three drill runs on a GitHub runner,
+images pre-pulled): a rollout or rollback takes 8.8–9.4 s, the new container
+is ready after 7.2–7.3 s, and 0 of 921 probes through the proxy failed. A
 cold pull of the image adds its download time.
 
 ---

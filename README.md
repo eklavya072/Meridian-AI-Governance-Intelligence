@@ -43,7 +43,7 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 | End-to-end latency (replay) | **p50 4.9 s · p95 6.9 s**, 0 server errors |
 | Backpressure under load | 45 admitted, **36 refused with 429** — never queued |
 | End-to-end latency (live) | **78.9 s** upload → exported PDF, one run, 11 model calls |
-| Rollout and rollback | **8.8–9.2 s** each, **0 of 609** probes failed across two drills |
+| Rollout and rollback | **8.8–9.4 s** each, **0 of 921** probes failed across three drills |
 
 **Observability:** `make observability` brings up Prometheus, Grafana and
 Jaeger. The dashboard is provisioned from
