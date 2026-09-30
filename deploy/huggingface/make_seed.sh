@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build the demo's data: a database seed and a copy of the vector index.
 #
-#   deploy/huggingface/make_seed.sh <out-dir>
+#   PGUSER=<superuser> deploy/huggingface/make_seed.sh <out-dir>
 #
 # Reads the local development database and backend/data/chroma, and writes
 # <out-dir>/seed.sql and <out-dir>/chroma. Stop the API first: the index is
@@ -16,7 +16,8 @@ set -eu
 
 OUT="${1:?usage: make_seed.sh <out-dir>}"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-PG="-h localhost -U aura"
+# A role that may create databases; the app's own `aura` role usually cannot.
+PG="-h localhost -U ${PGUSER:-aura}"
 export PGPASSWORD="${PGPASSWORD:-aura}"
 SEED_DB=meridian_seed
 
