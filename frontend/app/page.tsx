@@ -48,12 +48,19 @@ export default function Landing() {
   /* Smooth scrolling on the landing only. A wheel moves the page in steps,
      and at speed the scrubbed hero, the pinned track and the reveals all
      jumped with it; Lenis turns the steps into one glide that everything
-     scroll-driven follows. Paused while the intro covers the page; off
-     under reduced motion; touch keeps its native momentum. */
+     scroll-driven follows, and each wheel step travels a little less than
+     the browser's own. Paused while the intro covers the page; off under
+     reduced motion; touch keeps its native momentum. */
   const lenisRef = useRef<Lenis | null>(null);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const lenis = new Lenis({ lerp: 0.085, smoothWheel: true, anchors: true, autoRaf: true });
+    const lenis = new Lenis({
+      lerp: 0.085,
+      wheelMultiplier: 0.8,
+      smoothWheel: true,
+      anchors: true,
+      autoRaf: true,
+    });
     lenisRef.current = lenis;
     return () => {
       lenis.destroy();
