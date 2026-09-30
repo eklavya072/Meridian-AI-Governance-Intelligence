@@ -1,0 +1,64 @@
+name: Live gate
+
+# Tier 2 of the evidence gate: the replay gate's synthetic two-article
+# analysis, run once against the live model, with the same invariants. It
+# catches the model drifting into answers the pipeline cannot handle, which a
+# recording cannot. One document, ten requests, capped at twelve
+# (tests/live/test_live_gate.py). Weekly, and on demand.
+#
+# Needs the repository secret GEMINI_API_KEY; without it the run is skipped
+# with a warning rather than failed.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: live-gate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: live evidence gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_RPM_LIMIT: "12"
+      MERIDIAN_LIVE_GATE: "1"
+
+    steps:
+      - name: Check the key is configured
+        id: key
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::warning::GEMINI_API_KEY secret not set; live gate skipped"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+
+      - uses: astral-sh/setup-uv@v5
+        if: steps.key.outputs.present == 'true'
+        with:
+          version: "0.12.7"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install the locked dependency set
+        if: steps.key.outputs.present == 'true'
+        run: uv sync --frozen
+
+      - name: Run the live gate
+        if: steps.key.outputs.present == 'true'
+        run: uv run pytest tests/live -q -rA
