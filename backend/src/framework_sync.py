@@ -22,14 +22,6 @@ RAW_POLICIES_DIR = _BACKEND_DIR / "data" / "raw_policies"
 def _resolve_frameworks_config() -> Path:
     """Locate config/frameworks.yaml across repo and container layouts.
 
-    This was `Path(__file__).parent.parent.parent / "config" / ...`, which is
-    correct in the repo (backend/src -> backend -> repo root) and resolves to
-    "/config/frameworks.yaml" inside the image, where the app lives at /app.
-    The Docker build context is backend/, so the file was not in the image at
-    all and every framework-routing call raised FileNotFoundError. Caught by
-    running the suite inside the built image; it would have been a runtime
-    failure in production, not just a test one.
-
     FRAMEWORKS_CONFIG_PATH is the deployment override; the candidates below
     cover the repo checkout and the container without one.
     """
@@ -173,12 +165,8 @@ class FrameworkSyncService:
                 for role in role_list:
                     for c in chunks:
                         copy = c.model_copy(deep=True)
-                        # Derived from the base chunk's id and the role, not
-                        # minted fresh: a uuid4 here reintroduced exactly the
-                        # drift that deterministic chunk ids were added to
-                        # remove, so every re-sync orphaned the evidence any
-                        # cached dimension had carried over for these
-                        # frameworks.
+                        # Derived from the base chunk's id and the role, so a
+                        # re-sync keeps the ids that stored evidence cites.
                         copy.chunk_id = str(uuid.uuid5(_CHUNK_ID_NAMESPACE, f"{c.chunk_id}|{role}"))
                         copy.metadata["roles"] = role
                         expanded.append(copy)
