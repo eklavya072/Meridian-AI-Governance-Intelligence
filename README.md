@@ -30,8 +30,8 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 
 | | |
 |---|---|
-| Tests | **1,346 passed, 20 skipped** |
-| Coverage (`src`) | **81%** — CI gate 76%, set from measurement |
+| Tests | **1,395 passed, 26 skipped**, including a replay gate over recorded Gemini answers and a golden set of two real instruments |
+| Coverage (`src`) | **82%** — CI gate 80%, set from measurement |
 | Production image | **1,889 MB** (down from 5,683 MB) |
 | Vulnerabilities | **161 → 131** after remediation (3 fixable HIGH → 0) |
 | Fixable HIGH/CRITICAL | **3 → 0**, all fixed at source; `.trivyignore` is empty |
@@ -43,12 +43,15 @@ and dates. Anything unmeasured says so rather than carrying an estimate.
 | End-to-end latency (replay) | **p50 4.9 s · p95 6.9 s**, 0 server errors |
 | Backpressure under load | 45 admitted, **36 refused with 429** — never queued |
 | End-to-end latency (live) | **78.9 s** upload → exported PDF, one run, 11 model calls |
+| Rollout and rollback | **8.8–9.2 s** each, **0 of 609** probes failed across two drills |
 
-**Observability:** `make observability` brings up Prometheus and Grafana with
-the dashboard provisioned from
+**Observability:** `make observability` brings up Prometheus, Grafana and
+Jaeger. The dashboard is provisioned from
 [a committed JSON file](observability/grafana/dashboards/meridian.json) —
-citation pass rate, coverage verdict distribution, per-stage latency,
-and provider failover events.
+citation pass rate, coverage verdict distribution, per-stage latency, and
+provider failover events ([rendered under replay traffic](docs/img/grafana-dashboard.png)) —
+and every analysis is one OpenTelemetry trace, with a span per pipeline stage
+and its trace id on every log line.
 
 **Operations:** [RUNBOOK.md](docs/RUNBOOK.md) — SLOs with targets and measured
 values kept separate, five failure modes with detection → diagnosis →
@@ -390,20 +393,25 @@ make test-container  # the same suite INSIDE the built image, as CI does
 make check           # lint, types and tests, in CI's order
 ```
 
-**1,346 passed, 20 skipped. Coverage 81%** on `src`. The CI gate is 76% —
+**1,395 passed, 26 skipped. Coverage 82%** on `src`. The CI gate is 80% —
 set below measured, so it catches regression without being aspirational.
 The suite writes every piece of state (index, uploads, quota ledger) to a
 throwaway directory, so it is safe to run beside a live API.
 
-The twenty skips are deliberate and need external state (Azurite, an indexed
-framework corpus, running services):
+The skips are deliberate and need external state (Azurite, an indexed
+framework corpus, running services, or a Gemini key for the live gate):
 
 ```bash
 RUN_INTEGRATION_TESTS=1 make test   # requires running services
 RUN_EVALUATION_TESTS=1  make test   # requires an indexed framework corpus
+MERIDIAN_LIVE_GATE=1    make test   # the Tier-2 gate: ten live Gemini requests
 ```
 
-What is covered: PDF validation failure modes, structure-aware chunking,
+What is covered: an evidence gate that replays a full analysis against both
+a scripted provider and real recorded Gemini answers, asserting that every
+citation resolves and verdicts are byte-identical across runs; the scorer's
+reading of the EU AI Act and the UK AI white paper, pinned against a
+committed snapshot; PDF validation failure modes, structure-aware chunking,
 citation verification (including deliberately broken cases), the
 normative-force scorer and its gates, an AST guard
 against a second verdict computation reappearing, guardrails, framework
@@ -510,7 +518,7 @@ Meridian/
 │   │   ├── logging_config.py         # Structured JSON logging
 │   │   └── utils.py                  # Shared helpers
 │   ├── scripts/                  # Index rebuild, framework resync, measurement
-│   ├── tests/                    # unit / integration / evaluation
+│   ├── tests/                    # unit / integration / evaluation / live, golden set, recorded replay
 │   ├── main.py                   # FastAPI app
 │   ├── Dockerfile
 │   ├── pyproject.toml           # dependencies, ruff/mypy/pytest config
@@ -519,7 +527,7 @@ Meridian/
 │   ├── app/                      # workspace / analysis / brief / auditor / frameworks / landing
 │   ├── components/               # Page components; analysis/ holds the four module panels
 │   └── lib/                      # Typed API client, palette, framework links, motion helpers
-├── deploy/huggingface/           # Single-container demo image (Hugging Face Space)
+├── deploy/                       # rollout.sh (zero-downtime deploy and rollback), Hugging Face demo image
 ├── docs/                         # Runbook, measurements, incident write-up
 ├── loadtest/                     # k6 load test (replay mode, no Gemini calls)
 ├── observability/                # Prometheus + Grafana, dashboard as code

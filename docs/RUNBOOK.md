@@ -139,28 +139,28 @@ into a warning and silently no-ops.
 ## Deployment and rollback
 
 Every image is published to GHCR tagged both `latest` and
-`sha-<full-commit-sha>`. **Roll back by digest or by SHA tag, never by
+`sha-<full-commit-sha>`. **Deploy and roll back by SHA tag, never by
 `latest`** — `latest` is exactly the tag that just moved.
 
 ```bash
 # What is running now
-docker inspect --format '{{index .Config.Image}}' meridian-api
+docker inspect --format '{{.Config.Image}}' $(docker compose -f docker-compose.prod.yml --env-file .env.prod ps -q api)
 
-# Roll back to a known-good commit
-docker pull ghcr.io/eklavya072/meridian:sha-<known-good-sha>
-docker tag  ghcr.io/eklavya072/meridian:sha-<known-good-sha> meridian:rollback
-docker compose -f docker-compose.prod.yml up -d --no-deps api
-
-# Gate on readiness, not on the container being up
-make ready
+# Deploy a release, or roll back to one: the same command
+make rollout IMAGE_REF=ghcr.io/eklavya072/meridian:sha-<commit>
 ```
 
-`make ready` polls `/readyz`, which checks Postgres, the vector store and
-provider capacity. A container that is running but cannot serve is not a
-successful deploy, and `/healthz` alone would call it one.
+`deploy/rollout.sh` starts the new image beside the running one, waits for
+its `/readyz` (Postgres, the vector store and provider capacity), then drains
+and removes the old container. If the new one never becomes ready it is
+removed and the old one keeps serving: a failed rollout changes nothing. It
+needs the Chroma server (`--profile scale`, `CHROMA_HOST=chroma` in
+`.env.prod`), because two containers must never open one embedded index.
 
-**A rollback has not yet been performed and timed.** It is written here as a
-procedure, not reported as an exercise.
+**Measured** (`docs/MEASUREMENTS.md`, two drill runs on a GitHub runner,
+images pre-pulled): a rollout or rollback takes 8.8–9.2 s, the new container
+is ready after 7.2–7.3 s, and 0 of 609 probes through the proxy failed. A
+cold pull of the image adds its download time.
 
 ---
 

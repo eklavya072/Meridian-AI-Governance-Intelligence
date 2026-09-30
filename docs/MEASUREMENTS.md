@@ -190,15 +190,16 @@ from pretending it is not there.
 
 | | |
 |---|---|
-| Result | 1,346 passed, 20 skipped |
-| Wall clock | ~16 s (~37 s with coverage) |
-| Coverage (`src`) | **81%** (8,847 statements, 1,720 missed) |
+| Result | 1,395 passed, 26 skipped |
+| Wall clock | ~25 s (~65 s with coverage, including the golden set) |
+| Coverage (`src`) | **82%** (8,931 statements, 1,579 missed) |
 
-The 20 skips are deliberate and all need external state: 9 Azurite storage
+The 26 skips are deliberate and all need external state: 9 Azurite storage
 integration tests (they run in CI, where Azurite is a service container),
 5 evaluation tests behind `RUN_EVALUATION_TESTS=1` and 2 role tests that need
 an indexed framework corpus, 3 integration tests behind
-`RUN_INTEGRATION_TESTS=1`, and 1 needing a PDF with a real text layer.
+`RUN_INTEGRATION_TESTS=1`, 6 live-gate tests behind `MERIDIAN_LIVE_GATE=1`,
+and 1 needing a PDF with a real text layer.
 
 ### Bugs the coverage work found
 
@@ -461,15 +462,64 @@ seconds, and retrieval over the full corpus is most of that — which is also
 why warm replay here takes 12–13 s against the 4.9 s p50 of the load test
 above, whose Chroma started empty.
 
+## Rollout and rollback — the drills
+
+**Date:** 2026-09-30 · **Gemini calls: 0.** `.github/workflows/drills.yml`,
+`rollout` job, on a GitHub-hosted runner (4 vCPU, 15 GB). The production
+compose file with the Chroma server, Caddy in front, and two published
+releases: start on `sha-b5762d5…`, roll out `sha-83d2572…` with
+`deploy/rollout.sh`, then roll back the same way. A prober requests
+`/healthz` through Caddy continuously (100 ms sleep plus the request) and
+every response is recorded.
+
+| Run | Rollout | Rollback | Probes | Failed |
+|---|---|---|---|---|
+| [36694167380](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/runs/36694167380) | 8.9 s (ready 7.3 s) | 8.8 s (ready 7.3 s) | 302 | **0** |
+| [36694895440](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/runs/36694895440) | 9.2 s (ready 7.3 s) | 9.1 s (ready 7.2 s) | 307 | **0** |
+
+"Ready" is the new container's `/readyz`; the rest is draining and removing
+the old one. Both images were already pulled (0.2–0.4 s), so a cold pull of
+the 1.9 GB image adds its download time on top. After each switch the drill
+reads the running container's image, and it matched the release requested.
+
+**What the drill found.** Caddy first used a dynamic upstream (`dynamic a`,
+refreshed each second). In one run 3 of 148 probes stalled for the full 2 s
+timeout, and Caddy logged `failed getting dynamic upstreams; falling back to
+static upstreams: lookup api: operation was canceled`. A plain `api:8000`
+upstream is resolved on every connection instead; the two runs above are
+after that change.
+
+---
+
+## Dashboard and traces under replay traffic — the drills
+
+**Date:** 2026-09-30 · **Gemini calls: 0.** `drills.yml`, `dashboard` job
+([run 36694895440](https://github.com/eklavya072/Meridian-AI-Governance-Intelligence/actions/runs/36694895440)),
+same runner. The `observability` compose profile on the published image
+`sha-83d2572…` in replay mode, Chroma empty at start, k6
+(`loadtest/upload_to_brief.js`) driving the real upload-to-brief path; then
+the provisioned dashboard rendered by Grafana's image renderer and the traces
+read back from Jaeger.
+
+![Grafana dashboard under replay traffic](img/grafana-dashboard.png)
+
+| | |
+|---|---|
+| k6 iterations | 41 (checks 92/92) |
+| Analyses completed / refused with 429 | 10 / 31, matching `meridian_analysis_runs_total` |
+| Upload → analysis available | p50 22.4 s, p95 35.2 s |
+| Traces in Jaeger | 51, of which 10 `analysis.run` |
+| Largest run trace | 46 spans: `analyse` 13.1 s, `retrieve` ×23 8.8 s, `index` 5.1 s, `ingest` 1.1 s, `llm` ×10 0.5 s |
+
+Read the provider and citation panels for what they are in replay mode: no
+credential is configured, so the breaker and quota panels read 0, and the
+replay provider cites nothing, so the citation panels are empty. Latency here
+is the runner's, with two analyses admitted at a time, and is not comparable
+with the M2 figures above.
+
 ---
 
 ## Not yet measured
 
-- A Grafana dashboard screenshot from sustained traffic. The dashboard is
-  provisioned as code (`observability/grafana/dashboards/meridian.json`) and
-  the metrics behind every panel were verified live during the load test —
-  `/metrics` reported 45 complete and 36 rejected runs, matching k6 exactly.
-  What is missing is a rendered screenshot, which needs the compose stack
-  and therefore a container runtime this machine does not have.
-- A rollback performed and timed against a running deployment
+- A live latency distribution. The live figure above is a single run.
 - Provider failover behaviour under a real 429 storm
