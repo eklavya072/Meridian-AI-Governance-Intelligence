@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Live demo](https://img.shields.io/badge/live%20demo-open-2e7d32.svg)](https://meridian-ai-governance.duckdns.org)
 
-**[Live demo](https://meridian-ai-governance.duckdns.org)** · [How it works](#how-it-works) · [Results](#results) · [Run it locally](#run-it-locally) · [Documentation](#documentation)
+**[Live demo](https://meridian-ai-governance.duckdns.org)** · [How it works](#how-it-works) · [Results](#results) · [Engineering](#engineering-and-operations) · [Run it locally](#run-it-locally) · [Documentation](#documentation)
 
 </div>
 
@@ -29,6 +29,12 @@ gaps?*
 > country's governance system as a whole, and it does not rank countries.
 > Breadth and binding force are reported as two separate measures rather than
 > combined into a single score.
+
+Meridian is built as a production service. Every change is tested in a
+container that shares the production image's layers, every release is scanned
+for vulnerabilities and published as a public multi-architecture image, and
+the service ships with tracing, a runbook and rehearsed zero-downtime
+rollback. See [Engineering and operations](#engineering-and-operations).
 
 ## Try it
 
@@ -158,28 +164,65 @@ The method rests on five rules.
 How each figure was measured, with dates and conditions, is recorded in
 [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md).
 
-## Engineering
+## Engineering and operations
 
-- **One-command setup.** `make up && make ready` brings up the API,
-  PostgreSQL, the web app and an Azure Blob Storage emulator (Azurite). A
-  public multi-architecture image is published for every release:
-  `docker pull ghcr.io/eklavya072/meridian:latest` (`linux/amd64`, `linux/arm64`).
-- **Continuous integration.** Linting (ruff), type checking (mypy) and the
-  full test suite with a coverage gate run on every change, and the tests also
-  run inside the built production image.
-- **Secure releases.** Every release image is scanned with Trivy and is
-  blocked by any fixable high or critical vulnerability. Each release ships
-  with an SPDX software bill of materials.
-- **Observability.** Each analysis is one OpenTelemetry trace with a span per
-  pipeline stage, alongside Prometheus metrics and a Grafana dashboard
-  provisioned from code ([screenshot](docs/img/grafana-dashboard.png)).
-- **Operations.** A [runbook](docs/RUNBOOK.md) sets out service-level
-  objectives and documented failure modes. Zero-downtime rollout and rollback
-  each take about nine seconds, with 0 of 921 health probes failing across
-  three drills. A [controlled incident drill](docs/INCIDENT-001.md) covers
-  provider-quota exhaustion.
-- **Load behaviour.** Requests beyond capacity are refused immediately with
-  HTTP 429 rather than queued.
+Meridian is built to be deployed and run, not only demonstrated. The service
+objective it watches most closely is citation quality rather than uptime:
+outages are visible, but a quiet drop in citation quality would put an
+indefensible brief in front of a policy analyst. Everything below is measured, with
+conditions and dates in [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md).
+
+| Area | Measured |
+|---|---|
+| Test suite | **1,395 tests passing**, 82% line coverage; CI fails below 80% |
+| Continuous integration | Four jobs on every change: lint, types and tests; the tests again **inside a container built from the production image's layers**; the full stack from a clean clone; the web app build |
+| Release pipeline | About **4 minutes**, with `linux/amd64` and `linux/arm64` built in parallel on native runners and published as one public image |
+| Release security | Every release is **blocked by any fixable high or critical vulnerability** (Trivy) and ships with an SPDX 2.3 software bill of materials (235 packages in v1.0.0) |
+| Container image | 1,882 MB and CPU-only: about two-thirds smaller than the default build, by excluding a GPU runtime the service never uses. CI asserts that it runs as a **non-root user** and carries **no build tooling** |
+| Zero-downtime deployment | Rollout and rollback in **8.8–9.4 s**, with **0 of 921** health probes failing across three drills |
+| Load test (k6, replay mode) | **207 of 207 checks passed, 0 server errors**; work beyond capacity refused at once with HTTP 429 rather than queued (36 of 81 runs); end-to-end p50 4.9 s, p95 6.9 s |
+| Live end-to-end run | **78.9 s** from upload to exported PDF brief; 11 model calls; all 39 evidence items verified |
+| Provider-failure drill | Quota exhaustion detected after 9 failed calls, readiness reports `503`, and recovery is automatic |
+
+**Delivery.** `make` is the single entry point for every task, from `make up`
+to `make rollout`, and dependencies are locked (`uv.lock`). The tests run in
+a container that shares every layer beneath it with the production image, so
+CI tests what actually ships. Deployments switch image digests with no
+downtime ([`deploy/rollout.sh`](deploy/rollout.sh)). Liveness (`/healthz`) and
+readiness (`/readyz`) are separate checks: readiness reports `503` when a
+dependency such as the model provider is unavailable, and a deployment waits
+for it before switching traffic.
+
+**Security.** The release gate has no suppressed findings (`.trivyignore`
+lists none), and the production image runs as a non-root user with no
+compilers or package managers in its runtime layer. Secrets come from the
+environment, the operator-only re-index endpoint requires `ADMIN_TOKEN`, and
+TLS is terminated by Caddy, whose configuration includes an optional
+basic-authentication block.
+
+**Observability.** Each analysis is a single OpenTelemetry trace with a span
+per pipeline stage, and its trace ID appears on every structured log line.
+Prometheus metrics feed a Grafana dashboard provisioned from a
+[committed file](observability/grafana/dashboards/meridian.json), covering
+citation pass rate, verdict distribution, per-stage latency and provider
+failover ([screenshot](docs/img/grafana-dashboard.png)). `make observability`
+brings up Prometheus, Grafana and Jaeger locally.
+
+**Operations.** The [runbook](docs/RUNBOOK.md) sets four service objectives
+(availability, successful-analysis rate, analysis latency and citation pass
+rate) and five failure modes, each with detection, diagnosis, response and
+recovery. [INCIDENT-001](docs/INCIDENT-001.md) records a controlled drill of
+provider-quota exhaustion: what the signals showed and what was changed.
+
+**Resilient model access.** Calls to the model are rate-limited per minute and
+capped per day, with the daily count kept across restarts. They retry with
+jittered backoff and honour the delay the provider asks for, and each
+credential sits behind a circuit breaker that recovers on its own. Admission
+control refuses work beyond capacity immediately instead of letting it queue.
+
+**Storage.** Uploads go to the local filesystem or to Azure Blob Storage. The
+development stack runs the Azurite emulator, and the Azure Blob integration
+tests run in CI against it.
 
 ## Run it locally
 
@@ -330,7 +373,8 @@ MERIDIAN_LIVE_GATE=1    make test   # makes ten live Gemini requests
 | Retrieval | ChromaDB, `BAAI/bge-small-en-v1.5` embeddings, BM25 hybrid search |
 | Language model | Google Gemini (`gemini-3.5-flash-lite`), with rate limiting, backoff and daily quota accounting |
 | Web app | Next.js 14, React 18, TypeScript, Tailwind CSS |
-| Infrastructure | Docker, GitHub Actions, Caddy, Azurite, OpenTelemetry, Prometheus, Grafana, k6 |
+| Delivery | uv, Make, Docker (multi-architecture), GitHub Actions, GitHub Container Registry, Trivy, Syft |
+| Operations | Caddy, OpenTelemetry, Prometheus, Grafana, Jaeger, k6, Azure Blob Storage (Azurite locally) |
 
 ## Limitations
 
