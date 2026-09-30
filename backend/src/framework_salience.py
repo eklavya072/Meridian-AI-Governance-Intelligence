@@ -2,18 +2,17 @@
 
 WHY THIS EXISTS
 ───────────────
-The 45-mechanism inventory was flat: a dimension missing "user disclosure" —
-which 38 of the 43 indexed instruments name — reported the same gap as one
-missing "model documentation", which 20 name. A ministry reading "you provide
+Without it the 45-mechanism inventory is flat: a dimension missing "user
+disclosure" — which 38 of the 43 indexed instruments name — would report the
+same gap as one missing "model documentation", which 20 name. A ministry reading "you provide
 4 of 6 mechanisms" cannot tell which of the two absent ones to fix first, and
 that is the question they actually have.
 
 WHY IT IS COUNTED THIS WAY, AND NOT MEASURED BY SIMILARITY
 ──────────────────────────────────────────────────────────
-An earlier attempt scored documents by embedding their prose against framework
-prose. It inverted: Japan's principles-voice guidance sits closer to framework
-language than the EU AI Act's statutory phrasing, so soft law outscored hard
-law. Similarity measures how a document is WRITTEN, not what it REQUIRES.
+Scoring documents by embedding their prose against framework prose inverts:
+principles-voice guidance sits closer to framework language than statutory
+phrasing, so soft law outscores hard law. Similarity measures how a document is WRITTEN, not what it REQUIRES.
 
 This function never reads a country document. It counts, over the reference
 corpus alone, how many distinct instruments name each mechanism. A count of
@@ -24,14 +23,10 @@ SUSTAINED MENTION, NOT PRESENCE
 ───────────────────────────────
 A mechanism counts for an instrument only when its vocabulary appears in at
 least two separate chunks, so a single passing reference does not weigh the
-same as a dedicated article. Measured against both benchmark families this is
-identical to counting bare presence (+0.29 / +0.30) while being the more
-defensible rule.
+same as a dedicated article.
 
-Weighting by HOW MUCH an instrument discusses a mechanism was also measured and
-rejected: it scores mechanisms that appear in long documents, which is the
-document-length bias this project has been bitten by three times, and it sent
-the binding-force correlation to −0.10.
+Weighting by HOW MUCH an instrument discusses a mechanism is deliberately not
+done: it would favour mechanisms that happen to appear in long documents.
 """
 
 from __future__ import annotations

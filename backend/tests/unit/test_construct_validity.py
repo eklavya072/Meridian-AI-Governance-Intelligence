@@ -1,10 +1,7 @@
 """Does the instrument measure what it claims — checked without an external index.
 
-Per-dimension validation against GIRAI covers 21 of 56 cells, because GIRAI
-publishes a comparable thematic score for only three of the eight dimensions.
-The other 35 cells have no published benchmark anywhere. That is a real ceiling
-on external validation, and these tests exist because two kinds of evidence do
-NOT need a third party:
+Most dimension-by-country cells have no published external benchmark, so
+these tests rest on two kinds of evidence that do NOT need a third party:
 
   KNOWN GROUPS   score instruments whose relative force nobody disputes. A
                  statute with criminal penalties must outrank a strategy that
@@ -15,8 +12,7 @@ NOT need a third party:
                  amount — and the wrong cells not to.
 
 Both run on synthetic text rather than the corpus, so they are fast, offline
-and stable. The corpus-wide versions were measured once and are recorded in
-docs/ENGINEERING-NOTES.md; these pin the behaviour they established.
+and stable.
 """
 
 from src.evidence_strength import depth_from_profile

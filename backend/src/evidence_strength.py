@@ -2,24 +2,14 @@
 
 WHY THIS EXISTS
 ───────────────
-The original coverage ladder (R1/R2 in deterministic.py) asked one question per
-dimension: "does ANY retrieved chunk contain commitment language / a named body
-next to a programme word?" That is an existence check over the whole document,
-and it does not discriminate between national governance frameworks, because
-essentially EVERY national AI document satisfies it somewhere:
+An existence check ("does ANY passage contain commitment language or a named
+body?") does not discriminate between national AI documents: every strategy
+names its own ministry, mentions a "programme" and promises to "develop"
+something. A binding statutory duty and an aspirational bullet in a vision
+statement would produce identical verdicts.
 
-  - every strategy names its own ministry (implementation matrices are built
-    from ministry names),
-  - every strategy contains "programme", "initiative", "roadmap",
-  - every strategy promises to "develop" or "establish" something.
-
-So the ladder raised nearly every dimension of nearly every document to
-Covered, and depth — which was derived from the same binary flags — followed
-it up to Institutionalized. A binding statutory duty and an aspirational bullet
-in a vision statement produced identical verdicts.
-
-WHAT REPLACES IT
-────────────────
+HOW IT WORKS
+────────────
 Governance provisions are scored on NORMATIVE FORCE — how strongly the text
 actually governs — rather than on keyword presence. Each dimension-relevant
 sentence is classified into one of five tiers, and the dimension's verdict is
@@ -38,19 +28,13 @@ computed from the DISTRIBUTION of tiers, not from any single match:
   T0 ASPIRATIONAL a principle, value, or vision statement
                   ("AI should be transparent", "AI must serve as an enabler")
 
-Two exclusions run BEFORE tiering, because both were confirmed to be inflating
-real verdicts in this pipeline:
+Two exclusions run BEFORE tiering:
 
-  1. THIRD-PARTY ATTRIBUTION. Kenya's entire retrieved Transparency evidence
-     described Australia's AI Action Plan and other jurisdictions' privacy
-     enforcement authorities — comparative background from the strategy's
-     literature-review section, scored as though it were Kenya's own
-     governance. A sentence that attributes a provision to a DIFFERENT
-     jurisdiction is evidence about that jurisdiction, not about this
-     document's governance.
-  2. STRUCTURAL NOISE. Rwanda's Environmental Sustainability evidence was
-     table-of-contents lines and a vision statement. Contents listings,
-     bare headings and definition-section boilerplate are not provisions.
+  1. THIRD-PARTY ATTRIBUTION. A sentence that attributes a provision to a
+     DIFFERENT jurisdiction (a strategy's comparative literature review) is
+     evidence about that jurisdiction, not about this document.
+  2. STRUCTURAL NOISE. Contents listings, bare headings and definition-section
+     boilerplate are not provisions.
 
 DESIGN COMMITMENTS
 ──────────────────
@@ -60,8 +44,7 @@ DESIGN COMMITMENTS
   - A named institution is NOT the top of the scale. A binding obligation on a
     regulated party outranks a named body with a vague mandate: naming a
     ministry is near-universal boilerplate in national strategies, whereas
-    "providers shall disclose" is a genuine governance act. The old ladder had
-    this backwards (a named body was R2's gate).
+    "providers shall disclose" is a genuine governance act.
   - Duty-bearer matters. "The Ministry will develop guidelines" is government
     promising itself something; "providers shall disclose" binds a regulated
     actor. Only the latter reaches T3.
@@ -141,9 +124,7 @@ REGULATED_PARTY_RE = _words(
     "data fiduciary",
     "data fiduciaries",
     "fiduciary",
-    # PIPL's own name for the party it regulates. Its absence cost China's
-    # Privacy cell 27 duties borne by the primary addressee of the statute —
-    # the equivalent of scoring the GDPR without the word "controller".
+    # PIPL's own name for the party it regulates (the GDPR's "controller").
     "personal information handler",
     "personal information handlers",
     "personal data handler",
@@ -152,9 +133,7 @@ REGULATED_PARTY_RE = _words(
     "algorithmic recommendation service providers",
     "deep synthesis service provider",
     "deep synthesis service providers",
-    # Conformity-assessment third parties. EU product law puts a chapter of
-    # duties on them and they are neither government nor the duty's subject
-    # elsewhere, so every one of those duties scored as no duty at all.
+    # Conformity-assessment third parties, which EU product law places duties on.
     "notified body",
     "notified bodies",
     "conformity assessment body",
@@ -254,27 +233,10 @@ OBLIGATION_RE = _words(
 )
 # Prohibition / imposition verbs used in the third person by an instrument.
 # Stemmed ("mandate*" not "mandates") because the subject is often plural
-# ("the guidelines mandate X", "the provisions require Y") — an exact-form
-# list tuned to singular subjects ("the Act mandates X") silently missed
-# these. Confirmed live: "the guidelines mandate the implementation of
-# human-in-the-loop mechanisms" scored as unowned aspiration (T0) purely
-# because "mandates" didn't match "mandate".
-# Stems audited against what they ACTUALLY match in the corpus, because three
-# of them were matching almost nothing but false positives:
-#
-#   bar*      39 hits: barriers(26) barrier(4) baringo(2, a Kenyan county)
-#                      barometer(1) — 85% noise
-#   compel*    1 hit : compelling(1) — an adjective meaning persuasive
-#   restrict* 289 hits including restrictive(9), an adjective
-#
-# and "require" carries two senses that this lexicon could not separate:
-#
-#   deontic     "providers are required to", "shall require", "requires that"
-#   descriptive "professionals require AI fluency"  (= need)
-#
-# 90% of the corpus's require-based binding sentences had no deontic marker at
-# all. Kenya's entire Inclusivity verdict rested on one of them: "Non-tech
-# professionals... require AI fluency for ethical and inclusive deployment."
+# ("the guidelines mandate X"). Stems that match mostly noise are spelled out
+# instead: bar* matches "barriers", compel* "compelling", restrict*
+# "restrictive". "require" is handled separately below, because its
+# descriptive sense ("professionals require AI fluency") creates no duty.
 IMPOSITION_RE = _words(
     "prohibit*",
     "mandate*",
@@ -383,9 +345,6 @@ AUTHORITY_VERB_RE = _words(
 # materially stronger than a bare principle (a real statute, with a real
 # regulator, creating real duties) but weaker than this document imposing a
 # duty of its own, so it lands at ASSIGNED rather than OBLIGATORY.
-# Confirmed live: Nigeria's Privacy and India's Human Autonomy both scored as
-# unowned aspiration despite citing genuine binding instruments, because the
-# grammatical subject was the statute, not a regulated party.
 LEGAL_INSTRUMENT_RE = re.compile(
     r"\b(?:"
     r"[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*){0,6}\s+"
@@ -436,12 +395,8 @@ NONBINDING_DISCLAIMER_RE = re.compile(
     r"(?:obligations?|binding|duties)"
     r"|no\s+legal\s+(?:force|effect|obligation)"
     r"|voluntary\s+(?:in\s+nature|framework|guidelines?|code)"
-    # How instruments ACTUALLY declare their own softness. The clauses above
-    # are boilerplate nobody writes: across seventeen documents not one of
-    # them matched, including Japan's AI Guidelines for Business, which says
-    # in its own preface that it pursues its purposes "through soft laws
-    # without any legally binding force". A detector that never fires is not
-    # a conservative detector.
+    # How instruments actually declare their own softness, e.g. "through soft
+    # laws without any legally binding force".
     r"|without\s+any\s+legally\s+binding\s+(?:force|effect|nature|power)"
     r"|not\s+legally\s+binding"
     r"|(?:is|are)\s+not\s+(?:intended\s+to\s+be\s+)?(?:legally\s+)?binding"
@@ -449,16 +404,9 @@ NONBINDING_DISCLAIMER_RE = re.compile(
     r"|voluntary\s+compliance\s+(?:rather\s+than|to\s+avoid|instead\s+of)"
     # NOT included: a bare "soft law", which appears in comparative
     # discussion inside binding instruments; "best practice", which appears
-    # in every genre; and "voluntary frameworks lack legal enforceability",
-    # which is India's DIAGNOSIS of the status quo, not a statement about
-    # the document making it.
-    # NOTE: "voluntary basis" is deliberately NOT here. EU AI Act
-    # Recital 178 reads "Providers ... are encouraged to start to comply,
-    # on a voluntary basis, with the relevant obligations of this
-    # Regulation already during the transitional period" — a provision
-    # about EARLY compliance with a binding instrument, not a statement
-    # that the instrument is voluntary. Matching it declared the whole
-    # AI Act non-binding, capping every provision at T1.
+    # in every genre; a diagnosis such as "voluntary frameworks lack legal
+    # enforceability"; and "voluntary basis", which the EU AI Act uses for
+    # EARLY compliance with its binding obligations.
     r")\b",
     re.IGNORECASE,
 )
@@ -531,9 +479,7 @@ ASPIRATION_RE = _words(
 
 # ── Exclusion 1: third-party jurisdiction attribution ────────────────────
 # A sentence describing ANOTHER jurisdiction's framework is evidence about
-# that jurisdiction. Confirmed live: Kenya's Transparency evidence was
-# entirely about Australia's AI Action Plan and foreign privacy-enforcement
-# authorities, drawn from the strategy's comparative literature review.
+# that jurisdiction, typically drawn from a strategy's comparative review.
 FOREIGN_MARKER_RE = re.compile(
     r"\b("
     r"other (?:countries|jurisdictions|nations|states)"
@@ -781,11 +727,9 @@ def is_third_party_attribution(sentence: str, own_jurisdiction: str = "") -> boo
             return True
         # Otherwise: a foreign jurisdiction named in a sentence that never
         # speaks in this document's own voice is a comparative example, not a
-        # provision. This is the form that slipped through before — narrative
-        # reporting such as "In Canada, the Office of the Privacy Commissioner
+        # provision — "In Canada, the Office of the Privacy Commissioner
         # launched an investigation…" carries a real institution and real
-        # enforcement verbs, so it scored as top-tier domestic governance
-        # while describing an entirely different country.
+        # enforcement verbs, but describes a different country.
         if not self_voice:
             return True
     return False
@@ -798,18 +742,11 @@ def detect_nonbinding_document(sample_texts: Iterable[str]) -> bool:
     sentence, because the disclaimer usually appears once in a preface and
     governs every provision that follows.
 
-    A single false positive here is catastrophic and silent: the flag caps
-    EVERY provision in the document at T1, so `n_binding` goes to zero and
-    each affected dimension collapses to Emerging with no error raised. That
-    is what happened to the EU AI Act — one recital about voluntary EARLY
-    compliance was read as a disclaimer, and because the sample is drawn from
-    a per-dimension retrieval pool, the same document was judged voluntary for
-    some dimensions and binding for others.
-
+    A false positive here is catastrophic and silent: the flag caps EVERY
+    provision in the document at T1, so every dimension collapses to Emerging.
     So the disclaimer is overruled when the same sample shows the instrument
     carrying its own supervisory or penalty machinery. A document that fines
-    people is not voluntary, whatever one of its recitals says about a
-    transitional period.
+    people is not voluntary, whatever one of its recitals says.
     """
     # Imported locally: the regime detector lives in src/grading.py, which
     # imports this module, so a top-level import would be circular.
@@ -839,20 +776,14 @@ def _split_sentences_for_scoring(text: str) -> list[str]:
 # Both mappings read the SAME profile but measure different things, so a
 # dimension can be broadly addressed yet shallowly implemented (Covered /
 # Emerging) or narrowly addressed but rigorously so (Partial / Operationalized).
-# Deriving depth from coverage — the old behaviour — made that impossible.
 
 
 def meets_force_bar(profile: EvidenceProfile) -> bool:
     """Does the document actually impose governing force on this dimension?
 
     ONE definition, used by BOTH coverage_from_profile and
-    depth_from_profile. It lives here rather than being inlined in each
-    because the two ladders drifted apart once already: the degenerate
-    `n_binding >= 1` threshold was found and fixed on the coverage side but
-    silently left in place on the depth side, so a document with a single
-    unenforced duty read "Partial ... stands alone rather than forming a
-    developed regime" and "Operationalized" at the same time. Two functions
-    answering the same question must not each keep their own answer.
+    depth_from_profile, so the two can never disagree about whether a
+    dimension is governed.
 
     The bar is deliberately NOT `n_binding >= 1`. The counters are cumulative
     (n_binding counts tier>=3, n_institutional tier>=2), so any lone binding
@@ -885,49 +816,25 @@ def coverage_from_profile(
     # concrete commitments. Pure aspiration can NEVER reach Covered no matter
     # how often it is repeated: a document that only ever says "AI should be
     # fair" does not govern fairness, it endorses it.
-    # NOTE on counter semantics: the n_* counters are CUMULATIVE — n_binding
-    # counts tier>=3 and n_institutional counts tier>=2, so n_institutional is
-    # a superset of n_binding. The original rule here read
-    #   n_binding >= 2 or (n_binding >= 1 and n_institutional >= 1)
-    # which silently collapsed to plain `n_binding >= 1`, because any binding
-    # provision also increments n_institutional. That made a SINGLE binding
-    # sentence sufficient for Covered and left the "Partial: one lone binding
-    # duty" branch below permanently unreachable. The corrected rule pairs a
-    # lone duty with ENFORCEMENT (a genuinely independent signal) instead.
+    # The force bar itself is meets_force_bar.
     force_bar = meets_force_bar(profile)
     # MECHANISM BREADTH GATE (downgrade only, never a raise).
     #
-    # Normative force and mechanism breadth are orthogonal, and a document can
+    # Normative force and mechanism breadth are orthogonal: a document can
     # clear the force bar on one narrow provision while providing almost none
-    # of what the dimension actually needs. Observed live: a soft-law
-    # instrument scored Covered for Privacy on 1 of 7 mechanisms — no consent
-    # rule, no data minimisation, no purpose limitation, no anonymisation, no
-    # data-subject rights — purely because a single provision was binding and
-    # enforcement-backed. Calling that "Covered" overstates the document.
+    # of what the dimension needs (a single enforceable privacy provision, and
+    # no consent rule, minimisation or data-subject rights). The gate holds
+    # such a verdict at Partial. It never promotes, so mechanism vocabulary
+    # can never substitute for governing force.
     #
-    # The gate can only hold a verdict DOWN. It never promotes: the document
-    # must still supply its own binding provisions, so mechanism vocabulary
-    # can never substitute for governing force. (The inverse case is real too
-    # — a document with 6/6 mechanisms but no binding force stays Partial.)
-    # ZERO DETECTIONS IS NOT EVIDENCE OF ABSENCE.
-    #
-    # The floor used to fire hardest where the evidence was weakest: on cells
-    # where the detector found NOTHING. Measured, it fired on 12 of 55 cells
-    # and four of those were China at 0 of 5 or 0 of 6 — a jurisdiction with
-    # six binding provisions in both Safety and Human Autonomy, held at
-    # Partial because mechanism matching returned nothing.
-    #
-    # Mechanism matching was measured at 20% precision on the cue selector
-    # (see mechanism_adjudication), so a zero count cannot distinguish "this
-    # document has no mechanisms" from "the detector did not find them".
-    # Demote on a measured shortfall, never on a silent one.
+    # Zero detections is not evidence of absence: mechanism matching is
+    # imprecise, so a zero count cannot distinguish "no mechanisms" from "the
+    # detector found none". The gate demotes only on a measured shortfall.
     if force_bar and mechanisms is not None and mechanisms.total and mechanisms.met:
         if (mechanisms.met / mechanisms.total) < mechanism_floor:
-            # Named, not counted. "3 of 6 mechanisms" tells a reader nothing
-            # they can act on, because they have no way to know what the six
-            # are or which of the missing three matters; the absent ones are
-            # ordered by how many reference instruments expect each, so the
-            # sentence opens with the gap most widely agreed to matter.
+            # Named, not counted: the absent mechanisms are ordered by how many
+            # reference instruments expect each, so the sentence opens with the
+            # gap most widely agreed to matter.
             from src.framework_salience import framework_count, rank_absent
 
             ranked = rank_absent(profile.dimension, mechanisms.absent)
@@ -958,22 +865,9 @@ def coverage_from_profile(
             )
             + ")."
         )
-    # A "breadth" path to Covered — many commitment-tier sentences, no
-    # binding duty required — used to exist here. Removed: it directly
-    # contradicted the rule stated above it ("pure aspiration can never
-    # reach Covered no matter how often repeated") and produced exactly the
-    # inconsistency that contradiction predicts. Confirmed live across three
-    # independent country runs: Kenya's Inclusivity, Nigeria's Inclusivity,
-    # and (implicitly) EU's Inclusivity/Environmental Sustainability all hit
-    # this path and were marked Covered, while sibling dimensions in the
-    # SAME document with equal or weaker evidence — cited from the identical
-    # source passages in Nigeria's case (Fairness vs. Inclusivity share
-    # verbatim citations) — landed on Partial through the rule below. A
-    # verdict that depends on which side of an arbitrary commitment-count
-    # threshold a dimension falls, rather than on whether a duty exists, is
-    # not a defensible Coverage signal. High commitment density with no
-    # binding duty is exactly what depth_from_profile's "Emerging" tier
-    # already exists to represent — it does not also need to inflate Coverage.
+    # There is deliberately no "breadth" path to Covered: many commitments
+    # with no binding duty is what depth_from_profile's Emerging stage
+    # represents, and pure aspiration never reaches Covered.
 
     # Partial: genuine governance activity, but thin.
     if profile.n_binding >= 1:
@@ -1012,18 +906,10 @@ def describe_risk_basis(
     Returns (risk_basis, potential_consequence).
 
     The risk LEVEL is decided elsewhere (compute_risk) by coverage tier and
-    cluster compounding, and that logic is untouched. This supplies the
-    sentence a reader actually needs, because the previous one restated the
-    verdict in different words and leaked internal taxonomy:
-
-        "Supporting dimension 'Environmental Sustainability' is partially
-         addressed. Risk compounded by related dimension gaps."
-
-    "Supporting" is this tool's own classification, not a property of the
-    policy, and "is partially addressed" tells a reader nothing they did not
-    already learn from the Partial label. What matters is the shape of the
-    weakness: duties that nothing enforces behave differently from duties that
-    do not exist, and both differ from a dimension covered in principle only.
+    cluster compounding. This supplies the sentence a reader needs: the shape
+    of the weakness. Duties that nothing enforces behave differently from
+    duties that do not exist, and both differ from a dimension covered in
+    principle only.
 
     Everything here is derived from counters already computed for the verdict,
     so it introduces no new judgement and cannot disagree with the label.
@@ -1138,21 +1024,15 @@ def depth_from_profile(
             f"Binding requirements are paired with enforcement, oversight or "
             f"redress machinery ({backing})."
         )
-    # Operationalized clears the SAME force bar as Covered. It used to read
-    # `n_binding >= 1`, which called a single unenforced sentence
-    # "Operationalized" — the stage name asserts the governance is built out
-    # and running, and one duty in isolation plainly is not. That also put
-    # depth in direct contradiction with coverage, which describes the very
-    # same profile as "stands alone rather than forming a developed regime".
+    # Operationalized clears the SAME force bar as Covered: a single
+    # unenforced duty is not a governance regime that is built out and running.
     if meets_force_bar(profile):
         return "Operationalized", (
             "Binding requirements exist, but without the enforcement, audit or "
             "redress machinery that would make them self-sustaining."
         )
-    # Delegated separates "someone owns this" from "someone said this matters".
-    # Both used to return Emerging, so a dimension carrying a real binding duty
-    # scored identically to one carrying a bare principle — see the note on
-    # DEPTH_STAGE_SCORE for the live cases that exposed it.
+    # Delegated separates "someone owns this" from "someone said this matters"
+    # (see DEPTH_STAGE_SCORE in gap_analyzer).
     if profile.n_binding >= 1:
         return "Delegated", (
             "A binding requirement exists but stands alone, with neither a "
@@ -1175,47 +1055,15 @@ def depth_from_profile(
     )
 
 
-# ── Framework alignment: an approach that was TRIED AND REJECTED ──────────
+# ── Why the reference corpus does not score sentence similarity ─────────
 #
 # Coverage and depth are computed from the uploaded document's OWN
-# provisions. That means the ingested reference corpus (UNESCO, OECD, NIST,
-# UNDP, CDEI, ...) does NOT influence the verdict — it supplies the normative
-# citation, the recommendations and the alignment narrative, but adding or
-# removing a framework does not change whether a dimension reads Covered.
-#
-# An attempt was made to close that gap by measuring "framework alignment":
-# extract requirement sentences from the framework corpus for a dimension,
-# then count how many are semantically matched by some sentence in the
-# document (cosine over bge-small embeddings), and use the ratio to gate the
-# Covered tier.
-#
-# It was measured against the live corpora and REJECTED, because the metric is
-# anti-correlated with governance strength. Transparency, 12 extracted
-# requirements, requirements-met by cosine threshold:
-#
-#     threshold      EU AI Act    Japan (soft law)    Rwanda
-#       0.55-0.65      12/12           12/12           12/12   (saturated)
-#       0.70            7/12           12/12            3/12
-#       0.75            5/12            7/12            2/12
-#       0.80            0/12            4/12            0/12
-#
-# At every usable threshold the non-binding instrument outscores the binding
-# regulation, and at 0.80 the EU AI Act scores zero. The cause is register,
-# not compliance: Japan's guidelines are written in the same principles-document
-# voice as the frameworks themselves ("should ensure transparency..."), so they
-# embed close to framework requirement prose, while the AI Act's statutory
-# phrasing ("Providers of high-risk AI systems shall...") embeds further away
-# despite being far stronger governance. Prose-to-prose similarity measures
-# how a document is WRITTEN, not what it REQUIRES.
-#
-# A workable design would compare at the MECHANISM level rather than the
-# sentence level — frameworks define the set of mechanisms a dimension needs
-# (disclosure duty, explainability right, model documentation, audit trail,
-# public registry, incident notification), and each is checked against the
-# document with the same tier classifier used everywhere else, which measures
-# force rather than style. That requires deciding how the mechanism list is
-# derived, and is deliberately not implemented here rather than shipping a
-# signal that inverts the thing it claims to measure.
+# provisions. Comparing document prose to framework prose (cosine over
+# embeddings) was measured and rejected: it is anti-correlated with governance
+# strength, because a soft-law guideline written in the frameworks' own
+# principles voice embeds closer to them than a statute's "Providers shall..."
+# phrasing. Prose similarity measures how a document is WRITTEN, not what it
+# REQUIRES. The corpus informs the verdict at the mechanism level instead.
 
 
 # ── Required governance mechanisms per dimension ──────────────────────────
@@ -1223,18 +1071,13 @@ def depth_from_profile(
 # OECD AI Principles, NIST AI RMF, CDEI, ICO/Turing, UN Global Digital Compact)
 # recurrently requires for each dimension.
 #
-# This is the MECHANISM-level comparison that the rejected sentence-similarity
-# approach above could not do. Matching happens on what a provision DOES, via
-# the same tier classifier used for coverage, so a statute phrased "providers
-# shall log" and a strategy phrased "we will establish audit trails" are both
-# recognised as the audit-trail mechanism while still being graded differently
-# on force. That is what makes it immune to the writing-register confound that
-# inverted the previous attempt.
+# Matching happens on what a provision DOES, via the same tier classifier used
+# for coverage, so a statute phrased "providers shall log" and a strategy
+# phrased "we will establish audit trails" are both recognised as the
+# audit-trail mechanism while still being graded differently on force.
 #
-# Hardcoded rather than auto-extracted, deliberately and visibly: deriving the
-# list from the corpus is exactly what failed, and an explicit table that can
-# be inspected and argued with is more honest than a computed one that quietly
-# tracks prose style.
+# Hardcoded rather than auto-extracted, deliberately: an explicit table can be
+# inspected and argued with.
 DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
     "Transparency": {
         "user disclosure": ("inform", "notify", "disclos", "made aware", "label"),
@@ -1287,11 +1130,8 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
         "consent": ("consent", "opt-in", "permission"),
         "data minimisation": ("minimis", "minimiz", "only the data", "necessary data"),
         # Statutes name these rights and duties in their own terms: Japan's
-        # APPI never says "data subject" or "purpose limitation" — it says
-        # "purpose of use" and lets the "identifiable person" request
-        # disclosure, correction or deletion. With only the GDPR vocabulary
-        # here, a statute that establishes both was reported to establish
-        # neither.
+        # APPI says "purpose of use" and lets the "identifiable person" request
+        # disclosure, correction or deletion, never "data subject".
         "purpose limitation": (
             "purpose limitation",
             "specified purpose",
@@ -1452,9 +1292,7 @@ DIMENSION_MECHANISMS: dict[str, dict[str, tuple[str, ...]]] = {
         "compute efficiency": (
             "computational",
             "compute",
-            # Both spacings, deliberately. India's Guidelines write
-            # "resource-efficient" with a hyphen and the spaced form alone
-            # missed it, which produced the study's only Missing verdict.
+            # Both spacings: documents write "resource-efficient" either way.
             "resource efficien",
             "resource-efficien",
             "model size",
@@ -1480,13 +1318,8 @@ def detect_mechanisms(
 ) -> MechanismMatch:
     """Which required mechanisms the document provides, and how strongly.
 
-    Kept as the name every caller already uses; the implementation lives in
-    src/mechanism_matching.py. There were two of these — this one and the
-    hyphen-tolerant one — and production imported THIS one, so "bias-test",
-    "red-teaming" and "post market monitoring" were being missed by the
-    mechanism gate while the module that handled them sat beside it unused.
-    Imported inside the function because mechanism_matching reads
-    DIMENSION_MECHANISMS from here.
+    The implementation lives in src/mechanism_matching.py, imported inside the
+    function because that module reads DIMENSION_MECHANISMS from here.
     """
     from src.mechanism_matching import detect_mechanisms as _detect
 

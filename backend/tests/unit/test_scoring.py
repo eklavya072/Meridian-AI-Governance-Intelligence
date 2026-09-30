@@ -500,8 +500,7 @@ class TestAgentlessEnforcement:
 
 class TestBeToObligation:
     """'be + to-infinitive' is a standard English deontic construction
-    (Quirk et al.). Added on grammatical grounds, NOT from the held-out data
-    that revealed it — so China remains a test of the rule, not its source."""
+    (Quirk et al.), added on grammatical grounds."""
 
     ART21 = (
         "Article 21: Where providers violate these Measures, penalties are to be "

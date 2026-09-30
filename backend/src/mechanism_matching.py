@@ -46,36 +46,19 @@ import structlog
 
 logger = structlog.get_logger()
 
-# Calibrated below, not guessed: see calibrate_threshold() and the tests.
-# Deliberately high. A mechanism claimed on weak similarity is a false
-# positive that inflates coverage, and coverage is already the more generous
-# of the two axes.
-# Floor for the per-sentence argmax. Calibrated against real provisions our
-# cues miss: the weakest true match in that set is 0.580 (Japan's "information
-# poverty and digital poverty" -> digital divide), so 0.55 admits every one of
-# them while still rejecting text that is about nothing in the inventory.
+# Floor for the per-sentence argmax (see calibrate_threshold() and the tests).
+# Calibrated against real provisions the keyword cues miss: the weakest true
+# match in that set is 0.580 ("information poverty and digital poverty" ->
+# digital divide), so 0.55 admits every one of them while still rejecting text
+# that is about nothing in the inventory.
 SEMANTIC_MECHANISM_THRESHOLD = float(os.getenv("MECHANISM_SIM_THRESHOLD", "0.55"))
-# OFF BY DEFAULT, on measured evidence against my own expectation.
-#
-# The semantic pass adds 64 mechanism matches across the seven jurisdictions.
-# Auditing every one of them against the sentence that produced it, only 7
-# (11%) have any topical support. The other 57 are matches like:
-#
-#   Kenya  -> "incident reporting" from a sentence about conformity assessment
-#   China  -> "public registry"    from a sentence about disclosing user groups
-#   EU     -> "e-waste lifecycle"  from a Commission evaluation timetable
-#
-# The per-sentence argmax forces every sentence to vote for SOMETHING, and a
-# 0.55 floor is far too low to stop it.
-#
-# THE TRAP, AND WHY THE NUMBERS ARE NOT THE ANSWER: turning this ON IMPROVES
-# the benchmark correlations (GIRAI +0.75 vs +0.68, Oxford +0.68 vs +0.50).
-# It does that because spurious matches scale with document length, and
-# document length correlates with state capacity, which is what GIRAI
-# measures. The composite score improves while the per-dimension verdicts get
-# worse — and the per-dimension verdict is the product. A policymaker asking
-# "which mechanism is my policy missing?" cannot be handed a in 9-of-10
-# wrong answer because it flattered a rank correlation.
+# OFF BY DEFAULT. Audited against the sentences that produced them, only about
+# one in ten semantic matches has any topical support; the rest are matches
+# like "incident reporting" from a sentence about conformity assessment. The
+# per-sentence argmax forces every sentence to vote for SOMETHING, and a 0.55
+# floor is far too low to stop it. Spurious matches also scale with document
+# length, so they would flatter long documents rather than improve any
+# per-dimension verdict.
 #
 # The idea is still right: embeddings for topic, rules for force. What is
 # wrong is the decision rule. It needs a much higher floor, agreement between

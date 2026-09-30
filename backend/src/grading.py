@@ -3,8 +3,7 @@
 The language model extracts evidence and writes prose. Nothing here asks it
 anything. Every verdict is computed from counted, classified sentences, so a
 stored analysis can be re-scored from its recorded evidence without spending a
-single model call — which is what made it affordable to backtest seven
-jurisdictions against four external references.
+single model call.
 
 WHAT THIS MODULE DOES, IN ORDER
 
@@ -26,10 +25,6 @@ WHAT THIS MODULE DOES, IN ORDER
                             withheld rather than published.
   5. Mechanism gate         a dimension cannot be "operational" while binding
                             none of the mechanisms it requires.
-
-EVERY RULE HERE REPLACED ONE THAT WAS MEASURABLY WRONG. The comments name the
-document and the sentence that exposed each, because those are the only
-evidence that the rule is worth having.
 """
 
 from __future__ import annotations
@@ -65,7 +60,7 @@ from src.evidence_strength import (
 
 logger = structlog.get_logger()
 
-# ── The split that v1 did not make ───────────────────────────────────────
+# ── Enforcement: consequence versus oversight ────────────────────────────
 #
 # CONSEQUENCE: something that happens TO a party that does not comply. This
 # is what makes a duty enforceable rather than merely supervised.
@@ -86,8 +81,7 @@ CONSEQUENCE_RE = _words(
     "compensation",
     "damages",
     "prosecut*",
-    "punish*",  # standard in civil-law translation; absent from
-    # Anglo drafting and therefore missed until China
+    "punish*",  # standard in civil-law translation, rare in Anglo drafting
     "offence",
     "offense",
     "imprisonment",
@@ -98,10 +92,8 @@ CONSEQUENCE_RE = _words(
     "enforce",
     "enforced",
     "enforceable",
-    # Administrative sanctions as civil-law translation renders them. PIPL
-    # Chapter VII imposes all of its remedies in these words and none of the
-    # ones above, so the law with the heaviest data-protection penalties in
-    # the corpus contributed exactly one enforceable provision out of 182.
+    # Administrative sanctions as civil-law translation renders them; PIPL
+    # Chapter VII states all of its remedies in these words.
     "confiscat*",
     "criminal responsibility",
     "circulate criticism",
@@ -120,17 +112,10 @@ ADMIN_SANCTION_RE = re.compile(
 # PENAL PROVISION: the consequence stated as the operative act.
 #
 # T4 otherwise needs a duty modal — "providers shall ... or face a fine". But
-# the most binding sentence in a statute usually contains no modal at all,
+# the most binding sentence in a statute often contains no modal at all,
 # because it states the consequence instead of restating the duty:
-# "A person who contravenes subsection (1) is guilty of an offence."
-# Those landed on `has_regulated and has_consequence` -> Obligatory, so a
-# criminal penalty scored below an ordinary "shall".
-#
-# Measured on the country corpus: 9 penalty-style provisions, 7 of them
-# capped at T3 this way, all in the UK Data Protection Act — the most
-# enforceable instrument in that workspace. Since Institutionalized requires
-# n_enforceable >= 2, the cap was suppressing depth on the dimensions with
-# the strongest possible backing.
+# "A person who contravenes subsection (1) is guilty of an offence." Without
+# this rule a criminal penalty would score below an ordinary "shall".
 #
 # Deliberately narrow: an offence, a conviction, or a stated liability to a
 # penalty. "May face reputational consequences" is not this pattern, and a
@@ -145,10 +130,9 @@ PENAL_PROVISION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# OVERSIGHT: an activity someone performs. Real governance, and in v1 it was
-# scored identically to a penalty. An organisation asked to audit itself is
-# not thereby subject to enforcement — Egypt's guidelines describe their own
-# audit instrument as "a comprehensive Self Assessment checklist".
+# OVERSIGHT: an activity someone performs. Real governance, but not a
+# penalty: an organisation asked to audit itself (a "Self Assessment
+# checklist") is not thereby subject to enforcement.
 OVERSIGHT_RE = _words(
     "audit",
     "audits",
@@ -178,27 +162,22 @@ OVERSIGHT_RE = _words(
 # Oversight is only FORCE when the regulated party is its object. "Providers
 # are subject to supervision by the Authority" imposes something; "Organizations
 # are investing in vendor risk management and continuous monitoring" describes
-# a market. Both reached Obligatory, because the ladder asked whether the word
-# appeared rather than who was on the receiving end. Across the corpus 46
-# provisions — 8% of all binding evidence — reached that tier on oversight with
-# no duty of any kind in the sentence, and 45 of the 46 were mentions.
+# a market.
 SUBJECTION_RE = re.compile(
     r"\b(?:is|are|shall\s+be|must\s+be|will\s+be|being|been)\s+subject(?:ed)?\s+to\b"
     r"|\b(?:supervis|monitor|audit|inspect|investigat|overse|certifi|accredit)\w*\s+by\s+"
     r"(?:the\s+|a\s+|an\s+)?[A-Za-z]"
-    # "control" and "authority" are NOT here. "logs under the control of the
-    # provider" and "an environment under the control of the prospective
-    # provider" say what that party CONTROLS, which is the opposite of being
-    # subject to something — both reached Obligatory on it.
+    # "control" and "authority" are NOT here: "logs under the control of the
+    # provider" says what that party CONTROLS, the opposite of being subject
+    # to something.
     r"|\bunder\s+the\s+(?:supervision|oversight|inspection)\s+of\b"
     r"|\bsubject\s+to\s+(?:the\s+)?(?:supervision|oversight|inspection|audit|investigation|"
     r"certification|accreditation|approval|review|sanction|penalt)\w*",
     re.IGNORECASE,
 )
 
-# "law enforcement" is policing. It is not enforcement OF THIS INSTRUMENT, and
-# treating it as such is what lifted Kenya's Transparency verdict in v1 on the
-# strength of a sentence about strengthening the police.
+# "law enforcement" is policing, not enforcement OF THIS INSTRUMENT: a
+# sentence about strengthening the police imposes nothing.
 POLICING_RE = re.compile(r"\blaw[\s\-]+enforcement\b", re.IGNORECASE)
 
 
@@ -214,12 +193,9 @@ def _classify_base(
     document_is_nonbinding: bool = False,
     document_is_unenforced: bool = False,
 ) -> ScoredSentence:
-    """v1's ladder with the enforcement split applied.
+    """The base tier ladder, with enforcement split into consequence and oversight.
 
-    Deliberately a copy of v1's branch structure rather than a refactor of it.
-    v1 must keep behaving exactly as it did while the two are being compared,
-    and a shared helper that both call would make every future edit a change
-    to both models at once.
+    classify_provision widens the duty-bearer test on top of this.
     """
     s = " ".join((sentence or "").split())
     if not s:
@@ -292,10 +268,8 @@ def _classify_base(
     # in its text cannot make anything obligatory, whatever its individual
     # sentences say. It can still delegate — "the Ministry shall establish a
     # working group" is real assignment — so the ceiling is Assigned, not
-    # Intentional. This is the only handle on an instrument that is voluntary
-    # in substance while never saying so: Egypt's National Guidelines contain
-    # no self-description at all, and were scoring Operationalized on six of
-    # eight dimensions on the strength of the word "must".
+    # Intentional. This catches an instrument that is voluntary in substance
+    # without ever saying so.
     if document_is_unenforced and tier > TIER_ASSIGNED:
         tier = TIER_ASSIGNED
         enforcement_credit = False
@@ -303,17 +277,12 @@ def _classify_base(
     return ScoredSentence(s, tier, bearer, enforcement_credit)
 
 
-# How many enforcement signals establish a regime. v1 used a flat 3, which is
-# LENGTH-BIASED: it was calibrated on the EU AI Act (2,664 sentences) and the
-# APPI (604), and a short statute cannot reach it however clearly it binds.
-# China's Interim Measures are 63 sentences with one penalties article; its
-# Deep Synthesis Provisions 70. Under a flat 3, no short instrument anywhere
-# can establish a regime — a defect invisible across five jurisdictions whose
-# binding instruments all happened to be long.
-#
-# The guard's purpose is to reject a passing preamble mention, and that scales
-# with how much document there is to pass through. One signal in 63 sentences
-# is not incidental; one in 7,704 might be.
+# How many enforcement signals establish a regime, scaled to document length.
+# A flat count is length-biased: a 63-sentence statute with one penalties
+# article could never reach a threshold calibrated on a 2,600-sentence
+# regulation. The guard exists to reject a passing preamble mention, and that
+# scales with how much document there is: one signal in 63 sentences is not
+# incidental; one in 7,704 might be.
 ENFORCEMENT_SIGNALS_PER_SENTENCES = 200
 
 
@@ -325,10 +294,8 @@ def required_enforcement_signals(n_sentences: int) -> int:
 def detect_enforcement_regime(sample_texts: Iterable[str], min_signals: int | None = None) -> bool:
     """Does this DOCUMENT establish machinery with a consequence attached?
 
-    Same shape as v1, but the sentences that qualify must now reach the top
-    tier under the consequence rule. Measured on the corpus: Egypt's
-    guidelines return True in v1 on ten sentences carrying no penalty word at
-    all, and False here.
+    Only sentences that reach the top tier under the consequence rule count:
+    a supervisory word with no penalty behind it is not a regime.
     """
     from src.evidence_strength import _split_sentences_for_scoring
 
@@ -340,12 +307,9 @@ def detect_enforcement_regime(sample_texts: Iterable[str], min_signals: int | No
     signals = 0
     for t in texts:
         for sent in _split_sentences_for_scoring(t):
-            # v5's classifier, deliberately. The regime detector and the
-            # profile must agree on what enforcement IS, or a document can
-            # carry agentless penalty articles ("criminal liability shall be
-            # pursued") that the profile recognises and the regime does not.
-            # Found on China, where all four instruments carry real penalties
-            # and none registered a regime.
+            # classify_provision, deliberately: the regime detector and the
+            # profile must agree on what enforcement IS, agentless penalty
+            # articles ("criminal liability shall be pursued") included.
             if classify_provision(sent).tier >= TIER_ENFORCEABLE:
                 signals += 1
                 if signals >= needed:
@@ -353,7 +317,7 @@ def detect_enforcement_regime(sample_texts: Iterable[str], min_signals: int | No
     return False
 
 
-# ── Profile building, v2 ─────────────────────────────────────────────────
+# ── Enforcement backing per dimension ───────────────────────────────────
 
 
 def dimension_enforcement_backing(
@@ -365,20 +329,15 @@ def dimension_enforcement_backing(
     """Can this dimension claim the document's own enforcement machinery?
 
     Only if a document that BOTH has an enforcement regime AND supplies at
-    least one binding sentence to this dimension. v1 asked only the first
-    question, and asked it of the whole workspace, so in Japan's three-document
-    run the 2003 privacy statute's penalties backed Transparency and Fairness —
-    dimensions the APPI does not govern.
+    least one binding sentence to this dimension. A privacy statute's
+    penalties do not back Transparency or Fairness.
     """
     for doc, sents in sentences_by_document.items():
         if doc not in documents_with_regime:
             continue
         for s in sents:
-            # classify_provision, the classifier that scores the profile. The
-            # narrower base ladder missed artifact-borne duties ("the AI
-            # system shall be...") and the be-to construction, so a dimension
-            # could hold binding provisions yet be denied its document's
-            # enforcement backing.
+            # classify_provision, the classifier that scores the profile, so
+            # artifact-borne and be-to duties count here too.
             if (
                 classify_provision(s, dimension=dimension, own_jurisdiction=own_jurisdiction).tier
                 >= TIER_OBLIGATORY
@@ -387,55 +346,24 @@ def dimension_enforcement_backing(
     return False
 
 
-# ── v3: evidence sufficiency, and why geometric aggregation needs it ─────
+# ── Evidence sufficiency ─────────────────────────────────────────────────
 #
-# v2 fixed WHAT counts as enforcement. It did not fix a deeper problem: the
-# scorer could not tell "we read this dimension carefully and found no duty"
-# from "we barely found anything to read".
-#
-# Measured across the 40 dimension-by-jurisdiction cells in the study set:
-#
-#     EU   Environmental Sustainability   17 scored sentences, 0 binding
-#     India Environmental Sustainability   2 scored sentences, 0 binding
-#
-# Both produced the verdict Unaddressed. Only one of them is a finding about
-# the document. India's whole corpus is 48 chunks against the EU's 337, so its
-# thinnest dimensions are verdicts issued on almost nothing, and they dragged
-# India to last place.
+# The scorer must tell "we read this dimension carefully and found no duty"
+# from "there was almost nothing to read".
 #
 # THE THRESHOLD IS DERIVED, NOT CHOSEN. Over the cells that do carry a duty,
 # binding sentences are 18.2% of scored sentences. If a dimension is governed
 # at that rate, the chance of reading k sentences and seeing no duty at all is
-# 0.818^k. Requiring that to fall below 20% gives k >= 8:
-#
-#     0.818^8 = 0.19
-#
-# Requiring that to fall at or below 20% gives k = 9, the smallest integer
-# that qualifies:
+# 0.818^k, which first falls at or below 20% at k = 9:
 #
 #     0.818^8 = 0.201   (just misses)
 #     0.818^9 = 0.164
 #
-# So below nine scored sentences, "no duty found" carries less than 80%
-# confidence and should not be published as a governance verdict. Above it,
-# silence is evidence.
-#
-# SUPERSEDED AS A GATE. The derivation assumes the k sentences are a SAMPLE of
-# the dimension's provisions. Since the profile began sweeping every sentence of
-# every supplied document (gap_analyzer._dimension_profile), k is a census: India
-# reads 1,099 sentences in full and exactly two mention the environment. A low
-# count is then the finding, not a reason to doubt it, so the threshold now
-# grades how much text a verdict describes (verdict_confidence) and withholds
-# nothing. Measured before settling it: withholding the two cells below the
-# floor lifted India's index by ten points for saying less, and cost the GIRAI
-# correlation 0.08 with no change on the binding-force family.
-#
-# CAUTION, and it is a real one. That insensitivity held before de-duplication
-# removed 16% of scored sentences. With the counts corrected, k=9 withholds
-# FOUR cells rather than three, and the margin to the next cell is thin. The
-# threshold is no longer comfortably categorical on this corpus, which is an
-# argument for re-deriving it against documents outside the study set before
-# anyone relies on it.
+# The profile sweeps every sentence of every supplied document, so k is a
+# census rather than a sample: a low count is itself the finding. The
+# threshold therefore grades how much text a verdict describes
+# (verdict_confidence) and withholds nothing. It was derived on the study
+# corpus and should be re-derived before relying on it elsewhere.
 EVIDENCE_BASE_RATE = 0.182
 EVIDENCE_CONFIDENCE = 0.80
 MIN_SCORED_FOR_ABSENCE = 9
@@ -463,11 +391,9 @@ def verdict_confidence(
 ) -> tuple[str, str]:
     """How much evidence stands behind one cell, and why.
 
-    A verdict resting on 274 provisions and one resting on 2 currently render
-    identically, so a reader has no way to tell which to check before quoting.
-    That is the honest limit of the instrument — per-dimension validation
-    reaches 38% of cells — and the answer is not to hide it but to publish it
-    per cell, so "verify before you quote this" points somewhere specific.
+    A verdict resting on 274 provisions and one resting on 2 would otherwise
+    render identically, so the band tells a reader which to check before
+    quoting.
 
     Deliberately three coarse bands and not a 0-100 number. A precise-looking
     confidence score invented from counts would be exactly the kind of
@@ -475,11 +401,9 @@ def verdict_confidence(
     """
     if n_scored == 0:
         return "none", "no provisions were scored for this dimension"
-    # Thin, not insufficient. The count below the floor used to be read as
-    # "too little was sampled to trust the absence", but the profile is no
-    # longer a sample: every sentence of every supplied document is swept, so
-    # a low count means the document itself barely touches the dimension. The
-    # verdict stands; what this band says is how little text it describes.
+    # Thin, not insufficient: every sentence of every supplied document is
+    # swept, so a low count means the document itself barely touches the
+    # dimension. The verdict stands; the band says how little text it describes.
     if not evidence_is_sufficient(n_scored, n_binding):
         return "thin", (
             f"every provision was read and only {n_scored} touch this dimension, "
@@ -505,24 +429,11 @@ def verdict_confidence(
 
 # ── Duplicate provisions ─────────────────────────────────────────────────
 #
-# Found by reading the sentences behind a verdict rather than the verdict.
-# Egypt's Transparency reported twelve binding provisions; four of them were
-# ONE sentence — "Ensure that transparency and Explainability requirements are
-# jointly validated by Provider/Developer and Business Units (BU) during
-# design" — recurring with different internal whitespace.
-#
-# The cause is chunking, not scoring. Chunk windows overlap by design so a
-# provision is never split across a boundary, and the scoring pool therefore
-# contains the same sentence once per window that covers it. Nothing
-# downstream removed it, so every counter it feeds was inflated.
-#
-# Measured over the whole study set: 590 of 3,636 scored sentences are
-# duplicates — 16%. The effect on VERDICTS is small, because the force bar is
-# a low threshold and a dimension with a duty usually has several; exactly one
-# of forty cells flips. The effect on the NUMBERS is not small, and those
-# numbers are quoted in the generated narrative ("imposes 73 binding
-# requirements here"), so they were wrong by about a fifth wherever they
-# appeared.
+# Chunk windows overlap by design so a provision is never split across a
+# boundary, and the scoring pool therefore contains the same sentence once per
+# window that covers it. Without de-duplication every counter it feeds — and
+# the counts quoted in the narrative ("imposes 73 binding requirements") — is
+# inflated.
 #
 # Normalising on alphanumerics only is deliberate. The duplicates differ by
 # whitespace and occasionally by a stray hyphen from PDF extraction, never by
@@ -536,10 +447,8 @@ def dedupe_sentences(sentences: Iterable[str]) -> list[str]:
     Collapses by CONTAINMENT, not equality. Overlapping chunks return the same
     provision cut at different offsets — "...fostering sustainable growth. The
     development of..." and "...sustainable growth. The development of..." are
-    one sentence — so an exact key treats them as distinct and counts the
-    provision once per overlapping chunk. That inflated a single Kenyan
-    sentence into "5 binding provisions". Containment catches truncation at
-    either end.
+    one sentence — so an exact key would count the provision once per
+    overlapping chunk. Containment catches truncation at either end.
 
     Quadratic in the number of sentences, which is fine: the largest dimension
     pool in the corpus is a few hundred, and correctness here feeds every
@@ -556,23 +465,13 @@ def dedupe_sentences(sentences: Iterable[str]) -> list[str]:
     return out
 
 
-# ══ v4 ═══════════════════════════════════════════════════════════════════
+# ── Sentence function: is this text OPERATIVE at all? ────────────────────
 #
-# Three changes, each found by reading the sentences behind a verdict rather
-# than the verdict. See docs/ENGINEERING-NOTES.md for the 40-cell validation that produced
-# them.
-#
-# ── (A) Sentence function: is this text OPERATIVE at all? ────────────────
-#
-# The ladder correctly tiers whatever it is handed. It was being handed the
-# wrong sentences. Six kinds of non-operative text scored as duties, and the
-# largest by far is recitals: 110 of the European Union's 184 binding
-# sentences (60%) come from the AI Act's preamble, which under EU law has no
-# binding force and exists to aid interpretation. EU Inclusivity's entire
-# Covered/Operationalized verdict rested on two sentences, both recitals.
-#
-# This gate runs BEFORE tier classification, in the same spirit as the
-# existing structural-noise and third-party-attribution exclusions.
+# The ladder tiers whatever it is handed, so non-operative text must be
+# removed first: recitals (a regulation's preamble has no binding force under
+# EU law), definitions, headings, descriptions, a body's own housekeeping,
+# consultation questions and lists of institutions. This gate runs BEFORE tier
+# classification, like the structural-noise and third-party exclusions.
 
 # "X means Y", "X refers to Y" — defines a term, requires nothing of anyone.
 _DEFINITION_RE = re.compile(
@@ -583,8 +482,7 @@ _DEFINITION_RE = re.compile(
 
 # A body's own composition, tenure and procedure. These carry real "shall"s —
 # "In appointing members, the Cabinet Secretary shall ensure gender balance" —
-# but they govern the regulator, not AI. Kenya's Inclusivity verdict rested on
-# exactly this.
+# but they govern the regulator, not AI.
 _HOUSEKEEPING_RE = re.compile(
     r"\b(appoint\w*|re-?appoint\w*|tenure|term of office|vacat\w+|resign\w*|"
     r"quorum|remunerat\w+|allowance[sd]?|chairperson|vice-chairperson|"
@@ -615,36 +513,18 @@ _MODAL_ANY_RE = re.compile(
 )
 
 
-# A consultation document asks what the law SHOULD be. Found on the UK white
-# paper, a genre none of the first five jurisdictions contained: its
-# "binding duties" included "Are there other measures we could require of
-# organisations to improve transparency for AI?" (a consultation question),
-# "Text should read: 1: Do you agree that requiring organisations..." (an
-# erratum correcting a consultation question), and "We recognise the need to
-# consider which actors should be responsible and liable" (deliberation).
+# A consultation document asks what the law SHOULD be: "Are there other
+# measures we could require of organisations to improve transparency for AI?"
+# The vocabulary of obligation — require, liable, responsible — is dense in
+# these sentences and none of them imposes anything.
 #
-# Measured: 10% of the UK's binding provisions were of this kind, against
-# 0-2% for the statute-based jurisdictions. The vocabulary of obligation —
-# require, liable, responsible — is dense in these sentences and none of them
-# imposes anything.
-# An enumeration of which bodies exist is not a duty. India's Safety verdict
-# was Institutionalized on two sentences, both this one fragment:
-#
-#   "Enabled by coordinated institutional leadership - including the Ministry
-#    of Electronics and Information Technology as the nodal ministry, the AI
-#    Governance Group, the Technology & Policy Expert Committee for expert
-#    advisory, the AI Safety Institute for technical validation..."
-#
-# India has no AI safety law. The sentence lists org charts; it creates
-# nothing. The signature is a run of named bodies joined by apposition with no
-# modal governing them.
-# Counting the bodies is more robust than looking for a lead-in phrase. The
-# lead-in ("including...") frequently sits in a different chunk from the list
-# it introduces — India's fragment literally begins mid-word, "ology & Policy
-# Expert Committee for expert advisory, the AI Safety Institute for technical
-# validation... and sectoral regulators for domain-specific enforcement" —
-# because chunk boundaries cut sentences. A run of named bodies with nothing
-# commanding them is an org chart however it was cut.
+# An enumeration of which bodies exist is not a duty either: "Enabled by
+# coordinated institutional leadership - including the Ministry of ... as the
+# nodal ministry, the AI Governance Group, the AI Safety Institute..." lists
+# an org chart and creates nothing. The signature is a run of named bodies
+# joined by apposition with no modal governing them. Counting the bodies is
+# more robust than looking for a lead-in phrase, which chunk boundaries often
+# cut away.
 _INSTITUTION_NOUN_RE = re.compile(
     r"\b(?:Ministry|Ministries|Department|Authority|Authorities|Commission|"
     r"Committee|Council|Institute|Agency|Agencies|Board|Bureau|Directorate|"
@@ -722,42 +602,20 @@ def recital_boundary(chunks: Sequence[dict[str, Any]]) -> int | None:
     return first
 
 
-# ── (B) Structural relevance: admit duties the vocabulary gate cannot see ─
+# ── Structural relevance: admit duties the vocabulary gate cannot see ────
 #
-# The core-term gate admits 3,046 sentences and rejects 57,066. Among the
-# rejects are real duties it has no word for — the EU AI Act's Article 12
-# logging obligation is missed because "logging" is not a Transparency core
-# term, and Kenya's "shall submit annual compliance reports to the
-# Commissioner" because "compliance report" is not one either.
+# The core-term gate rejects real duties it has no word for — a logging
+# obligation is missed because "logging" is not a Transparency core term.
+# Admitting everything with a modal instead would flood every dimension with
+# a statute's generic "must" clauses. So admission is conditioned on
+# STRUCTURE: the sentence must sit in a chunk retrieval ranked highly FOR THIS
+# DIMENSION, name a regulated party, and carry a hard modal.
 #
-# Admitting everything with a modal is catastrophic: Japan's APPI has ~200
-# "must" clauses and they flood all eight dimensions equally (measured: 120 to
-# 140 would-bind sentences per dimension, including dimensions APPI does not
-# govern). So admission is conditioned on STRUCTURE — the sentence must sit in
-# a chunk retrieval ranked highly FOR THIS DIMENSION, name a regulated party,
-# and carry a hard modal.
-#
-# That still leaks generic provisions. Kenya's "programmes under subsection
-# (1) shall be conducted at national and county levels" qualifies for six
-# dimensions at once. The specificity guard below is the filter: a provision
-# admitted to more than MAX_DIMENSIONS dimensions is by construction not
-# specific to any of them.
-#
-# THE VALUE IS 3, AND IT WAS NOT CHOSEN TO MAXIMISE A SCORE. Swept over the
-# study set against both benchmark families (capacity indices A, binding-force
-# references B):
-#
-#     MAX_DIMS   1      2      3      4      8
-#     A       +0.90  +1.00  +0.80  +0.80  +0.30
-#     B       +0.65  +0.45  +0.80  +0.80  +0.75
-#     mean    +0.77  +0.72  +0.80  +0.80  +0.53
-#
-# 2 scores a perfect +1.00 against GIRAI and Oxford and we are NOT using it:
-# it buys that by pushing Kenya to last, which contradicts the legal sources
-# on a statute carrying criminal penalties. A perfect rank match on five items
-# after tuning is overfitting, not accuracy. 3 and 4 give identical results,
-# which is the only stability any value here shows, and 3 is the more
-# conservative of the two.
+# That still leaks generic provisions ("programmes ... shall be conducted at
+# national and county levels" qualifies for six dimensions). The specificity
+# guard is the filter: a provision admitted to more than MAX_DIMENSIONS
+# dimensions is by construction not specific to any of them. 3 and 4 give
+# identical results on the study set; 3 is the more conservative.
 STRUCTURAL_TOP_CHUNKS = 12
 STRUCTURAL_MAX_DIMENSIONS = 3
 _HARD_MODAL_RE = re.compile(r"\b(shall|must|is required to|are required to)\b", re.IGNORECASE)
@@ -789,21 +647,13 @@ def apply_specificity_guard(
     }
 
 
-# ── (C) The mechanism gate: make the two halves of the system agree ──────
+# ── The mechanism gate: make the two halves of the system agree ─────────
 #
-# Verdicts come from SENTENCE counts. `binding_share` comes from MECHANISM
-# tiers. Nothing made them agree, and on the study set three cells claimed a
-# dimension was governed while not one of the mechanisms it needs was carried
-# by a duty:
-#
-#     Japan  Safety     Operationalized    0 of 4 mechanisms bound
-#     Kenya  Privacy    Operationalized    0 of 3
-#     Kenya  Fairness   Operationalized    0 of 3
-#
-# and four more claimed the top stage on a single bound mechanism. A dimension
-# cannot be "operational" while binding nothing it is supposed to bind, so the
-# mechanism evidence now gates the stage the sentences propose. It can only
-# hold a verdict DOWN, exactly like the coverage mechanism floor.
+# Verdicts come from SENTENCE counts; `binding_share` comes from MECHANISM
+# tiers. A dimension cannot be "operational" while not one of the mechanisms
+# it needs is carried by a duty, so the mechanism evidence gates the stage the
+# sentences propose. It can only hold a verdict DOWN, like the coverage
+# mechanism floor.
 MECHANISMS_FOR_OPERATIONAL = 1
 MECHANISMS_FOR_INSTITUTIONAL = 2
 
@@ -811,13 +661,8 @@ MECHANISMS_FOR_INSTITUTIONAL = 2
 def apply_mechanism_gate(stage: str, mechanisms_bound: int) -> tuple[str, str | None]:
     """Hold a stage down to what the dimension's own mechanisms support.
 
-    The demotions CASCADE. An earlier version returned after the first one, so
-    a dimension sitting at Institutionalized with zero bound mechanisms landed
-    on Operationalized and stopped — it never reached the rule that would have
-    taken it to Delegated. The shape that exposes it is a data-protection
-    statute: strong enough on its own subject to reach the top stage, while
-    reading "Operationalized" for Human Autonomy, Inclusivity and
-    Environmental Sustainability on 0 of 0 mechanisms.
+    The demotions CASCADE: a dimension at Institutionalized with zero bound
+    mechanisms falls through every rule that applies, not just the first.
     """
     note: str | None = None
     if stage == "Institutionalized" and mechanisms_bound < MECHANISMS_FOR_INSTITUTIONAL:
@@ -835,8 +680,6 @@ def apply_mechanism_gate(stage: str, mechanisms_bound: int) -> tuple[str, str | 
     return stage, note
 
 
-# ══ v5 ═══════════════════════════════════════════════════════════════════
-#
 # ── List-item severance ──────────────────────────────────────────────────
 #
 # Statutes enumerate. Article 10(2) of the EU AI Act reads, in substance:
@@ -848,15 +691,11 @@ def apply_mechanism_gate(stage: str, mechanisms_bound: int) -> tuple[str, str | 
 #
 # The splitter breaks on ';' and ':' — precisely the punctuation enumeration
 # uses — so each item arrives without the stem that carries its subject and
-# its modal. Measured: the same duty scores T3 written whole and T0 severed.
+# its modal, and the same duty would score T3 whole and T0 severed.
 #
-# This under-scores exactly the strongest instruments, because statutes are
-# the list-heavy ones. EU Fairness reported 0 of 4 mechanisms bound while the
-# operative Article 10 duties were sitting in the pool, severed.
-#
-# The repair is to re-attach each item to its stem before classification. A
-# stem is a fragment that carries a hard modal and announces a list; an item
-# is a fragment opening with an enumeration marker. Items are re-emitted as
+# The repair re-attaches each item to its stem before classification. A stem
+# is a fragment that carries a hard modal and announces a list; an item is a
+# fragment opening with an enumeration marker. Items are re-emitted as
 # "stem + item", so the classifier sees the duty the drafter wrote.
 
 # (a) (iv) (1) a) 1. • — all the ways an instrument opens a list item.
@@ -920,13 +759,7 @@ def rejoin_list_items(fragments: Sequence[str]) -> list[str]:
 #      governance practices."
 #     "The logging capabilities shall provide, at a minimum, recording of..."
 #
-# All three are duties on the provider. None names one, so REGULATED_PARTY_RE
-# misses all three and the ladder drops them to the aspirational tier.
-#
-# Measured across the corpus: 112 hard-modal provisions (8%) have a regulated
-# ARTIFACT as their grammatical subject and no person anywhere in the
-# sentence. 105 of those are in the EU AI Act — the instrument this most
-# under-scores is the strongest one in the study.
+# All three are duties on the provider, and none names one.
 #
 # An artifact-borne duty is scored as Obligatory, never Enforceable on its own:
 # the provision binds, but the consequence still has to be found elsewhere.
@@ -960,11 +793,8 @@ REGULATED_ARTIFACT_RE = _words(
 #     "Public security administrative sanctions shall be imposed in
 #      accordance with the law."
 #
-# Both are enforcement. Neither names a duty-bearer, so the ladder found no
-# actor and scored them Aspirational — the same shape of failure as the
-# artifact-borne duties above, with the consequence rather than the regulated
-# thing as the grammatical subject. This is a civil-law drafting convention,
-# not a China-specific quirk, and it would mis-read any translated statute.
+# Both are enforcement, though neither names a duty-bearer. This is a
+# civil-law drafting convention, not a China-specific quirk.
 _ENFORCEMENT_PASSIVE_RE = re.compile(
     r"\b(?:shall|must|is to|are to|will)\s+be\s+"
     r"(?:imposed|pursued|applied|borne|assumed|investigated|enforced|"
@@ -986,15 +816,14 @@ def classify_provision(
     document_is_nonbinding: bool = False,
     document_is_unenforced: bool = False,
 ) -> ScoredSentence:
-    """v2's ladder, plus duties borne by the regulated artifact.
+    """The full tier classifier: the base ladder plus artifact-borne duties.
 
-    Everything else is v2 exactly: the enforcement split, the hedge demotion
-    and the voluntary cap are unchanged. Only the duty-bearer test is wider.
+    The enforcement split, the hedge demotion and the voluntary cap are the
+    base ladder's; only the duty-bearer test is wider.
     """
     # Normalise "be + to-infinitive" to an explicit modal BEFORE the ladder
-    # runs, so every downstream branch — regulated party, artifact, consequence
-    # — sees the obligation the construction carries. Doing it afterwards only
-    # rescued one branch and missed the others.
+    # runs, so every branch — regulated party, artifact, consequence — sees
+    # the obligation the construction carries.
     probe_src = sentence or ""
     if BE_TO_OBLIGATION_RE.search(probe_src):
         normalised = BE_TO_OBLIGATION_RE.sub(
@@ -1038,7 +867,7 @@ def classify_provision(
         return scored
     if GOV_BODY_RE.search(probe):
         # "The Authority shall ensure the AI system..." is the government
-        # directing itself; v2 already placed it correctly.
+        # directing itself; the base ladder already places it.
         return scored
 
     tier = TIER_OBLIGATORY
@@ -1065,8 +894,7 @@ def _source_lookup(source_force: dict[str, str] | None):
 
     `rejoin_list_items` may have welded a stem and its list items into one
     string that is not a key, so an exact miss falls back to the longest key
-    the sentence starts with. An unresolvable sentence gets no cap — the same
-    answer the scorer gave before provenance existed.
+    the sentence starts with. An unresolvable sentence gets no cap.
     """
     if not source_force:
         return lambda _sentence: ""
@@ -1091,16 +919,14 @@ def build_provision_profile(
     document_is_nonbinding: bool = False,
     source_force: dict[str, str] | None = None,
 ):
-    """v2's profile with v5 classification and list-item repair applied.
+    """Score every sentence for one dimension into an EvidenceProfile.
 
+    Sentences are de-duplicated and their list items re-attached first.
     `source_force` maps a sentence to the ceiling its source document imposes
     (see SOURCE_VOLUNTARY / SOURCE_UNENFORCED). A dimension's pool is drawn
-    from every document in the workspace, so one flag for the whole pool asks
-    the wrong question: Japan's Safety pool holds provisions from the binding
-    APPI and from guidelines that describe themselves as "soft laws without
-    any legally binding force", and the flag had to be wrong about one of
-    them. Scoping it per sentence lets one pool carry duties and advice at
-    their own weights.
+    from every document in the workspace, so the cap is scoped per sentence:
+    one pool can carry a statute's duties and a guideline's advice at their
+    own weights.
     """
     from src.evidence_strength import EvidenceProfile
 
@@ -1117,9 +943,6 @@ def build_provision_profile(
         )
         profile.sentences.append(scored)
         # Every exclusion the classifier reports is left out of the counts.
-        # This tested for "foreign", a label nothing produces, so a sentence
-        # describing another jurisdiction's law ("third_party") was counted as
-        # a scored Aspirational provision of this document.
         if scored.excluded:
             if scored.excluded == "third_party":
                 profile.n_excluded_foreign += 1
@@ -1143,18 +966,9 @@ def build_provision_profile(
 # ── The "be + to-infinitive" obligation ──────────────────────────────────
 #
 # English expresses obligation with more than shall/must. "Be + to-infinitive"
-# is a standard deontic construction in descriptive grammar (Quirk et al.,
-# A Comprehensive Grammar of the English Language, on "be to" for obligation
-# and arrangement): "payments are to be made monthly" is an obligation, not a
-# prediction. v1's OBLIGATION_RE has shall, must and is/are required to, and
-# does not have it.
-#
-# THIS IS ADDED ON GRAMMATICAL GROUNDS, NOT FROM DATA. That matters, because
-# the construction was noticed on China — where China Law Translate renders
-# 应当 as "are to be" throughout — and China is a held-out jurisdiction.
-# Adding a rule because a held-out case needs it is leakage. Adding a rule
-# because English grammar says it belongs, and THEN measuring what it does to
-# the held-out case, is a test. This is the second.
+# is a standard deontic construction (Quirk et al., A Comprehensive Grammar of
+# the English Language): "payments are to be made monthly" is an obligation,
+# not a prediction. It is added on grammatical grounds, not fitted to data.
 #
 # Deliberately narrow. "is to" also has a future-arrangement reading ("the
 # report is to be published next year"), so the construction only counts when
@@ -1166,7 +980,7 @@ BE_TO_OBLIGATION_RE = re.compile(
 
 
 def has_obligation(sentence: str) -> bool:
-    """v1's obligation test, plus the be + to-infinitive construction."""
+    """OBLIGATION_RE, plus the be + to-infinitive construction."""
     from src.evidence_strength import IMPOSITION_RE, OBLIGATION_RE
 
     probe = strip_policing(sentence or "")

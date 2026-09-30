@@ -458,11 +458,8 @@ def _workspace_response(w: Any) -> WorkspaceResponse:
 # /readyz answers "should traffic be sent here right now" — Postgres
 # reachable, the vector store readable, and provider budget left to run an
 # analysis with. These fail for reasons a restart does not fix, which is
-# exactly why they must not share an endpoint with liveness: the previous
-# single /health route called into Chroma, so a slow or torn index would
-# have had a scheduler killing a process that was running perfectly well.
-# That failure mode is not hypothetical here — a torn HNSW segment once
-# took the API down repeatedly (see docs/ENGINEERING-NOTES.md).
+# exactly why they must not share an endpoint with liveness: a slow or torn
+# index must not have a scheduler killing a process that is running fine.
 
 
 # The 25MB cap was enforced by validate_pdf_file AFTER `await file.read()` had

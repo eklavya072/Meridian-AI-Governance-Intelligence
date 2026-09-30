@@ -94,7 +94,7 @@ rejects 71% of excerpts that are verbatim copies of their own source — false
 negatives, not caught fabrications. A general-purpose MNLI checkpoint is
 being asked to judge 512-character statutory fragments with OCR damage, which
 is not the task it was trained for. It was later removed from the code
-altogether (see ENGINEERING-NOTES, "Four GenAI components").
+altogether.
 
 Worth revisiting only with a checkpoint suited to legal text, and only against
 this same dataset.

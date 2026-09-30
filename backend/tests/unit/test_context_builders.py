@@ -1,9 +1,8 @@
 """Context builders and the routing that decides which context a question gets.
 
-docs/ENGINEERING-NOTES.md records that routing was the part that was wrong, not the model:
-"why eight dimensions?" had nothing to retrieve because no document in the
-corpus describes Meridian, and the Rapporteur was answering cross-dimension
-questions without ever receiving the decision analytics.
+Routing matters more than the model here: "why eight dimensions?" has nothing
+to retrieve, because no document in the corpus describes Meridian, and a
+cross-dimension question needs the decision analytics in its context.
 """
 
 import hashlib
