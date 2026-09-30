@@ -100,6 +100,13 @@ CMD ["pytest", "-q"]
 # ── prod ─────────────────────────────────────────────────────────────────
 FROM base AS prod
 
+# Security updates again, in the stage that ships. The release workflow
+# rebuilds this stage without cache (no-cache-filters: prod), so a fix
+# published since the cached base layer was built still reaches the image.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin meridian
 
 # The application runs entirely from /opt/venv, so the base image's system

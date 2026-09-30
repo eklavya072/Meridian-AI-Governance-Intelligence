@@ -58,6 +58,7 @@ jobs:
           tags: meridian:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          no-cache-filters: prod
 
       - name: Report the image size
         run: |
@@ -190,6 +191,7 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          no-cache-filters: prod
 
       - name: Export the digest
         run: |
