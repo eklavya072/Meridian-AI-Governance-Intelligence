@@ -70,6 +70,7 @@ body:has(.landing) main {
   --tr-h2: -0.022em;
   --tr-h3: -0.014em;
   --tr-body: 0.005em;
+  --tr-label: 0.2em;
 
   /* ── Spacing ───────────────────────────────────────────────────────────
      A 4px base with the useful middle steps an 8-only scale misses. Every
@@ -107,21 +108,11 @@ body:has(.landing) main {
   --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
 
-  /* No shadow on the glyphs: each word is its own inline-block, so a halo
-     would pool per word. Legibility comes from the scrim instead. */
-  --tshadow: none;
-
   position: relative;
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--sans);
-}
-
-.landing ::selection { background: var(--ink); color: var(--canvas); }
-.landing :focus-visible {
-  outline: 2px solid var(--key);
-  outline-offset: 3px;
-  border-radius: 999px;
+  caret-color: var(--key);
 }
 
 /* Visually hidden, still read aloud. Every split or typed line keeps one
@@ -171,8 +162,7 @@ body:has(.landing) main {
   --key: #CEA850;
   --key-soft: rgba(206, 168, 80, 0.16);
   --key-line: rgba(206, 168, 80, 0.55);
-  /* No shadow on the glyphs; see the root tokens. */
-  --tshadow: none;
+  --grain: rgba(244, 244, 245, 0.07);
 }
 /* Cold and blue-cast, because the dark surfaces are water. The two are a
    real step apart rather than a nudge: `ink` has to read as a different
@@ -231,9 +221,7 @@ body:has(.landing) main {
   --key: #6C5513;
   --key-soft: rgba(108, 85, 19, 0.15);
   --key-line: rgba(108, 85, 19, 0.55);
-  /* A shadow on type is a device for reading over video. On paper it is
-     dirt, so the mechanism switches off on every light surface. */
-  --tshadow: none;
+  --grain: rgba(20, 20, 22, 0.09);
 }
 /* Three light steps, each clearly apart: parchment, then putty, with the
    panels a step above their own canvas. */
@@ -514,7 +502,6 @@ body:has(.landing) main {
   letter-spacing: 0.006em;
   max-width: 48ch;
   color: var(--ink-2);
-  text-shadow: var(--tshadow);
   opacity: clamp(0, (var(--k, 1) - 0.5) * 3, 1);
 }
 /* ── Hero type ───────────────────────────────────────────────────────────
@@ -553,21 +540,18 @@ body:has(.landing) main {
 /* The OECD line, at a size that reads as a finding rather than a footnote. */
 .l-band-source {
   margin: 0 0 var(--s-4);
-  font-family: var(--sans);
-  font-size: var(--t-h3);
-  font-weight: 400;
-  line-height: 1.28;
-  letter-spacing: var(--tr-h3);
+  /* The display family, not the body one: two sans faces doing display
+     work over the film is what makes a page look assembled. */
+  font-family: var(--grotesk);
+  font-size: clamp(1.15rem, 1.9vw, 1.6rem);
+  font-weight: 600;
+  font-optical-sizing: auto;
+  line-height: 1.32;
+  letter-spacing: var(--tr-h2);
   color: var(--ink-2);
   max-width: 22ch;
-  text-shadow: var(--tshadow);
   opacity: clamp(0, (var(--k, 1) - 0.08) * 3.4, 1);
 }
-
-/* Beat one's headline is the page's largest voice and gets a hard measure
-   cap on the ELEMENT, never a container: a ch resolves against the font the
-   element inherits, so a cap on the wrapper would be counted in the body
-   sans rather than the serif inside it. */
 
 /* ── Beat two: the finding ───────────────────────────────────────────────
    The reason the product exists, sized as the argument it is. */
@@ -667,7 +651,8 @@ body:has(.landing) main {
   color: var(--ink-3);
 }
 .l-rung-name {
-  font-family: var(--sans);
+  font-family: var(--grotesk);
+  font-weight: 600;
   font-size: clamp(0.98rem, 1.25vw, 1.14rem);
   color: var(--ink-2);
 }
@@ -682,8 +667,6 @@ body:has(.landing) main {
   font-weight: 600;
   font-size: clamp(1.12rem, 1.45vw, 1.3rem);
 }
-/* The last rung is the finding. It is the only line on the hero that gets
-   full ink, because it is the one the whole page is about. */
 /* Three quantities, one of them gold. "A minority ever set a date" is the
    sentence the whole product exists because of, so it is the only one of
    the three that takes the accent — the other two are the setup, and if all
@@ -699,13 +682,20 @@ body:has(.landing) main {
   margin: 0 auto;
   max-width: 20ch;
 }
+/* The closing band settles in three arrivals: the headline assembles, then
+   the subline, then the call to action. */
 .l-band-sub {
   max-width: 54ch;
   margin: 1.9rem auto 0;
   font-size: var(--t-body-lg);
   color: var(--ink-2);
+  opacity: clamp(0, (var(--k, 1) - 0.5) * 3, 1);
 }
-.l-band-cta { margin-top: 2.5rem; }
+.l-band-cta {
+  margin-top: 2.5rem;
+  opacity: clamp(0, (var(--k, 1) - 0.68) * 3.4, 1);
+  transform: translateY(calc((1 - clamp(0, (var(--k, 1) - 0.68) * 3.4, 1)) * 12px));
+}
 /* The two calls to action, as one row with room between them. The hero's
    pair had no rule at all and sat a single word-space apart. */
 .l-cta,
@@ -715,17 +705,6 @@ body:has(.landing) main {
   justify-content: center;
   gap: 1rem 1.25rem;
 }
-
-/* Every band's type carries the shadow; the buttons never do, where a
-   shadowed label reads as grime. */
-.l-band { text-shadow: var(--tshadow); }
-/* A touch of blur on the way out. Without it a departing beat and an
-   arriving one are two crisp lines overlapping, which the eye reads as two
-   objects rather than one handover. Bounded to 5px: heavy blur is expensive
-   and this is running under a video scrub. */
-/* The exit blur is written by HeroScrub only while a beat is leaving: a
-   filter held at blur(0) still re-rasterises the band on every frame. */
-.l-band .l-btn { text-shadow: none; }
 
 /* ── The assembly, driven by --k ─────────────────────────────────────────
    Words rise from behind a mask edge in reading order, each waiting for
@@ -822,15 +801,6 @@ body:has(.landing) main {
 .l-band-e .l-sw-in {
   transform: translateY(calc((1 - var(--kc)) * -85%));
 }
-/* The closing band settles in three arrivals: the headline assembles, then
-   the subline, then the call to action. */
-.l-band-sub {
-  opacity: clamp(0, (var(--k, 1) - 0.5) * 3, 1);
-}
-.l-band-cta {
-  opacity: clamp(0, (var(--k, 1) - 0.68) * 3.4, 1);
-  transform: translateY(calc((1 - clamp(0, (var(--k, 1) - 0.68) * 3.4, 1)) * 12px));
-}
 
 /* ── The loader ring, and the cue that replaces it ───────────────────── */
 .l-ring {
@@ -886,27 +856,26 @@ body:has(.landing) main {
        (orientation: portrait) and (pointer: coarse),
        (orientation: landscape) and (pointer: coarse) and (max-height: 560px),
        (prefers-reduced-motion: reduce) {
-  .l-scrub { height: 100svh !important; }
-  /* !important because the grain-lift rule further down the sheet targets
-     `.landing [data-surface] > .l-stage` and would otherwise re-pin the
-     stage here, where there is no scroll region to pin it against. */
-  .l-stage { position: relative !important; }
-  .l-ring { display: none; }
-
   /* The stage grows to hold every beat rather than capping at one screen,
      and the film sits behind the whole run as a fixed ground. */
   .l-scrub { height: auto !important; min-height: 100svh; }
   .l-stage {
+    /* !important because the grain-lift rule further down the sheet targets
+       `.landing [data-surface] > .l-stage` and would otherwise re-pin the
+       stage here, where there is no scroll region to pin it against. */
+    position: relative !important;
     display: block;
     min-height: 0;
     padding-block: clamp(4.5rem, 11vh, 8rem);
   }
+  .l-ring { display: none; }
   .l-stage-video { position: fixed; }
 
   /* Beats stack in the normal flow. `position: absolute` and `inset: 0` are
      what made them a deck; in a column they are a document. */
   .l-band {
     position: relative !important;
+    z-index: 1;
     inset: auto !important;
     opacity: 1 !important;
     visibility: visible !important;
@@ -931,7 +900,6 @@ body:has(.landing) main {
     pointer-events: none;
     background: rgba(6, 7, 9, 0.62);
   }
-  .l-band { z-index: 1; }
   /* Assembled, not mid-animation: the scrub never runs here. The opening
      line is the exception while its entrance plays (never under reduced
      motion, where no entrance is set). */
@@ -972,16 +940,9 @@ body:has(.landing) main {
 }
 .l-btn-primary { background: var(--accent); color: var(--canvas); border: 1px solid var(--accent); }
 .l-btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); }
-.l-btn-quiet { color: var(--ink); border: 1px solid var(--hairline-strong); background: transparent; }
+.l-btn-quiet { color: var(--ink); border: 1px solid rgba(242, 241, 236, 0.42); background: transparent; }
 .l-btn-quiet:hover { border-color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); transform: translateY(-1px); }
 @media (pointer: coarse) { .l-btn { min-height: 44px; } }
-
-/* Applied to type only. Buttons and the light product screens are opaque
-   surfaces and a shadow on their labels would read as grime. */
-.l-sec .l-h2,
-.l-sec .l-body,
-.l-close-h { text-shadow: var(--tshadow); }
-.l-btn, .l-footer .l-link { text-shadow: none; }
 
 /* ── Section frame ────────────────────────────────────────────────────── */
 /* The content column carries no colour of its own: each section declares
@@ -1069,11 +1030,6 @@ body:has(.landing) main {
     radial-gradient(1px 1px at 29% 91%, var(--grain), transparent 55%);
   background-size: 320px 320px;
 }
-.landing [data-surface="paper"],
-.landing [data-surface="paper-mid"],
-.landing [data-surface="paper-2"] { --grain: rgba(20, 20, 22, 0.09); }
-.landing [data-surface="void"],
-.landing [data-surface="ink"] { --grain: rgba(244, 244, 245, 0.07); }
 /* Children are lifted above the grain layer. The hero stage is the one
    exception: it is sticky, and flattening it to relative would un-pin it. */
 .landing [data-surface] > *:not(.l-stage) { position: relative; z-index: 1; }
@@ -1196,17 +1152,9 @@ body:has(.landing) main {
    it is kept for screen readers and for the record, and hidden from the
    row, where four sources would double its height for no reading gained. */
 .l-stat-source {
-  margin: 0.15rem 0 0;
-  font-family: var(--code);
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-.l-stat-source {
   margin: 0;
   font-family: var(--code);
   font-size: 0.7rem;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -1421,15 +1369,14 @@ body:has(.landing) main {
   letter-spacing: var(--tr-h1);
   margin: 0 auto;
   max-width: 100%;
+  text-align: center;
 }
-.l-close-line { text-wrap: nowrap; }
+.l-close-line { display: block; text-wrap: nowrap; }
 /* Below the point where the long clause fits, let it wrap rather than
    overflow — two tidy lines beat one clipped one. */
 @media (max-width: 1060px) {
   .l-close-line { text-wrap: balance; }
 }
-.l-close-line { display: block; }
-.l-close-h { text-align: center; }
 .l-close-turn { color: var(--key); }
 .l-close-cta { margin-top: 1.6rem; }
 
@@ -1781,7 +1728,6 @@ body:has(.landing) main {
   background: var(--key-soft);
   color: var(--ink);
 }
-.landing { caret-color: var(--key); }
 .landing :focus-visible {
   outline: 2px solid var(--key);
   outline-offset: 3px;
@@ -1815,20 +1761,6 @@ html:has(.landing) {
   line-height: 1.08;
   letter-spacing: var(--tr-h1);
 }
-/* The display family, not the body one: two sans faces doing display work
-   over the film is what makes a page look assembled. */
-.l-band-source {
-  font-family: var(--grotesk);
-  font-size: clamp(1.15rem, 1.9vw, 1.6rem);
-  /* 1.20 is display leading on a line that wraps to four — tight enough
-     that the lines start to interfere. Display ratios belong to display
-     lines. */
-  line-height: 1.32;
-  letter-spacing: var(--tr-h2);
-  font-weight: 600;
-  font-optical-sizing: auto;
-}
-.l-rung-name { font-family: var(--grotesk); font-weight: 600; }
 /* Every supporting line in the hero holds one size and one measure, so the
    four beats under the headline read as the same voice rather than four. */
 .l-band-note,
@@ -1840,22 +1772,16 @@ html:has(.landing) {
 }
 
 /* ── The small-label system ──────────────────────────────────────────────
-   One tracking value for every uppercase mono label on the route: a label
-   at 11px with generous tracking is a different instrument from body text,
-   not a shrunk version of it. */
-.landing {
-  --tr-label: 0.2em;
-}
-.l-band-attrib,
-.l-rung-tier,
-.l-stage-n,
-.l-stat-source { letter-spacing: var(--tr-label); }
-/* Tracking adds space AFTER the last letter too, which pushes a centred or
-   right-aligned label off its own edge by a full letter-space. */
+   One tracking value (--tr-label) for every uppercase mono label on the
+   route: a label at 11px with generous tracking is a different instrument
+   from body text, not a shrunk version of it. */
 .l-band-attrib,
 .l-rung-tier,
 .l-stage-n,
 .l-stat-source {
+  letter-spacing: var(--tr-label);
+  /* Tracking adds space AFTER the last letter too, which pushes a centred
+     or right-aligned label off its own edge by a full letter-space. */
   margin-right: calc(var(--tr-label) * -1);
 }
 
@@ -1871,12 +1797,6 @@ html:has(.landing) {
 .l-ink-head:first-child,
 .l-method-head:first-child {
   padding-top: calc(var(--nav-h, 77px) * 0.55);
-}
-
-/* ── The quiet button's boundary ─────────────────────────────────────────
-   Its edge clears the 3:1 non-text contrast floor (WCAG 1.4.11) on void. */
-.l-btn-quiet {
-  border-color: rgba(242, 241, 236, 0.42);
 }
 
 /* Lenis smooth scrolling (app/page.tsx). */
