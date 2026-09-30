@@ -1118,6 +1118,42 @@ def estimate_phase_timelines(
     return out
 
 
+def source_cap(document: str, voluntary: set[str], with_regime: set[str]) -> str:
+    """The ceiling a document puts on its own provisions' force."""
+    if document in voluntary:
+        return SOURCE_VOLUNTARY
+    return "" if document in with_regime else SOURCE_UNENFORCED
+
+
+def core_term_provisions(
+    documents: dict[str, list[str]],
+    dimension: str,
+    voluntary: set[str],
+    with_regime: set[str],
+) -> tuple[list[str], dict[str, str]]:
+    """Every operative sentence that names the dimension, across whole documents.
+
+    Returns the sentences and, for each, the force cap of the document it came
+    from. This is the part of a dimension's evidence that depends on nothing
+    but the text: no retrieval ranking, no model.
+    """
+    sentences: list[str] = []
+    source_force: dict[str, str] = {}
+    for document, texts in documents.items():
+        cap = source_cap(document, voluntary, with_regime)
+        for text in texts:
+            for sent in _split_sentences(text or ""):
+                sent = " ".join(sent.split())
+                if not 40 <= len(sent) <= 600:
+                    continue
+                if sentence_function(sent) != "operative":
+                    continue
+                if _sentence_has_core_term(sent, dimension):
+                    sentences.append(sent)
+                    source_force[sent] = cap
+    return sentences, source_force
+
+
 class GapAnalyzer:
     def __init__(
         self,
@@ -2157,33 +2193,16 @@ class GapAnalyzer:
 
         voluntary = self._voluntary_documents(workspace_id)
         with_regime = self._document_regimes(workspace_id)
-
-        def _cap(document: str) -> str:
-            if document in voluntary:
-                return SOURCE_VOLUNTARY
-            return "" if document in with_regime else SOURCE_UNENFORCED
-
-        sentences: list[str] = []
-        source_force: dict[str, str] = {}
-        for document, texts in self._workspace_documents(workspace_id).items():
-            cap = _cap(document)
-            for text in texts:
-                for sent in _split_sentences(text or ""):
-                    sent = " ".join(sent.split())
-                    if not 40 <= len(sent) <= 600:
-                        continue
-                    if sentence_function(sent) != "operative":
-                        continue
-                    if _sentence_has_core_term(sent, dimension):
-                        sentences.append(sent)
-                        source_force[sent] = cap
+        sentences, source_force = core_term_provisions(
+            self._workspace_documents(workspace_id), dimension, voluntary, with_regime
+        )
 
         # Provisions that carry a duty for this dimension in the country's own
         # vocabulary, which the core-term table cannot anticipate.
         for sent, document in self._structural_candidates(workspace_id).get(dimension, []):
             if sent not in source_force:
                 sentences.append(sent)
-                source_force[sent] = _cap(document)
+                source_force[sent] = source_cap(document, voluntary, with_regime)
 
         profile = build_provision_profile(
             sentences,
