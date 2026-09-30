@@ -69,29 +69,15 @@ export default function HorizontalTrack({
          the clipping happens one level up. */
       const travel = Math.max(0, rail.scrollWidth - win.clientWidth);
 
-      /* Panels DWELL. Mapping progress straight onto travel means the rail
-         never stops, so each panel is correctly framed for exactly one
-         instant and is sliding off the moment you start reading — measured
-         at 6% through the track with the first panel's copy already at
-         x -90, ninety pixels off the left edge.
-
-         Instead, progress is split into one segment per gap and eased
-         within each. Smootherstep is flat at both ends, so the rail is
-         nearly still whenever a panel is centred and does its moving in
-         between. That gives reading time without the hold-then-lurch of a
-         hard pause. */
-      /* A lead-in and a TAIL around the traverse.
-         `p` used to run 0 to 1 across the whole pinned section, which meant
-         the rail was still moving at the exact scroll position where the
-         sticky released — the sideways motion stopped and the vertical
-         motion started in the same frame, with nothing in between. That is
-         the lurch at the end of the section.
-
-         The traverse now finishes at 88% and starts at 6%. The last twelve
-         percent of the section's scroll is the final panel sitting
-         perfectly still while the stage is still pinned, so the reader
-         arrives, reads, and only then does the page move on. Same dwell
-         logic the hero's beats use, applied to the section as a whole. */
+      /* Panels DWELL. Mapping progress straight onto travel would leave each
+         panel correctly framed for one instant only. Instead, progress is
+         split into one segment per gap and eased within each. Smootherstep
+         is flat at both ends, so the rail is nearly still whenever a panel
+         is centred and does its moving in between. */
+      /* A lead-in and a TAIL around the traverse: it starts at 6% and ends
+         at 88%, so the final panel sits still while the stage is still
+         pinned, and the sideways and vertical motion never meet in the same
+         frame. The same dwell logic the hero's beats use. */
       const LEAD = 0.06;
       const TAIL = 0.88;
       const pT = Math.min(1, Math.max(0, (p - LEAD) / (TAIL - LEAD)));

@@ -154,12 +154,9 @@ export default function NavBar() {
         hidden ? "is-hidden" : ""
       }`}
     >
-      {/* The pill carries the brand now that the landing hero does not, so
-          the mark sits beside the wordmark. It is deliberately trimmed back
-          from the size it briefly ran at: a floating chrome element earns
-          its place by staying out of the way, and every pixel it takes is
-          taken from the page it sits over. The base breakpoint stays tight
-          so it never clips on narrow phones. */}
+      {/* The pill carries the brand mark beside the wordmark, kept small: a
+          floating chrome element earns its place by staying out of the way.
+          The base breakpoint stays tight so it never clips on narrow phones. */}
       <div className="nav-pill pointer-events-auto relative flex items-center gap-1 sm:gap-2 rounded-full px-4 sm:px-6 py-[0.55rem] sm:py-3">
         {/* The wordmark gives way to the mark alone on a phone: with the
             More menu added, the full pill ran 24px past each edge of a

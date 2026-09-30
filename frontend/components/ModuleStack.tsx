@@ -16,27 +16,17 @@ export type ModuleStackItem = {
 };
 
 /**
- * Skiper51-style creative carousel, ported natively with the project's
- * `motion` library (no extra dependencies — swiper is not in this project,
- * and the effect is standard transform/opacity animation). Replaces the old
- * Skiper16 sticky scroll deck.
+ * A carousel of the four module cards, built on `motion`.
  *
- * One module card is in view at a time: the NEXT card slides in from the
- * right while the CURRENT card recedes (scale-down + shadow, the "creative"
- * prev treatment); navigation loops. Deliberately NO autoplay — these are
- * reading panels (Evaluation, Recommendations, Roadmap, Case Intelligence),
- * not an image reel; the user advances with the arrows, the pagination dots,
- * the "01 / 04" counter, or by swiping the card horizontally.
+ * One card is in view at a time: the NEXT card slides in from the right
+ * while the CURRENT card recedes; navigation loops. Deliberately no
+ * autoplay — these are reading panels (Evaluation, Recommendations, Roadmap,
+ * Case Intelligence); the user advances with the arrows, the pagination
+ * dots, the "01 / 04" counter, or by swiping the card horizontally.
  *
- * The card chrome is untouched — header band (counter + title + meta) and
- * the content area are exactly the deck cards that were already there.
- * Only the display animation changed. (The title no longer animates on
- * scroll — it is static text.)
- *
- * Cards size to their OWN content: a short module shows a short card, a long
- * one grows. The deck container height is measured from the active card and
- * animated, so switching cards grows/shrinks the deck smoothly — no fixed
- * viewport, no internal scroll, no padding whitespace on short cards.
+ * Cards size to their OWN content. The deck container height is measured
+ * from the active card and animated, so switching cards grows or shrinks the
+ * deck smoothly, with no fixed viewport and no internal scroll.
  */
 
 const NAV_BUTTON_CLS =

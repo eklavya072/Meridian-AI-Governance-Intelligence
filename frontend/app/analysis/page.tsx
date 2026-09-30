@@ -95,10 +95,8 @@ export default function AnalysisPage() {
   // re-fetching so a running re-run flips over to its finished result (and
   // the banner clears) without the user having to click View Analysis again.
   // Same shape as the Workspace page poller: the "is a run in flight?" test
-  // is a boolean dependency and the interval id is NOT held in state. Storing
-  // it and guarding on it lets a stale id block the replacement interval after
-  // a cleanup, which is how the Workspace page stopped polling after one tick
-  // and left finished analyses looking like they were still running.
+  // is a boolean dependency and the interval id is NOT held in state, so a
+  // stale id can never block the replacement interval after a cleanup.
   //
   // "queued" is excluded: it means documents are attached and waiting for the
   // user to press Run Analysis, so polling it would never terminate.
@@ -106,9 +104,8 @@ export default function AnalysisPage() {
     wsStatus === "processing" || wsStatus === "generating_report";
 
   //
-  // Only the workspace's status is polled. Re-fetching every run's full
-  // results each tick cost about 1.5 MB per poll for Kenya; the results are
-  // fetched once, when the run ends.
+  // Only the workspace's status is polled; a run's full results are large and
+  // are fetched once, when the run ends.
   const selectedWsRef = useRef("");
   selectedWsRef.current = selectedWs;
 

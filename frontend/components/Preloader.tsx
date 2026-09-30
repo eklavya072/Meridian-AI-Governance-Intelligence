@@ -20,9 +20,6 @@
  * the stylesheet hides the server-rendered overlay before any script runs.
  * If scripts never run at all, a CSS animation fades the overlay out after
  * six seconds (`.l-preloader` in landing.css), so it can never trap the page.
- *
- * Restored from the first version of the landing page (August 2026) at the
- * owner's request; the staging and timeline are unchanged.
  */
 
 import { motion } from "motion/react";

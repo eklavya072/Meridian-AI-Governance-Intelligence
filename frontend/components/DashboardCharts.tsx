@@ -92,7 +92,7 @@ export function CoverageDonut({
 
 // ── Binding-force gauge ─────────────────────────────────────────────────
 
-// Native Gauge (see components/Gauge.tsx) in the old gauge's layout — a
+// The depth gauge (see components/Gauge.tsx): a
 // single smooth 260° arc with "65.6 / 100" in the centre, the stage in a
 // dot-indicator below, and the caption under that. The arc sweeps in and the
 // number counts up when the chart scrolls into view.

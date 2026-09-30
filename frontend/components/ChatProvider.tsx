@@ -78,15 +78,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
   const findingContextRef = useRef<Record<string, unknown> | null>(null);
-  // Bumped whenever the thread on screen changes. A reply still in flight
-  // from the old thread used to land in the new one; it is saved server-side
-  // in its own session either way, so it is dropped here.
+  // Bumped whenever the thread on screen changes, so a reply still in flight
+  // for the previous thread is dropped. It is saved server-side in its own
+  // session either way.
   const conversation = useRef(0);
   const workspaceRef = useRef<string | null>(null);
 
-  // A different country is a different conversation. The thread used to
-  // carry across, so the next question went into the previous country's
-  // session and was answered with that conversation as its history.
+  // A different country is a different conversation: the next question must
+  // not go into the previous country's session and history.
   const setWorkspaceId = useCallback((id: string | null) => {
     if (workspaceRef.current !== id) {
       workspaceRef.current = id;

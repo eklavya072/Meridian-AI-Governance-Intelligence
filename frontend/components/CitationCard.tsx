@@ -48,9 +48,8 @@ export default function CitationCard({
         )}
       </div>
 
-      {/* Where to find it, and nothing else. The storage id and the raw
-          retrieval similarity used to sit here too; neither tells a reader
-          anything they can check against the document. */}
+      {/* Where to find it, and nothing else: only what a reader can check
+          against the document. */}
       <div className="flex flex-wrap gap-3 text-xs font-medium text-grey-900">
         {evidence.document_name ? (
           <span className="text-grey-950">

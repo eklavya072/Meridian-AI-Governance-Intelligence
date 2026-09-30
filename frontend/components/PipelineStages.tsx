@@ -3,13 +3,10 @@
 /**
  * The four workflow stages, animated: ingestion, retrieval, analysis, brief.
  *
- * Ported from the earlier landing page, with every animation rebuilt on
- * timers and plain CSS transitions. The originals leaned on motion
- * transition delays and an AnimatePresence in "wait" mode, and both of those
- * have the same failure mode in this codebase: when requestAnimationFrame
- * stalls (embedded webviews, hidden panes), the delay never elapses and the
- * exit never reports done, so content sits at opacity zero forever. Timers
- * keep firing in those environments, so nothing here can go invisible.
+ * Every animation runs on timers and plain CSS transitions rather than
+ * motion delays or AnimatePresence: when requestAnimationFrame stalls
+ * (embedded webviews, hidden panes) a delay never elapses and content would
+ * sit at opacity zero. Timers keep firing, so nothing here can go invisible.
  *
  * Each stage replays whenever it scrolls back into view, which is what makes
  * the section worth scrolling through twice.
@@ -119,11 +116,7 @@ function IngestionVisual({ active }: { active: boolean }) {
         {active && (
           <span
             aria-hidden
-            /* The scan line used to carry a 16px black glow, which is the
-               "shadow" that followed it up and down the panel forever. This
-               page has no shadows anywhere else; a permanently animating one
-               inside a product screen was the most conspicuous place to
-               break that. The line reads fine as a line. */
+            /* The scan line carries no glow: this page has no shadows. */
             className="pointer-events-none absolute left-4 right-4 h-[2px] rounded-full bg-black animate-[stage-scan_3.2s_ease-in-out_infinite]"
           />
         )}
@@ -343,14 +336,10 @@ function BriefVisual({ active }: { active: boolean }) {
 }
 
 /* ── The section ───────────────────────────────────────────────────────── */
-/* The pipeline's own names. They were briefly rewritten as four verbs —
-   Read, Match, Grade, Report — which is more parallel and less true: these
-   are the stages the system actually has, and an evaluator reading the
-   section should find the same words here as in the repository.
-
-   The bodies stay written to one length (~150 characters, two lines at the
-   section's measure) so that four rows are four of one thing rather than
-   four boxes of different heights. */
+/* The pipeline's own names, the same words an evaluator finds in the
+   repository. The bodies are written to one length (~150 characters, two
+   lines at the section's measure) so the four rows read as four of one
+   thing. */
 const STAGES = [
   {
     n: "01",

@@ -6,7 +6,7 @@
  * A tall pinned region holds a sticky full-viewport stage. Progress through
  * that region maps 0..1 and drives the video's currentTime, so the light
  * sweeping across the page is moved by the reader rather than by a clock.
- * Three caption bands own ranges of that progress and assemble against it.
+ * Five caption bands own ranges of that progress and assemble against it.
  *
  * The rule this route is built on still holds, and it is worth stating
  * precisely because a scrub looks like a violation of it: nothing here gates
@@ -21,31 +21,17 @@ import { Fragment, useEffect, useLayoutEffect, useRef } from "react";
 const useLayoutEffectSafe = typeof window === "undefined" ? useEffect : useLayoutEffect;
 import Link from "next/link";
 
-/* Scroll distance for the pinned region. Three beats, each needing roughly a
-   viewport of fully-settled plateau plus its ramps, plus the viewport the
-   sticky stage itself occupies. Paced in vh, never in seconds: a scroll page
-   is read in flicks. */
-/* Dwell is the point of a scrubbed hero; the assembly is only how it starts.
-   At 1100vh a beat owned 1800px, and the hero took 56% of the page's
-   scroll for five captions, so a reader met the product late. At 800vh a
-   beat owns 140vh, about 1260px at a laptop height: a full window with
-   the words finished and still, and the product arrives a third sooner. */
+/* Scroll distance for the pinned region. Dwell is the point of a scrubbed
+   hero: each beat owns about 140vh, a full window with the words finished
+   and still. Paced in vh, never in seconds: a scroll page is read in flicks. */
 const HERO_VH = 800;
 
 /* ── The beat map ─────────────────────────────────────────────────────────
-   Five beats, and the video HOLDS STILL on every one of them.
-
-   The first cut mapped scroll to video time linearly, which meant the
-   footage was always mid-move while a line was assembling on top of it —
-   two things moving at once, neither finishing, and the whole hero read as
-   messy. Measuring the clip explains why nothing could fix that by tuning:
-   its per-frame motion never drops below 8.8 and averages 15.7, so there
-   is no natural pause anywhere in it to land a line on.
-
-   So the pause is constructed. Each beat owns a HOLD, a stretch of scroll
-   where the video's time is pinned to a single frame, and the footage
-   travels only in the gaps between them. The page arrives, stops, and only
-   then does the text assemble. */
+   Five beats. The footage has no natural pause to land a line on, so the
+   pause is constructed: each beat owns a HOLD, a stretch of scroll where the
+   video's time is pinned to a single frame, and the footage travels only in
+   the gaps between them. The page arrives, stops, and only then does the
+   text assemble. */
 type Beat = {
   /** opacity window */
   a: number;
@@ -58,12 +44,8 @@ type Beat = {
 };
 
 /* `a`/`b` are the band's own span; `ka`/`kb` are the stretch of scroll its
-   words assemble across.
-
-   Measured at a 900px window, each beat owns 1800px of scroll and spends it
-   like this: 450px assembling, 900px perfectly still, 450px leaving. Half
-   the beat is the hold — the thing every previous version of this table got
-   wrong, because the assembly kept eating it. */
+   words assemble across. Roughly a quarter of each beat assembles, half is
+   the hold, and a quarter leaves. */
 const BANDS: Beat[] = [
   { a: 0.0, b: 0.2, ka: 0.005, kb: 0.055, t: 0 },
   { a: 0.2, b: 0.4, ka: 0.205, kb: 0.255, t: 0 },
@@ -73,24 +55,13 @@ const BANDS: Beat[] = [
 ];
 
 /* ── Progress to video time ───────────────────────────────────────────────
-   This table is the clip's own CUMULATIVE MOTION, measured frame by frame
-   (difference each frame against the last, take the mean brightness of that
-   difference, integrate). Read as (fraction of total movement, seconds).
+   The clip's own CUMULATIVE MOTION, measured frame by frame (difference each
+   frame against the last, take the mean brightness of that difference,
+   integrate), as (fraction of total movement, seconds).
 
-   It exists because the footage does not move at a constant rate. Measured
-   per quarter-second, its motion ranges from 5.9 to 27.6 — the page drops
-   fast early and crawls later. Two previous mappings both failed on that:
-   a straight linear scroll-to-time made the fast stretches blur past and
-   the slow ones feel stuck, and pinning the video to five fixed frames
-   traded that for something worse, a hold-then-lurch rhythm.
-
-   This clip is far steadier than the one it replaced: its motion sits
-   between 3.3 and 8.1 where the previous ran 5.9 to 27.6, so the curve
-   below is nearly a straight line and the remapping barely has to work.
    Driving scroll against the INVERSE of this curve makes equal scroll
-   distance produce equal VISUAL change. The clip then reads at one steady
-   rate the whole way down, which is the only way the text can sit at an
-   even cadence against it. */
+   distance produce equal VISUAL change, so the clip reads at one steady rate
+   and the text can sit at an even cadence against it. */
 const MOTION_CURVE: [number, number][] = [
   [0.0, 0.0], [0.055, 0.5], [0.11, 1.0], [0.165, 1.5], [0.22, 2.0],
   [0.273, 2.5], [0.324, 3.0], [0.377, 3.5], [0.427, 4.0], [0.478, 4.5],
@@ -118,11 +89,9 @@ const POSTER_URL = "/hero/hero-poster.jpg";
 /* The fallback when Content-Length is missing, so the ring is honest either
    way. Update this if the encode is replaced.
 
-   Encoded all-intra (every frame a keyframe, x264 CRF 26, no B-frames). A
-   scrub seeks on every frame it draws, and with a keyframe only every
-   seventh frame each seek decoded up to six frames first, which is where
-   the stutter under a fast scroll came from. Every-frame keyframes cost 16%
-   in size and make any seek a single decode. */
+   Encoded all-intra (every frame a keyframe, x264 CRF 26, no B-frames): a
+   scrub seeks on every frame it draws, and an all-intra seek is a single
+   decode. */
 const VIDEO_BYTES = 6589395;
 
 /* The five conditions that get the composed static hero instead of the
@@ -178,12 +147,9 @@ function ScrubWords({
       <span aria-hidden="true">
         {words.map((w, i) => {
           const th = (i / Math.max(1, words.length - 1)) * spread + rand() * 0.05;
-          /* The space belongs BETWEEN the masked spans, never inside one.
+          /* The space belongs BETWEEN the masked spans, never inside one:
              .l-sw is an overflow-hidden inline-block, and a trailing space
-             inside it collapses, so the words run together: this shipped
-             reading "Becausemostof themcommitless". The same bug was fixed
-             in RollWords months ago and reintroduced here by copying the
-             structure without the Fragment. */
+             inside it collapses, running the words together. */
           return (
             <Fragment key={`${w}-${i}`}>
               <span className="l-sw">
@@ -327,10 +293,8 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
         const el = bandRefs.current[i];
         if (!el) return;
         const { a, b } = band;
-        /* The crossfade was 0.02 of scroll — at a 900px window that is about
-           a hundred pixels, so a line did not leave, it was cut. The exit now
-           has 0.055 to happen in, and it is the SLOWER of the two edges: a
-           beat should arrive promptly and be released, not snatched. */
+        /* The exit is the SLOWER of the two edges: a beat should arrive
+           promptly and be released, not snatched. */
         const fIn = 0.02;
         const fOut = 0.05;
         /* The first band skips the ease-in and the last skips the ease-out,
@@ -341,9 +305,7 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
         const op = Math.round(inEdge * outEdge * 1000) / 1000;
 
         /* Exit progress, published separately from opacity so the words can
-           DO something as they go rather than just becoming transparent.
-           A fade alone reads as a dropped frame; a fade with a lift and a
-           touch of blur reads as the line receding. */
+           lift and shrink as they go rather than just becoming transparent. */
         const x =
           i === BANDS.length - 1
             ? 0
@@ -366,10 +328,8 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
           c.k = k;
           el.style.setProperty("--k", String(k));
         }
-        /* No blur on the way out. Blurring the band blurred its scrim too,
-           a gradient as wide as the screen, re-rendered on every frame of
-           every handover: that was the hitch between beats. The words lift
-           and fade on their own. */
+        /* No blur on the way out: blurring the band would blur its
+           screen-wide scrim too, re-rendered on every frame of a handover. */
         if (Math.abs(x - c.x) > 0.002) {
           c.x = x;
           el.style.setProperty("--x", String(x));
@@ -378,10 +338,7 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
     };
 
     /* One smoothed progress drives the footage AND the words, so they move
-       as one surface. The captions used to follow the raw scroll while the
-       video followed a lerp of it: a wheel scrolls in 100px steps, so the
-       words jumped a step at a time while the image glided behind them, and
-       the two never quite agreed.
+       as one surface.
 
        The smoothing is a critically damped spring rather than a plain lerp.
        A lerp starts at full speed the instant the target moves, which reads
@@ -428,22 +385,11 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
         if (!el) return;
         cache[i].op = -1;
         cache[i].k = -1;
-        /* EVERY band renders in the static hero, stacked and in order.
-           This used to show only the closing band — the one with the call
-           to action — on the reasoning that stacking beats would be "three
-           headlines in a pile". The cost of that was not a pile: it was the
-           <h1>. Below 720px, on portrait touch, and under
-           prefers-reduced-motion, the page lost its headline, the OECD
-           finding, the framework-corpus claim, the force ladder and the
-           governance-only scope caveat — the entire argument — leaving a
-           tagline and two buttons. `visibility: hidden` also took the <h1>
-           out of the accessibility tree and out of rendered indexing.
-
-           A phone is the likeliest first contact this page gets, and a
-           civil-service workstation is likelier than a consumer one to have
-           reduced motion set. The static hero has to be the argument, not
-           an apology for the absence of one. The stacking, spacing and
-           per-beat composition are handled in CSS under `.is-static`. */
+        /* EVERY band renders in the static hero, stacked and in order:
+           below 720px, on portrait touch and under reduced motion the page
+           still carries its <h1> and the whole argument, not just the call
+           to action. The stacking, spacing and per-beat composition are
+           handled in CSS under `.is-static`. */
         el.style.opacity = "1";
         el.style.visibility = "visible";
         el.style.setProperty("--k", "1");
@@ -547,9 +493,7 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
       });
       /* The opening beat is assembled from the start; its entrance is a CSS
          transition (see the intro effect below), which runs on the
-         compositor. It used to be stepped by a 60ms timer, about sixteen
-         frames a second, on a main thread still busy loading the page:
-         that was the laggy first line. */
+         compositor while the main thread is still loading the page. */
       loadK = 1;
       updateBands(heroProgress());
       onScroll();
@@ -682,11 +626,8 @@ export default function HeroScrub({ intro = "none" }: { intro?: HeroIntro }) {
         <div className="l-stage-scrim" aria-hidden />
 
         {/* 1 — the hook. Centred, and the only beat that is: the opening
-            statement is the page addressing the reader head on, and the
-            four beats after it walk around the frame. The line it carried
-            before ("Read what an AI strategy actually commits to") named a
-            feature rather than the argument — every governance tool reads
-            documents. This one states the finding the product exists for. */}
+            statement addresses the reader head on, and the four beats after
+            it walk around the frame. */}
         <div
           className="l-band l-band-a"
           style={{ ["--intro-word" as string]: `${INTRO_WORD_MS}ms` }}

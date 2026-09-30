@@ -21,8 +21,7 @@ interface ChatMessage {
 
 // One per capability, in the order the greeting introduces them: a governance
 // concept, a framework question, a question about Meridian itself, and a
-// document question. The old set offered two document prompts on a screen
-// where no document is attached yet.
+// document question.
 const SUGGESTIONS = [
   "What is transparency in AI?",
   "What does NIST AI RMF say about accountability?",
@@ -146,9 +145,9 @@ export default function AuditorPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   // Bumped whenever the conversation on screen changes (new chat, another
-  // session, a new document). A reply still in flight from the old one used
-  // to land in the new one — and hand it the old session id. It is saved
-  // server-side either way, in its own session, so it is dropped here.
+  // session, a new document), so a reply still in flight for the previous one
+  // is dropped rather than landing here. It is saved server-side in its own
+  // session either way.
   const conversation = useRef(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);

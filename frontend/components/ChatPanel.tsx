@@ -199,10 +199,9 @@ export default function ChatPanel() {
   const [input, setInput] = useState("");
   const [showSessions, setShowSessions] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  /* React 18 does not forward `inert` as a prop — it is not in its known
-     attribute list, so it is silently dropped, and passing it through
-     framer-motion drops it again. Measured after trying the prop: the
-     drawer still exposed 11 focusable controls. Set on the element. */
+  /* React 18 does not forward `inert` as a prop (it is not in its known
+     attribute list), and framer-motion drops it again, so it is set on the
+     element directly. */
   const drawerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Whatever had focus when the drawer opened (usually the Ask button), so

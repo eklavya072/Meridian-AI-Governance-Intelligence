@@ -125,8 +125,7 @@ export function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: numb
       layout
       initial={{ opacity: 0, y: 18 }}
       whileInView={{ opacity: 1, y: 0 }}
-      // Once per card, a little into the viewport — the reveal a reader
-      // scrolling down the dimension list used to see. `once: true` so an
+      // Once per card, a little into the viewport. `once: true` so an
       // opened-then-scrolled-past card never re-plays the entrance.
       viewport={{ once: true, amount: 0.2 }}
       className={`bg-white rounded-xl shadow-sm border ${
@@ -138,8 +137,8 @@ export function DimensionBlock({ gap, index }: { gap: GovernanceGap; index: numb
         y: { duration: DUR.base, ease: EASE.out, delay: Math.min(index * 0.05, 0.25) },
       }}
     >
-      {/* Header — owns its own corner rounding now that the card no longer
-          clips with overflow-hidden (which would break the sticky deck). */}
+      {/* Header — owns its own corner rounding, because the card does not
+          clip with overflow-hidden (which would break the sticky deck). */}
       <button
         onClick={() => setOpen((v) => !v)}
         className={`pressable w-full flex items-center justify-between gap-3 px-5 py-4 text-left transition-colors ${

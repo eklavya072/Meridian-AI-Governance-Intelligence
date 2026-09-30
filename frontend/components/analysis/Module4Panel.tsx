@@ -54,9 +54,8 @@ export function Module4Panel({ gap }: { gap: GovernanceGap }) {
                   <span className="module-meta">{inc.source}</span>
                 )}
               </div>
-              {/* Facts first. The panel used to name a case and then jump
-                  straight to why it is relevant, which asks the reader to
-                  take the incident on trust. */}
+              {/* Facts first, so the relevance that follows does not ask the
+                  reader to take the incident on trust. */}
               {inc.what_happened && (
                 <p className="module-body">
                   <span className="font-semibold">What happened: </span>

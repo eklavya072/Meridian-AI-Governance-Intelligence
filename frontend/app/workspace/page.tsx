@@ -33,8 +33,7 @@ export default function WorkspacePage() {
   // the backend has no dedicated "pipeline started at" field. Falls back to
   // updated_at (below) for a workspace whose run began before this page
   // load, e.g. after a browser refresh mid-run. Set when Run Analysis is
-  // pressed, not on upload: uploading no longer starts anything, so timing
-  // from the upload would show a counter for a workspace sitting idle.
+  // pressed, not on upload, because uploading starts nothing.
   const [runStartedAt, setRunStartedAt] = useState<Record<string, number>>({});
   // Ticks once a second, only while something is actually processing, so the
   // elapsed-time text stays live without a re-render storm the rest of the
@@ -54,24 +53,13 @@ export default function WorkspacePage() {
     loadWorkspaces();
   }, []);
 
-  // Is any run actually in flight? "queued" now means "documents attached,
+  // Is any run actually in flight? "queued" means "documents attached,
   // waiting for the user to press Run Analysis" — an idle state, not a
   // running one, so it must not start a poller.
   //
-  // Derived as a BOOLEAN and used as the effect dependency, which is the
-  // whole point. Both timers below previously depended on the `workspaces`
-  // ARRAY, and the poller additionally stored its interval id in state and
-  // guarded on it. That combination cancels itself after exactly one tick:
-  // the poll refreshes `workspaces`, the new array identity fires the
-  // cleanup which clears the live interval, the effect re-runs, and the
-  // guard `hasActiveRun && !pollInterval` sees the stale-but-truthy id in
-  // state and declines to start a replacement. Polling stops, the status
-  // never reaches "complete", and the 1s ticker counts up forever because
-  // `workspaces` never changes again — so a finished analysis looked like it
-  // was still running until the page was reloaded by hand.
-  //
-  // A boolean only changes when a run actually starts or stops, so neither
-  // interval is torn down by routine data refreshes.
+  // Derived as a BOOLEAN and used as the effect dependency. Depending on the
+  // `workspaces` array instead would tear the poller down on every refresh
+  // it causes; a boolean only changes when a run actually starts or stops.
   const hasActiveRun = workspaces.some(
     (w) => w.status === "processing" || w.status === "generating_report"
   );
@@ -175,7 +163,7 @@ export default function WorkspacePage() {
         country: country.trim(),
         policy_title: policyTitle.trim(),
         // Framework selection is deterministic (backend routes frameworks per
-        // governance dimension + region) — the UI no longer offers a picker.
+        // governance dimension + region), so the UI offers no picker.
         frameworks: [],
       });
       setCountry("");

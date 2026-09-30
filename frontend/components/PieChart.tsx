@@ -316,11 +316,9 @@ export function PieCenter({
         stroke="rgba(10, 10, 10, 0.07)"
         strokeWidth={1}
       />
-      {/* Number — deliberately NOT inside the label-swap animation. When the
-          group was keyed by label with mode="wait", the old label faded out
-          for 150ms before the new group mounted, so the ~200ms odometer tick
-          ran entirely behind the fade and was never visible. The number is
-          always mounted; only the label below swaps. */}
+      {/* Number — deliberately NOT inside the label-swap animation, which
+          would hide the odometer tick behind the fade. The number is always
+          mounted; only the label below swaps. */}
       <text
         x={g.cx}
         y={g.cy - 1}

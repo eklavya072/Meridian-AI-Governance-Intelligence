@@ -71,11 +71,8 @@ function useCount(target: number, active: boolean, decimals: number) {
       clearInterval(id);
       clearTimeout(settle);
     };
-    /* No `started` latch. The count used to fire once per mount and never
-       again, so scrolling back up to the band showed four settled numbers —
-       the effect existed exactly once per page load, at the one moment the
-       reader was least likely to be looking at it. Keyed on `active`
-       instead, so it replays on every entry. */
+    /* Keyed on `active`, with no one-shot latch, so the count replays every
+       time the band is scrolled back into view. */
   }, [active, target, decimals]);
 
   return n;

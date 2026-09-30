@@ -20,19 +20,9 @@ body:has(.landing) main {
 
 .landing {
   /* ── The world ─────────────────────────────────────────────────────────
-     A sounding chart. Cold water at the top and bottom of the page, warm
-     paper through the middle where the argument is actually read, and the
-     product's own three verdict colours as the only chromatic marks on the
-     route.
-
-     Pure #000 and pure #fff are both gone, and that is the whole reason the
-     page kept reading as flat. Every reference system this was rebuilt
-     against says the same thing in its own words — ORYZO: "never use pure
-     #fff for text or #000 for backgrounds, purity reads as wrong here";
-     Structured runs its light sections on putty; monopo keeps a whisper-thin
-     grey ladder under its blacks. So the darks carry a blue cast (they are
-     water) and the lights carry a warm one (they are paper), and the two
-     temperatures are what make the page feel lit rather than printed. */
+     Dark surfaces carry a cool cast (water), light ones a warm one (paper),
+     and neither end is pure #000 or #fff, so the page reads as lit rather
+     than printed. */
   --canvas: #0A0C10;
   --canvas-deep: #06080B;
   --panel: #141922;
@@ -50,42 +40,19 @@ body:has(.landing) main {
   --accent-hover: #FFFFFF;
 
   /* ── The one colour ────────────────────────────────────────────────────
-     Gold, and nothing else. The page briefly carried the instrument's three
-     verdict hues — a forest green, this gold, a muted red — and three
-     signals is not a signal: with a colour on every reading, none of them
-     could be the one that mattered. Lamborghini puts its giallo on exactly
-     one element per screen and calls the restraint the brand; Hyer gives
-     clay to a single card per page; ORYZO's ember is credit lines only.
-
-     So one hue, used sparingly, and it lands on the thing the page is
-     actually about — the gap between what a strategy says and what it
-     obliges. Everything else is the neutral ladder, and hierarchy comes
-     from size and weight, which is what the references do anyway. */
-  /* Measured, not picked by eye. #C9AF7A sat at low chroma with the hue
-     pulled toward red — a tan, which on a dark ground reads as dull brown
-     rather than as metal. #E6BC55 swung the hue back toward yellow but
-     went too bright: on near-black it read as a toy's gold. #CEA850 keeps
-     that hue (42°) with less chroma and lightness (S56 L56 against S74
-     L62), an aged brass, and still measures 7.5:1 on ink. */
+     Gold, used sparingly, on the thing the page is about: the gap between
+     what a strategy says and what it obliges. Everything else is the neutral
+     ladder, and hierarchy comes from size and weight. */
+  /* An aged brass (hue 42°), 7.5:1 on ink. */
   --key: #CEA850;
   --key-soft: rgba(206, 168, 80, 0.15);
   --key-line: rgba(206, 168, 80, 0.55);
 
   /* ── Type scale ────────────────────────────────────────────────────────
-     Hierarchy comes from SCALE, not from weight — the thing every one of
-     the reference systems does and the thing a page loses when it reaches
-     for a bold. Lamborghini runs one weight from 10px to 120px; Hyer runs
-     700 from 17px to 187px. The steps here are fixed ratios so the ladder
-     survives every viewport instead of collapsing at the ends of the clamps.
-
-     --t-hero is new and deliberately SMALLER than the old display cap. The
-     hero line was running at 96px over moving footage, which is where a
-     headline stops being read and starts being looked at. */
-  /* 3.75rem put the opening line at 60px, which is where a headline stops
-     being read in one take and starts being scanned in two. The weight and
-     the tracking are carrying the presence now, so the size does not have
-     to — and a smaller display line leaves the FILM visible around it,
-     which is the whole reason there is a film. */
+     Hierarchy comes from scale, not weight. The steps are fixed ratios so
+     the ladder survives every viewport. */
+  /* The opening line: small enough to read in one take, leaving the film
+     visible around it. */
   --t-hero: clamp(1.85rem, 3.25vw, 2.95rem);
   --t-h2: clamp(1.95rem, 3.9vw, 3.15rem);
   --t-h3: clamp(1.45rem, 2.5vw, 2rem);
@@ -93,11 +60,8 @@ body:has(.landing) main {
   --t-body: clamp(1.02rem, 1.1vw, 1.12rem);
   --t-label: 0.6875rem;
 
-  /* Tracking is a function of size, never a constant. The references are
-     unanimous and specific about this: Hyer sets -3.74px at 187px, monopo
-     locks line-height to 0.70–0.76 above 78px. Display type is pulled
-     together until the line reads as one object; body text gets the space
-     back or it sets tight and grey. */
+  /* Tracking is a function of size: display type is pulled together until
+     the line reads as one object; body text gets the space back. */
   /* -0.04em is the floor. Past it the counters start closing on each other
      at display sizes and the line stops reading as words. */
   --tr-hero: -0.04em;
@@ -136,31 +100,15 @@ body:has(.landing) main {
   --sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --code: var(--font-mono), ui-monospace, "SF Mono", monospace;
 
-  /* Patient, not snappy. monopo pins its whole system to
-     cubic-bezier(0.19, 1, 0.22, 1) at 0.8–1.25s and the result is the
-     gliding quality the brief asked for; --ease-glide is that curve. */
+  /* Patient, not snappy: long glides on an exponential ease-out. */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-glide: cubic-bezier(0.19, 1, 0.22, 1);
-  /* Three curves, three jobs, and nothing else on this route.
-     Measured before this: 7 distinct timing functions in the computed
-     styles, of which cubic-bezier(0.16,1,0.3,1) and (0.22,1,0.36,1) are the
-     same exponential ease-out at two strengths, used interchangeably rather
-     than deliberately. `ease` and bare `ease-out` were doing a third job
-     nobody named. A curve per job, named for the job. */
+  /* Three curves, one per job, and nothing else on this route. */
   --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
 
-  /* Text sits over a moving ground, which is a background nobody controls
-     frame to frame. Three layers — a tight edge, a mid glow and a wide
-     falloff — so a word stays readable even when a pale crest passes under
-     it. This is what lets the scrim over the film stay LIGHT: the legibility
-     is bought here, on the glyphs, rather than by drowning the footage. */
-  /* No shadow on the glyphs. The old value stacked three black layers, the
-     widest a 44px halo at half alpha — and because every word is its own
-     inline-block with a gap beside it, that halo pooled PER WORD rather than
-     behind the line. What the reader saw was a row of discontinuous black
-     smudges, one per word. The legibility moves to the scrim, where it is
-     one continuous field measured against the footage. */
+  /* No shadow on the glyphs: each word is its own inline-block, so a halo
+     would pool per word. Legibility comes from the scrim instead. */
   --tshadow: none;
 
   position: relative;
@@ -199,20 +147,9 @@ body:has(.landing) main {
 .landing .font-display { font-family: var(--sans); }
 
 /* ── The surface ladder ──────────────────────────────────────────────────
-   The page is not one colour, and it was never going to work as one. Every
-   reference system worth borrowing from ships a SET of canvases rather than
-   a single background — Stripe carries white, soft and cream; Vercel white,
-   soft and soft-2; Resend black, card, elevated, deep AND a light surface.
-   Shipping one flat fill per zone is what made this read first as grim and
-   then as plain.
-
-   Five related surfaces, all greyscale, and each section declares which one
-   it stands on. Because the ink tokens are redeclared alongside the canvas,
-   a section changes surface without a single component knowing about it.
-
-   The sequence down the page is deliberate: void, paper, ink, paper-2,
-   paper, void. Dark to light, one dark band in the middle to break the
-   light stretch, and a return to the hero's world at the close. */
+   Five related surfaces, and each section declares which one it stands on.
+   Because the ink tokens are redeclared alongside the canvas, a section
+   changes surface without a single component knowing about it. */
 .landing [data-surface] {
   position: relative;
   background: var(--canvas);
@@ -230,21 +167,11 @@ body:has(.landing) main {
   --ink-3: #8E8C83;
   --accent: #F2F1EC;
   --accent-hover: #FFFFFF;
-  /* Measured, not picked by eye. #C9AF7A sat at low chroma with the hue
-     pulled toward red — a tan, which on a dark ground reads as dull brown
-     rather than as metal. #E6BC55 swung the hue back toward yellow but
-     went too bright: on near-black it read as a toy's gold. #CEA850 keeps
-     that hue (42°) with less chroma and lightness (S56 L56 against S74
-     L62), an aged brass, and still measures 7.5:1 on ink. */
+  /* An aged brass (hue 42°), 7.5:1 on ink. */
   --key: #CEA850;
   --key-soft: rgba(206, 168, 80, 0.16);
   --key-line: rgba(206, 168, 80, 0.55);
-  /* No shadow on the glyphs. The old value stacked three black layers, the
-     widest a 44px halo at half alpha — and because every word is its own
-     inline-block with a gap beside it, that halo pooled PER WORD rather than
-     behind the line. What the reader saw was a row of discontinuous black
-     smudges, one per word. The legibility moves to the scrim, where it is
-     one continuous field measured against the footage. */
+  /* No shadow on the glyphs; see the root tokens. */
   --tshadow: none;
 }
 /* Cold and blue-cast, because the dark surfaces are water. The two are a
@@ -285,10 +212,8 @@ body:has(.landing) main {
 .landing [data-surface="paper"],
 .landing [data-surface="paper-mid"],
 .landing [data-surface="paper-2"] {
-  /* Parchment, not white. This is the single change that answers "why is
-     it all white": the light sections were #EFEFEC on #FFFFFF panels, which
-     is a screen, and Structured's putty canvas is a WALL. Panels sit one
-     step ABOVE the canvas in warmth rather than jumping to pure white. */
+  /* Parchment, not white: panels sit one step above the canvas in warmth
+     rather than jumping to pure white. */
   --panel: #F7F5EE;
   --panel-raised: #FCFAF4;
   --hairline: rgba(21, 24, 30, 0.14);
@@ -300,15 +225,9 @@ body:has(.landing) main {
   --ink-3: #4F535C;
   --accent: #15181E;
   --accent-hover: #000000;
-  /* The accent, restated for parchment.
-     A true metallic gold cannot exist at 4.5:1 on near-white — the floor
-     forces the luminance down, and a dark yellow is an olive-bronze by
-     definition. That is physics, not taste. What IS available is which way
-     the hue leans: #6E5522 leant red and read as mud. #6C5513 leans yellow
-     and reads as the dark end of the same gold running on the dark
-     surfaces, a shade graver than the #7D5E0A it replaced. Measured on the
-     parchment this route uses: 6.1:1, clear of the floor for the 11px
-     numerals that are the smallest thing wearing it. */
+  /* The accent, restated for parchment. A metallic gold cannot reach 4.5:1
+     on near-white, so this is the dark end of the same gold: 6.1:1, clear of
+     the floor for the 11px numerals that are the smallest thing wearing it. */
   --key: #6C5513;
   --key-soft: rgba(108, 85, 19, 0.15);
   --key-line: rgba(108, 85, 19, 0.55);
@@ -316,17 +235,10 @@ body:has(.landing) main {
      dirt, so the mechanism switches off on every light surface. */
   --tshadow: none;
 }
-/* Three light steps rather than two-and-a-bit. The gap between paper and
-   paper-2 was six points of luminance, which is a nudge — the eye reads it
-   as an inconsistency rather than a decision. Widened until each surface is
-   a place: parchment, then putty, with the panels sitting a clear step
-   above their own canvas instead of jumping to white. */
+/* Three light steps, each clearly apart: parchment, then putty, with the
+   panels a step above their own canvas. */
 .landing [data-surface="paper"]   { --canvas: #EFEDE6; --canvas-deep: #E4E1D8; }
-/* The stages sit between the two. On the brightest parchment they read as
-   the same surface as the track above, so the four steps never register as
-   their own place; on the putty they compete with the bento. Halfway is a
-   room of its own, and it puts a real gradient of light down the page —
-   parchment, then this, then putty. */
+/* The stages sit halfway between the two, a room of their own. */
 .landing [data-surface="paper-mid"] { --canvas: #E4E1D7; --canvas-deep: #D9D5C9; }
 .landing [data-surface="paper-2"] { --canvas: #D9D5C8; --canvas-deep: #CDC8B9; }
 
@@ -361,9 +273,7 @@ body:has(.landing) main {
   color: var(--ink);
   font-weight: 600;
 }
-/* Emphasis inside a sentence, carried by weight and full ink alone. It used
-   to be an underline over a tinted band, which is two devices doing one
-   job and both of them drawing a line the reader has to look past. */
+/* Emphasis inside a sentence, carried by weight and full ink alone. */
 .l-mark {
   color: var(--ink);
   font-weight: 600;
@@ -405,10 +315,8 @@ body:has(.landing) main {
 
 /* ── The scrubbed hero ───────────────────────────────────────────────────
    A tall pinned region holding a sticky full-viewport stage. Scroll
-   distance through the region is the hero's timeline: 460vh, which leaves
-   each of the three beats about a viewport of settled plateau after its
-   ramps. Paced in vh rather than seconds, because a scroll page is read in
-   flicks, not watched. */
+   distance through the region is the hero's timeline, paced in vh rather
+   than seconds, because a scroll page is read in flicks, not watched. */
 .l-scrub {
   position: relative;
   z-index: 1;
@@ -471,9 +379,7 @@ body:has(.landing) main {
   z-index: 2;
   grid-area: 1 / 1;
   /* The same measure and gutter every section below uses, so the hero's
-     left edge and the page's left edge are the SAME line. They were two
-     different numbers before, which is why the hero read as unaligned with
-     everything under it. */
+     left edge and the page's left edge are the same line. */
   width: 100%;
   max-width: var(--measure);
   margin: 0 auto;
@@ -508,22 +414,9 @@ body:has(.landing) main {
 .l-band-key { color: var(--key); }
 /* The per-band scrim rides the band's own opacity and deepens with its
    assembly progress, so the footage dims exactly while that band's text is
-   on and nowhere else. Dim, never flatten: it dies out by 76% so the
-   corners stay live. */
-/* The scrim has to follow the COPY now that the band box is the whole
-   canvas. Each variant anchors its ellipse on its own corner and leaves the
-   rest of the frame alone, so the footage stays live everywhere nothing is
-   being read. */
-/* The scrim is anchored to the FRAME, not to the band.
-   It used to be `inset: -10%` on the band, and the band is capped at the
-   78rem measure — so at 1440 the ellipse ran from -29px to 1468px, past
-   both edges of a stage that clips at `overflow: hidden`. The gradient was
-   still at a third of its alpha where it got cut, which is what drew the
-   hard vertical line down the left and the visible curve at the end.
-
-   Spanning 100vw and centring on the band puts the whole ellipse inside the
-   frame, so it falls to zero on its own terms and there is nothing left to
-   clip. */
+   on. It is anchored to the FRAME (100vw, centred on the band) rather than
+   the band box, so the ellipse falls to zero inside the stage instead of
+   being clipped into a hard edge. Dim, never flatten: the corners stay live. */
 .l-band::before {
   content: "";
   position: absolute;
@@ -535,12 +428,8 @@ body:has(.landing) main {
   z-index: -1;
   pointer-events: none;
   opacity: calc(0.3 + 0.7 * var(--k, 1));
-  /* This now carries the ENTIRE legibility budget: the glyphs used to sit
-     on a three-layer black text-shadow, which pooled per word and read as a
-     row of smudges, so it is gone. One continuous field instead, deepened
-     to make up the difference and re-measured against the worst frame of
-     the footage rather than adjusted by eye. It reads as the film being
-     dimmed under the copy, which is a thing a film does. */
+  /* This carries the whole legibility budget (the glyphs have no shadow):
+     one continuous field, measured against the worst frame of the footage. */
   background: radial-gradient(
     ellipse 76% 70% at 50% 50%,
     rgba(6, 7, 9, 0.72) 0%,
@@ -549,16 +438,8 @@ body:has(.landing) main {
     rgba(6, 8, 12, 0) 82%
   );
 }
-/* The opening beat carried the lightest scrim on the route (0.36), and the
-   pixel-sampling detector caught what my analytic model missed: measuring
-   actual rendered pixels over the live frame it read a MEDIAN of 3.8:1 on
-   `.l-h1-sub` against a 4.5 floor, where compositing the worst frame
-   arithmetically had said 6.8.
-
-   The difference is method. My sweep composites film alpha + scrim alpha
-   over the darkest frame and asks what the glyph colour scores; the
-   detector screenshots what is actually on screen, blur and all. When the
-   two disagree the screenshot wins, because that is what a reader sees. */
+/* Beat one, measured on rendered pixels over the live frame rather than by
+   compositing alphas: the screenshot is what a reader sees. */
 .l-band-a::before {
   background: radial-gradient(ellipse 64% 54% at 24% 80%,
     rgba(6, 8, 12, 0.5) 0%, rgba(6, 8, 12, 0.4) 52%, rgba(6, 8, 12, 0) 78%);
@@ -572,36 +453,20 @@ body:has(.landing) main {
   background: radial-gradient(ellipse 58% 58% at 50% 50%,
     rgba(6, 8, 12, 0.38) 0%, rgba(6, 8, 12, 0.31) 52%, rgba(6, 8, 12, 0) 78%);
 }
-/* The closing beat had no override, so it was the ONLY band still running
-   the base scrim — and the base carries the whole legibility budget for the
-   glyphs, at 0.72 dead centre. On a centred beat that lands as a black disc
-   over the middle of the frame with the footage showing round the edge.
-   Brought into line with the other four, which measure fine at these
-   alphas: centred like beat one, and wide rather than deep so the dimming
-   has no edge you can point at. */
+/* The closing beat: centred like beat one, and wide rather than deep so the
+   dimming has no edge you can point at. */
 .l-band-e::before {
   background: radial-gradient(ellipse 70% 56% at 50% 50%,
     rgba(6, 8, 12, 0.40) 0%, rgba(6, 8, 12, 0.32) 50%, rgba(6, 8, 12, 0) 80%);
 }
 /* ── The hero voice ──────────────────────────────────────────────────────
-   Type over film is a different problem from type on paper, and it now
-   gets a different face. A 300-weight serif at 96px floating over moving
-   footage is the costume of a page that has not decided anything; every
-   reference system that puts type over media — Roobert, LamboType,
-   Helvetica Now Display, Halyard — reaches for a grotesk at tight negative
-   tracking instead, because the closed apertures and even stroke survive a
-   ground that keeps changing underneath them.
+   Type over film gets a grotesk at tight negative tracking: closed
+   apertures and an even stroke survive a ground that keeps changing. The
+   paper sections below keep the document serif.
 
-   Newsreader is not gone. It keeps the printed argument on the paper
-   sections below, which is where a document serif belongs. The hero is
-   cinema; the page is a document; the two voices say so. */
-/* Presence over film comes from WEIGHT, not size.
-   This was 500 at 50px — a middle weight at a middle size, which over
-   moving footage reads as neither quiet nor loud. 600 at 60px carries more
-   optical mass in barely more vertical space, and tighter tracking closes
-   the counters so a line holds together as one shape when a bright crest
-   passes under it. `optical-sizing` lets the face draw its display cut
-   rather than a scaled-up text cut. */
+   Presence over film comes from WEIGHT, not size, and tighter tracking
+   closes the counters so a line holds together when a bright crest passes
+   under it. */
 .l-hero-display {
   font-family: var(--grotesk);
   font-weight: 600;
@@ -611,18 +476,10 @@ body:has(.landing) main {
   font-feature-settings: "ss01";
   font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
-  /* NO tabular figures here. `tnum` widens punctuation to a figure width so
-     decimal columns align — correct on the three numeric selectors that
-     have it, wrong on display headlines containing no figures. Measured
-     with it on: the full stop in `.l-h1` rendered 27.84px against 11.95px
-     normal, the comma in `.l-band-stmt` 23.30 against 9.77. Every hero line
-     read "…name a duty ." — a 16px phantom gap in 47px type, in all five
-     beats, on screen one. */
+  /* No tabular figures on display lines: `tnum` widens punctuation to a
+     figure width, opening a gap before every full stop. */
 }
-/* Beat one. It was set at the display cap — 96px at 1440 — which is where
-   a headline stops being read and starts being looked at, and it filled
-   the bottom-left quarter with a wall of thin serif. Two lines, centred,
-   at a size a reader takes in at once. */
+/* Beat one: two lines, at a size a reader takes in at once. */
 .l-h1 {
   font-size: var(--t-hero);
   margin: 0;
@@ -661,26 +518,16 @@ body:has(.landing) main {
   opacity: clamp(0, (var(--k, 1) - 0.5) * 3, 1);
 }
 /* ── Hero type ───────────────────────────────────────────────────────────
-   Three voices, and the difference between them is what was missing: every
-   line was the same serif at roughly the same size in the same white, so
-   nothing led and nothing supported.
-
-   Display serif carries the statement. Mono carries anything that is a
-   label, a source or a tier, because those are readings rather than prose.
-   Sans carries the one paragraph per beat. Colour does the rest: full ink
-   for the line that matters, --ink-2 for support, --ink-3 for attribution,
-   and the accent for the single word or rung that is the point. */
+   Display carries the statement, mono anything that is a label, a source or
+   a tier, and sans the one paragraph per beat. */
 .l-band .l-h1,
 .l-band .l-band-stmt,
 .l-band .l-band-lede,
 .l-band .l-band-head { color: var(--ink); }
 .l-band .l-h1-turn { color: var(--key); }
-/* Every line over the film holds full ink. On paper, secondary copy steps
-   down to --ink-2 and reads correctly; over moving footage the same token
-   measured 2.6:1 against the frame's brightest crest, which is not a
-   hierarchy, it is a line you cannot read. Size, weight and measure carry
-   the hierarchy here instead — which is what all five reference systems do
-   at every scale anyway. */
+/* Every line over the film holds full ink: secondary ink measures 2.6:1
+   against the frame's brightest crest. Size, weight and measure carry the
+   hierarchy here instead. */
 .l-band .l-body,
 .l-band .l-h1-sub,
 .l-band .l-band-source,
@@ -703,10 +550,7 @@ body:has(.landing) main {
   opacity: clamp(0, (var(--k, 1) - 0.05) * 4, 1);
 }
 
-/* The OECD line itself, back at a size that reads as a finding rather than
-   a footnote. It was demoted to a 0.72rem mono label when this beat was
-   rewritten, which left the page's one piece of external evidence set
-   smaller than the caption under it. */
+/* The OECD line, at a size that reads as a finding rather than a footnote. */
 .l-band-source {
   margin: 0 0 var(--s-4);
   font-family: var(--sans);
@@ -726,9 +570,7 @@ body:has(.landing) main {
    sans rather than the serif inside it. */
 
 /* ── Beat two: the finding ───────────────────────────────────────────────
-   Sized as the argument it is. This was a small block in a corner, which
-   read as a caption on someone else's research; it is the reason the whole
-   product exists and now carries the frame. */
+   The reason the product exists, sized as the argument it is. */
 .l-band-lede {
   font-size: var(--t-h2);
   font-weight: 600;
@@ -751,10 +593,7 @@ body:has(.landing) main {
   padding: 1.05rem 0;
   border-top: 1px solid var(--hairline);
   /* The multiplier and the last threshold are a pair: max opacity is
-     (1 - th_last) * multiplier, so a stagger that runs its thresholds too
-     high can never reach 1. This shipped with th_last 0.74 against a 3.4
-     multiplier, capping the final row at 0.884 — permanently dimmer than
-     its siblings for no reason a reader could see. */
+     (1 - th_last) * multiplier, which must reach 1 for the final row. */
   --kc: clamp(0, (var(--k, 1) - var(--th, 0)) * 3.4, 1);
   opacity: var(--kc);
   /* The row slides in from the left and the quantity lands slightly late
@@ -852,11 +691,8 @@ body:has(.landing) main {
 .l-find-row.is-gap { border-top-color: var(--key-line); }
 .l-find-row.is-gap .l-find-qty { color: var(--key); }
 .l-find-row.is-gap .l-find-text { color: var(--ink); font-weight: 500; }
-/* Sized here rather than by borrowing .l-h2. That class is declared later
-   in this stylesheet, so its `margin: 0` beat the auto margins below and
-   left this headline as a max-width block hard against the left edge —
-   measured 226px off centre. A shared class is not a free size token when
-   it also sets box properties. */
+/* Sized here rather than by borrowing .l-h2, whose `margin: 0` would beat
+   the auto margins below. */
 .l-band-head {
   font-size: var(--t-h2);
   font-weight: 600;
@@ -895,18 +731,10 @@ body:has(.landing) main {
    Words rise from behind a mask edge in reading order, each waiting for
    its own threshold. Transform and opacity only, fully reversible: scroll
    back up and the line disassembles. */
-/* The word mask, rebuilt.
-   It was `vertical-align: bottom` with a 0.14em padding/negative-margin
-   pair to give descenders room inside the clip. Two problems, both visible:
-   `bottom` aligns each inline-block to the LINE BOX bottom rather than the
-   baseline, so a word with a descender and a word without sat on different
-   lines; and the padding hack only holds while the clip box exactly matches
-   the em box, which it stops doing the moment a heading wraps.
-
-   Baseline alignment fixes the raggedness. The descender room then has to
-   come from the clip box being taller than the text on BOTH sides, which is
-   what the symmetrical padding does — and the negative margins keep the box
-   out of the line-height calculation so wrapped lines stay evenly spaced. */
+/* The word mask. Baseline alignment keeps words with and without
+   descenders on one line; the symmetrical padding gives descenders room
+   inside the clip, and the negative margins keep the box out of the line
+   height so wrapped lines stay evenly spaced. */
 .l-sw {
   display: inline-block;
   overflow: hidden;
@@ -916,55 +744,22 @@ body:has(.landing) main {
 }
 .l-sw-in {
   display: inline-block;
-  /* The ramp is a fraction of what each word has LEFT, not a constant.
-     This was `(--k - --th) * 1.6`, a fixed ramp of 1/1.6 = 0.625 added on
-     top of a threshold that reaches 0.47 on the hero and 0.67 on beat
-     three. 0.47 + 0.625 > 1, so the last word of a line topped out at
-     kc = 0.85 and NEVER ARRIVED: permanently 15% short of full opacity and
-     sitting 16% of a line-height low. That is the "final word of many lines
-     looks unaligned" — it was not alignment, it was an animation that could
-     not finish.
-
-     (It worked at the old multiplier of 2.6, where the ramp overshot enough
-     to clamp. Slowing the words to 1.6 last pass is what exposed it.)
-
-     Dividing by the remaining range guarantees every word reaches exactly 1
-     whatever its threshold, at any spread, while still arriving in order. */
+  /* The ramp is a fraction of what each word has LEFT, not a constant, so
+     every word reaches exactly 1 whatever its threshold, while still
+     arriving in order. */
   --kc: clamp(
     0,
     (var(--k, 1) - var(--th, 0)) / max(0.08, (1 - var(--th, 0)) * 0.6),
     1
   );
 
-  /* The exit, staggered in REVERSE and given something to do.
-     --x is the band's exit progress; each word subtracts a share of its own
-     threshold from it, so the last word of a line leaves first and the
-     first word leaves last: the line un-writes itself in the opposite
-     direction to the one it was written in.
-
-     A fade alone is what made this read as a cut. The words now carry the
-     departure with three things at once — they lift, they shrink slightly,
-     and they soften. Blur is the piece that matters: during a crossfade you
-     otherwise see two distinct sets of words overlapping, and blur bridges
-     them so the eye reads one transformation rather than two objects
-     swapping. Bounded to 5px, because heavy blur is expensive in Safari,
-     and it exists only while a beat is leaving. */
+  /* The exit, staggered in REVERSE: --x is the band's exit progress and
+     each word subtracts a share of its own threshold, so the line un-writes
+     itself in the opposite direction to the one it was written in. */
   --xc: clamp(0, (var(--x, 0) - (1 - var(--th, 0)) * 0.16) * 1.25, 1);
 
-  /* Arrival and departure are now the same gesture run in opposite
-     directions. The entrance was a bare rise behind a mask edge — correct,
-     and inert: transform and opacity alone, which is where most scroll
-     type stops. It gets the departure's other two properties as well, so a
-     word resolves OUT of softness instead of simply appearing, and the two
-     halves of the beat are recognisably one idea.
-
-     Entry blur is smaller than exit blur (3px against 5px). A line arriving
-     wants to resolve quickly and be read; a line leaving can afford to
-     dissolve. */
-  /* Opacity and transform only. Each word carried its own blur(), which
-     made the browser repaint every word on every frame of the scrub; with
-     transform and opacity alone a word is a compositor layer and moving it
-     costs nothing. The band as a whole softens as it leaves. */
+  /* Opacity and transform only, so each word is a compositor layer and
+     moving it costs nothing; the band as a whole softens as it leaves. */
   opacity: calc(var(--kc) * (1 - var(--xc)));
   transform: translate3d(0, calc((1 - var(--kc)) * 110% - var(--xc) * 30%), 0)
     scale(calc(1 - (1 - var(--kc)) * 0.028 - var(--xc) * 0.045));
@@ -1022,11 +817,8 @@ body:has(.landing) main {
 /* The grain is a paper texture; under the pinned hero it is never seen,
    and at eleven screens tall it was the largest layer on the page. */
 .landing .l-scrub::after { display: none; }
-/* Three beats, three entrances, each echoing what the footage is doing
-   under it. One: words rise from the mask edge as the light arrives from
-   below. Two: rows snap in from the right, the way a value lands on a
-   readout. Three: the line drifts DOWN into place and comes to rest,
-   because this is the beat where the journey stops. */
+/* The closing beat drifts DOWN into place and comes to rest: this is where
+   the journey stops. */
 .l-band-e .l-sw-in {
   transform: translateY(calc((1 - var(--kc)) * -85%));
 }
@@ -1084,18 +876,11 @@ body:has(.landing) main {
 @media (max-height: 620px) { .l-scroll-cue, .l-ring { display: none; } }
 
 /* ── The static hero ─────────────────────────────────────────────────────
-   The five gates below must stay character-for-character identical to the
-   GATES array in HeroScrub.tsx, or one side hides what the other loads.
-   The static hero is a designed composition, not an apology — and it only
-   became one here. It used to collapse to a single viewport showing the
-   closing band alone, which meant a phone reader and anyone with reduced
-   motion set received the call to action and none of the argument behind
-   it: no <h1>, no OECD finding, no ladder, no scope caveat.
-
-   It is now the whole argument as a scroll: five beats stacked in order,
-   each given room, the film held behind them as a fixed ground. Not the
-   scrub — the scrub is a desktop affordance — but the same five statements
-   in the same sequence, which is what the page actually has to say. */
+   Phones, short screens and reduced motion get the whole argument as a
+   scroll: the five beats stacked in order, the film held behind them as a
+   fixed ground. The gates below must stay character-for-character identical
+   to the GATES array in HeroScrub.tsx, or one side hides what the other
+   loads. */
 @media (max-width: 720px),
        (orientation: portrait) and (max-width: 1024px),
        (orientation: portrait) and (pointer: coarse),
@@ -1170,9 +955,8 @@ body:has(.landing) main {
   font-family: var(--sans);
   font-size: 0.9375rem;
   font-weight: 500;
-  /* Two speeds, because they are two different jobs. Colour is ambience and
-     can take its time; the press is feedback and must be immediate — at
-     320ms the button did not feel like it had heard you. */
+  /* Two speeds: colour is ambience and can take its time; the press is
+     feedback and must be immediate. */
   transition: background-color 240ms var(--ease-out),
     color 240ms var(--ease-out), border-color 240ms var(--ease-out),
     transform 140ms var(--ease-out);
@@ -1200,19 +984,12 @@ body:has(.landing) main {
 .l-btn, .l-footer .l-link { text-shadow: none; }
 
 /* ── Section frame ────────────────────────────────────────────────────── */
-/* The swell is the hero's material and the reading sections' enemy. This
-   scrim rides under the content only, so the ground stays vivid where
-   there is nothing to read and drops back where there is. */
-/* The content column carries no colour of its own any more: each section
-   below declares its own surface from the ladder above. Forcing one fill
-   here is what made the whole stretch a single flat tone. */
+/* The content column carries no colour of its own: each section declares
+   its surface from the ladder above. */
 .landing .l-content { position: relative; z-index: 2; }
 
-/* A section IS its surface, so it has to reach both edges of the screen.
-   Capped at the measure, the method's parchment and the close's void were
-   1248px-wide rectangles with the page's own dark showing down either side
-   — a light section that could not read as a light room. The cap moves to
-   an inner wrapper; the surface goes full-bleed. */
+/* A section IS its surface, so it reaches both edges of the screen; the
+   measure cap sits on an inner wrapper. */
 .l-sec {
   position: relative;
   padding: var(--s-sec) var(--gutter);
@@ -1298,29 +1075,16 @@ body:has(.landing) main {
 .landing [data-surface="void"],
 .landing [data-surface="ink"] { --grain: rgba(244, 244, 245, 0.07); }
 /* Children are lifted above the grain layer. The hero stage is the one
-   exception: it is sticky, and this rule used to flatten it to relative —
-   which un-pinned the whole hero and left 700vh of bare void behind it. */
+   exception: it is sticky, and flattening it to relative would un-pin it. */
 .landing [data-surface] > *:not(.l-stage) { position: relative; z-index: 1; }
 .landing [data-surface] > .l-stage { position: sticky; z-index: 1; }
 
 /* ── The four stages ─────────────────────────────────────────────────────
-   Rows, not a deck. The sticky stack this replaces read well in a
-   screenshot and badly in use: three of the four cards spent most of their
-   scroll buried under the one on top, so a section whose job is to show a
-   pipeline showed one step at a time. Alternating rows let the four be
-   compared, and the side each one lands on gives the eye a new place to go.
+   Alternating rows, so the four steps of the pipeline can be compared.
 
    Every reveal here latches: `in` is added once the row is on screen and
    the start state only exists under `.landing.is-armed`, so a page with no
    JS renders the whole section rather than four empty rows. */
-/* Space between the rows, not around them.
-   The section carried three separate gaps stacked on top of each other —
-   the section's own `--s-sec` padding, a 6rem `margin-top` under the
-   heading, and a 9rem row gap — so the reader crossed nearly 400px of empty
-   parchment between the lede and the first step, and again between steps.
-   Emptiness is only impact when it is doing something; three of them in a
-   row is just distance. The row gap stays generous because it is the one
-   separating two things that must not merge; the rest comes in. */
 .l-stages {
   display: grid;
   gap: clamp(3rem, 6.5vh, 5rem);
@@ -1361,23 +1125,8 @@ body:has(.landing) main {
   letter-spacing: var(--tr-h3);
   color: var(--ink);
 }
-/* One ratio for all four. The screens sized themselves to their own
-   contents, so stage 01 came out 241px tall against 338 for the other
-   three — a pipeline drawn as four unequal boxes reads as four unrelated
-   things. A fixed ratio makes them four of one thing. */
-/* The frame is the product screen itself, not a box around it.
-   This carried its own 1px border and square corners while the screen
-   inside carried `rounded-2xl` — so a rounded panel sat inside a sharp one
-   and the corners showed a sliver of flat background between the two. That
-   is the "weird edges and plain area" left behind when the shadow came off.
-   The outer chrome is gone; the screen and its own shadow are the object. */
-/* No forced ratio. `aspect-ratio: 3/2` made all four panels identical,
-   which is what it was for — but the product screens inside are laid out to
-   their own content, so the ratio bought that equality by hanging 60 to 100
-   pixels of empty panel under each one. Equality at the cost of dead air is
-   not equality, it is padding. The panels size to their screens now; the
-   grid they sit in is what holds the four together, and that is already
-   identical row to row. */
+/* The product screen is the object: no outer frame and no forced ratio.
+   Each panel sizes to its screen; the shared grid holds the four together. */
 .l-stage-visual {
   position: relative;
   display: grid;
@@ -1387,31 +1136,10 @@ body:has(.landing) main {
 .l-stage-visual > * { min-width: 0; display: grid; }
 
 /* ── The measured band ───────────────────────────────────────────────────
-   Four figures, each naming where it came from. The source line is the
-   point of the section: on a page arguing that every claim should cite its
-   evidence, a row of unattributed numbers would undercut the argument it
-   is meant to support. */
-/* Full-bleed, not a card. A surface change only reads as a change of PLACE
-   if it reaches both edges of the screen; capped at the measure it was a
-   dark rectangle sitting on parchment with light showing down either side.
-   The cap moves inward, onto the row of figures. */
-/* The figures, as the track's closing panel.
-   This was a full-bleed dark band wedged between the track and the method —
-   a change of surface, and therefore a change of subject, for four numbers
-   that are the conclusion of the argument immediately above them. Inside
-   the track they read as what they are: the receipt at the end of the
-   sequence. It paints its own ink card rather than owning a surface. */
-/* The figures, as light cards on the dark chapter.
-   They have been a full-bleed band, a panel on the track, and a hairline
-   rule pinned to its foot. None of those put them anywhere: a band was a
-   change of subject, a panel made the conclusion into a station, and the
-   rule was so quiet it stopped being a moment at all.
-
-   Four white cards on the page's darkest surface is the only HARD contrast
-   on a route that otherwise moves in half-steps — and it is the one place
-   the theme's two ends touch. The cards carry the paper tokens locally, so
-   the type inside them resolves against parchment rather than against the
-   ink they are sitting on. */
+   Four figures, each naming where it came from, set as light cards on the
+   dark chapter: the one hard contrast on a route that otherwise moves in
+   half-steps. The cards carry the paper tokens locally, so the type inside
+   them resolves against parchment rather than the ink behind. */
 .l-stats {
   position: relative;
   margin: 0 0 clamp(1.5rem, 4.5vh, 3.25rem);
@@ -1543,11 +1271,8 @@ body:has(.landing) main {
 }
 
 @media (max-width: 1024px) {
-  /* `.l-pane.is-reverse` sets its own two-column template at specificity
-     0,2,0 — and a media query adds none, so this single-column reset at
-     0,1,0 never beat it. Panel two collapsed to a 139px visual against
-     342px for its siblings: the page's most important proof screen
-     rendering as "Tran… / Acco… / Priva…". Both selectors reset now. */
+    /* Both selectors reset: `.l-pane.is-reverse` sets its own template at
+       higher specificity, and a media query adds none. */
   .l-pane,
   .l-pane.is-reverse {
     grid-template-columns: minmax(0, 1fr);
@@ -1569,13 +1294,8 @@ body:has(.landing) main {
 .l-track-rail { display: block; }
 
 .l-track.is-horizontal {
-  /* Scroll distance for the sideways travel: roughly a viewport and a
-     fifth per panel, so each one gets a beat of its own rather than
-     whipping past. */
-  /* Raised with the lead-in and tail added to the traverse. Those two hold
-     18% of the section's scroll between them, so at the old 145vh the
-     panels would have had to travel faster to cover the same ground in less
-     of it. 170vh keeps the handover speed and buys the dwell. */
+  /* Scroll distance for the sideways travel, lead-in and tail included, so
+     each panel gets a beat of its own rather than whipping past. */
   height: calc(var(--panels, 3) * 170vh);
 }
 .l-track.is-horizontal .l-track-window {
@@ -1611,26 +1331,10 @@ body:has(.landing) main {
    off and the horizontal padding stays. */
 .l-track.is-horizontal .l-panel .l-pane { padding-block: 0; }
 
-/* The circle that draws itself as the track travels, so the reader can see
-   that sideways movement is progress and not a trap. It sits bottom-centre
-   under the panels, small enough to be an instrument rather than a
-   decoration, and it is the one element on the whole track that carries the
-   accent. */
-/* The indicator turns, continuously.
-   A drawn arc reports a fraction; it does not read as CIRCULAR, because at
-   any given moment nothing about it is going round. The ring now rotates on
-   its own at a constant rate — the one place on this page where linear
-   easing is right, because constant motion is exactly what it is — and the
-   progress stroke draws on top of that. Turning plus drawing is what makes
-   the gesture read as a circle being travelled. */
 
 
 /* ── 05 The method ────────────────────────────────────────────────────── */
-/* The method section ran edge to edge at the gutter (72px at 1440) while
-   every other section is capped at the 78rem measure and centred (96px at
-   1440). Twenty-four pixels is the kind of misalignment you feel without
-   being able to name it — the four steps sat fractionally wider than the
-   band above them. Both children now share the page's measure. */
+/* Both children share the page's measure, like every other section. */
 .l-method > .l-method-head,
 .l-method > .l-stages {
   max-width: var(--measure);
@@ -1654,29 +1358,11 @@ body:has(.landing) main {
   text-wrap: balance;
 }
 
-/* The four stages, cross-aligned.
-   These read as four identical rows because they WERE four identical rows:
-   the DOM order is copy then visual, and the only order rules in the sheet
-   were on `data-visual-first="false"` — which restates that same order. The
-   `true` case had no rule at all, so nothing ever swapped sides.
-
-   Now the sides alternate for real, the column ratio flips with them, and
-   each row is nudged off the one above on the cross axis. The nudge is what
-   turns an alternation into a zigzag: without it the copy blocks still line
-   up on one edge and the eye reads a list. */
+/* The four stages, alternating sides. */
 @media (min-width: 940px) {
-  /* One mirrored grid, and nothing else.
-     What was here instead: column ratios that flipped 1.05/0.95 between
-     rows, a 72px `padding-inline` that pulled alternate rows off the
-     measure, and a ±1.6rem cross-axis nudge on the copy. Three devices, all
-     trying to make the alternation legible, and together they meant no two
-     rows shared a single edge — the visuals landed at x=134, 168, 774 and
-     740 across four rows that all live inside the same 1248px measure.
-     Alternation IS the legibility; it does not need help.
-
-     Even columns, mirrored by `order` alone. Every visual now reaches the
-     outer edge of the measure on its side, every copy block starts on the
-     inner gutter, and each row is the exact mirror of the one above it. */
+  /* Even columns, mirrored by `order` alone: every visual reaches the outer
+     edge of the measure on its side, and each row is the exact mirror of
+     the one above it. */
   .l-stage-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: center;
@@ -1704,10 +1390,8 @@ body:has(.landing) main {
   transition: none !important;
   transition-delay: 0s !important;
 }
-/* The body filled 459px of a 588px column, so the copy block had 129px of
-   phantom box on its inner edge and the gap between the two halves of a row
-   was never the gap the grid declared. It fills its column now: the text
-   box and the layout box are the same box. */
+/* The copy fills its column, so the text box and the layout box are the
+   same box. */
 .l-stage-copy .l-body { max-width: none; }
 @keyframes stage-scan {
   0%   { top: 12%; }
@@ -1716,19 +1400,8 @@ body:has(.landing) main {
 }
 
 /* ── 06 The close ─────────────────────────────────────────────────────────
-   The last thing on the page gets a whole screen. It used to be a 551px
-   band with a 100px footer under it, which meant the final viewport was a
-   249px strip of the previous section's parchment sitting on top of the
-   dark close — the page ended on a seam rather than on a frame, and that
-   is what broke the flow at the bottom.
-
-   `min-height: 100svh` minus the footer's own height makes the close and
-   the footer together fill exactly one screen, so the page lands. */
-/* Under half a screen. A full viewport of black under a page that has just
-   spent four sections on parchment reads as a second hero rather than an
-   ending — the close is a sign-off, and a sign-off that takes as much room
-   as the opening argues with it. Sized so the last light section is still
-   in frame above it. */
+   A sign-off, under half a screen, so the last light section is still in
+   frame above it. */
 .l-close {
   text-align: center;
   border-top: 1px solid var(--hairline);
@@ -1741,11 +1414,8 @@ body:has(.landing) main {
 }
 .l-close-mark { color: var(--key); opacity: .9; margin: 0 auto 1.1rem; }
 .l-close-h {
-  /* Sized so the LONGER clause holds one line at the section measure. At
-     3.1rem inside a 30ch cap the first clause wrapped, which put a
-     two-sentence statement across three ragged parts — the thing the
-     explicit line break was supposed to prevent. The break is the <span>;
-     the type has to be small enough to let it be the only one. */
+  /* Sized so the longer clause holds one line at the section measure; the
+     <span> is the only break. */
   font-size: clamp(1.5rem, 3.1vw, 2.45rem);
   line-height: 1.12;
   letter-spacing: var(--tr-h1);
@@ -1764,27 +1434,16 @@ body:has(.landing) main {
 .l-close-cta { margin-top: 1.6rem; }
 
 /* ── The last line ───────────────────────────────────────────────────────
-   Small and thin, deliberately. A footer that competes with the close
-   above it steals the ending; this one is a colophon — one line of micro
-   type, the repository beside it, and nothing else. */
-/* The colophon sits on parchment, not on the close's dark. Ending on the
-   same surface the argument was read on returns the page to its ground
-   instead of fading it out into black, and it puts a hard cut under the
-   close rather than letting the last two sections merge into one long
-   dark. */
+   A colophon: one line of small type and the repository beside it, on
+   parchment, so the page ends on the surface the argument was read on. */
 .l-footer {
   --footer-h: 2.5rem;
   position: relative;
   z-index: 2;
   background: var(--canvas);
 }
-/* Sentence case, at full ink strength.
-   It was 9.4px uppercase mono in `--ink-3` on the page's brightest
-   parchment — small grey caps on near-white, which is the least legible
-   combination this palette can produce, and uppercase buys nothing on a
-   line that is mostly proper nouns. Case comes off, the colour steps up to
-   secondary ink, and the tracking relaxes because sentence case does not
-   need the extra air that caps do. */
+/* Sentence case at secondary ink: small grey caps on parchment are the
+   least legible combination this palette can produce. */
 .l-footer-inner {
   max-width: 78rem;
   margin: 0 auto;
@@ -1794,12 +1453,7 @@ body:has(.landing) main {
   flex-wrap: wrap;
   gap: 0.35rem 1.25rem;
   align-items: center;
-  /* The body face at normal tracking. This was mono at 0.2em — the label
-     token, applied here by a sweep that treated every small line on the
-     route as a label. A colophon is prose: a product name and a
-     description. Mono is for code, data and measurement; at 11px with a
-     fifth of an em between the letters it read as spaced-out capitals even
-     with the uppercase transform gone. */
+  /* The body face at normal tracking: a colophon is prose, not a label. */
   font-family: var(--sans);
   font-size: 0.78rem;
   font-weight: 400;
@@ -1839,10 +1493,8 @@ body:has(.landing) main {
     transition-duration: 0.001ms !important;
     transition-delay: 0s !important;
   }
-  /* Every element on this route that has an opacity-0 start state. This
-     list is only worth anything if it is kept honest: it once named four
-     selectors that had been deleted in a rebuild, which is a safety net
-     protecting nothing. Whenever a start state moves, it moves here too. */
+  /* Every element on this route that has an opacity-0 start state.
+     Whenever a start state moves, it moves here too. */
   .landing .l-h2,
   .landing .l-body,
   .landing .l-band,
@@ -1902,11 +1554,7 @@ body:has(.landing) main {
    runs, which is the one failure this page does not accept. */
 .landing.is-armed .l-roll-in { transform: translateY(115%); }
 /* The track panels are .l-pane, not .l-sec, so they need their own entry
-   in this chain. Without it the words stay parked 115% below their mask
-   and the headings are simply not there — measured at translateY(63.67px)
-   on a panel that was otherwise fully revealed. A masked reveal whose
-   trigger selector does not match is invisible content, which is the one
-   failure this route does not accept. */
+   in this chain, or their masked headings never reveal. */
 .landing.is-armed .l-sec.in .l-roll-in,
 .landing.is-armed .l-pane.is-on .l-roll-in { transform: translateY(0); }
 .landing.is-armed .l-sec.in.done .l-roll-in,
@@ -1916,10 +1564,6 @@ body:has(.landing) main {
   transition-delay: 0s !important;
 }
 
-/* The hero's own arrivals are scrub-driven now and live on --k in the
-   band rules above; the old class-based chain that lived here would have
-   pinned .l-scroll-cue at opacity 0, because nothing adds .l-hero.in any
-   more. */
 
 /* ── The caret, for the one line that types ───────────────────────────── */
 .l-caret {
@@ -1937,12 +1581,8 @@ body:has(.landing) main {
 
 /* Stage screens arrive from the side they live on, so the alternating
    layout is what the motion is about rather than a repeated rise. */
-/* No blur. `filter: blur()` on a bordered panel smears the BORDER as well
-   as the contents, so every stage screen arrived wearing a soft grey haze
-   around its edge that read as a drop shadow — and this page does not use
-   shadows. It was survivable while the panels sized themselves loosely;
-   once all four locked to one ratio the haze became the thing you saw. The
-   slide alone carries the entrance. */
+/* No blur: `filter: blur()` on a bordered panel smears the border too.
+   The slide alone carries the entrance. */
 .landing.is-armed .l-stage-row .l-stage-visual {
   opacity: 0;
   transform: translateX(-34px);
@@ -1958,10 +1598,6 @@ body:has(.landing) main {
   transition: none !important;
 }
 
-/* ── The focal sequence: the ladder taking its reading ────────────────────
-   The bar extends first, the word lands on it. Read together they are one
-   measurement, which is why the rung's word is delayed behind its own bar
-   rather than staggered with its neighbours. */
 
 /* ── Reduced motion ───────────────────────────────────────────────────────
    Movement goes; the meaning stays. Text is already in place rather than
@@ -2000,12 +1636,8 @@ body:has(.landing) main {
    sentence and the source it came from. */
 .l-ink {
   position: relative;
-  /* Exactly one screen: the chapter fills the viewport and centres in it,
-     so it is seen whole, figures and rules together. It first ran 1223px
-     against a 900px window; cutting every interval to fit left it a
-     cramped strip. The spacing and type now scale with the window's
-     HEIGHT (vh), which is what has to be filled: about 900px of content on
-     a laptop, and centred with room around it on a taller screen. */
+  /* Exactly one screen: spacing and type scale with the window's HEIGHT, so
+     the chapter is seen whole, figures and rules together. */
   min-height: 100vh;
   min-height: 100svh;
   display: flex;
@@ -2127,11 +1759,8 @@ body:has(.landing) main {
   line-height: 1.62;
   letter-spacing: 0.004em;
   color: var(--ink-2);
-  /* Measured, not declared. A `68ch` cap resolved to 83.2 characters here
-     because `ch` is the width of the zero glyph, not of an average one — at
-     15.68px Public Sans that is a 22% under-count. 30rem measures 61
-     characters at this size; 36rem, at the larger size the full-screen
-     chapter sets, stays inside the 45-75 band. */
+  /* 36rem keeps the line inside the 45-75 character band at this size; a
+     `ch` cap under-counts, being the width of the zero glyph. */
   max-width: 36rem;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2173,10 +1802,8 @@ html:has(.landing) {
 .landing ::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: rgba(108, 85, 19, 0.55); }
 
 /* ── The hero voice, one scale ───────────────────────────────────────────
-   The five beats were five separate type decisions that happened to look
-   related. They are one voice at four volumes now, and the steps between
-   them are real: 1.0 / 0.80 / 0.64 for display, with the body holding one
-   size throughout so the reader never has to recalibrate mid-hero. */
+   One voice at several volumes: 1.0 / 0.80 / 0.64 for display, with the
+   body holding one size throughout. */
 .l-band-lede,
 .l-band-head {
   font-size: clamp(1.9rem, 3.5vw, 3rem);
@@ -2188,16 +1815,8 @@ html:has(.landing) {
   line-height: 1.08;
   letter-spacing: var(--tr-h1);
 }
-/* The display family, not the body one.
-   This line — the OECD attribution, at 25.6px — was rendering in Public
-   Sans while every other display line in the hero ran Schibsted Grotesk.
-   Three families over the film where there should be two, and it is the
-   first thing a reader notices without being able to name it. Same fix for
-   the ladder's rung names further down.
-
-   The reference this route now follows runs ONE superfamily and its mono
-   companion, in four cuts. Two unrelated sans faces doing display work is
-   the thing that makes a page look assembled. */
+/* The display family, not the body one: two sans faces doing display work
+   over the film is what makes a page look assembled. */
 .l-band-source {
   font-family: var(--grotesk);
   font-size: clamp(1.15rem, 1.9vw, 1.6rem);
@@ -2221,15 +1840,9 @@ html:has(.landing) {
 }
 
 /* ── The small-label system ──────────────────────────────────────────────
-   Every uppercase mono label on the route ran its own tracking — 0.16em on
-   the hero attribution, 0.10em on the ladder tiers, 0.02em in the colophon,
-   0.20em on the stage numerals. Four values is not a system, it is four
-   decisions nobody revisited.
-
-   The reference this route follows opens its small caps enormously — 0.17em
-   to 0.46em — and that is the point of them: a label set at 11px with
-   generous tracking is a different instrument from body text, not a shrunk
-   version of it. One token, one value, everywhere. */
+   One tracking value for every uppercase mono label on the route: a label
+   at 11px with generous tracking is a different instrument from body text,
+   not a shrunk version of it. */
 .landing {
   --tr-label: 0.2em;
 }
@@ -2247,15 +1860,9 @@ html:has(.landing) {
 }
 
 /* ── Clearance under the pinned bar ──────────────────────────────────────
-   The nav is pinned for the whole route, so anything crossing the top 77px
-   is occluded — and on `#method-h` it removed exactly one word: "The
-   verdict is ▬▬ the model's opinion." A heading whose meaning inverts when
-   a word is covered is not a spacing problem, it is a layout that never
-   accounted for its own chrome.
-
-   Section headings reserve the bar's height as scroll margin, and the two
-   chapters whose headings sit near the top of their section carry it as
-   real padding, so a heading cannot come to rest beneath the pill. */
+   The nav is pinned for the whole route, so section headings reserve its
+   height as scroll margin, and the two chapters whose headings sit near the
+   top carry it as real padding: a heading never comes to rest under it. */
 .landing h1,
 .landing h2,
 .landing h3 {
@@ -2267,11 +1874,7 @@ html:has(.landing) {
 }
 
 /* ── The quiet button's boundary ─────────────────────────────────────────
-   `rgba(242,241,236,0.26)` measured 2.12:1 against void, under the 3:1
-   floor WCAG 1.4.11 sets for non-text. The secondary CTA is the option a
-   sceptic takes first, and its edge was below threshold — invisible to a
-   text-contrast sweep, which is why six passes of contrast auditing never
-   saw it. */
+   Its edge clears the 3:1 non-text contrast floor (WCAG 1.4.11) on void. */
 .l-btn-quiet {
   border-color: rgba(242, 241, 236, 0.42);
 }

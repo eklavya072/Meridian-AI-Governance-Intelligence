@@ -101,9 +101,9 @@ export function CoverageIndicator({ coverage }: { coverage: string }) {
 // ── Module citation row with verification badge ──────────────────────────
 
 // ── Structured framework synthesis (Consensus / Differences / Overall) ───
-// The backend now emits framework_synthesis as three labeled parts. Rendered
-// as distinct blocks; falls back to the composed legacy string when the
-// structured fields are absent (e.g. older saved analyses).
+// The backend emits framework_synthesis as three labeled parts, rendered as
+// distinct blocks; falls back to the composed string when the structured
+// fields are absent (older saved analyses).
 
 export function FrameworkSynthesisBlock({
   m2,
@@ -211,10 +211,9 @@ export function CitationRow({ citation }: { citation: ModuleCitation }) {
       {/* The claim first, then the passage under it. A quote alone makes the
           reader reverse-engineer what it was offered to prove; naming the
           finding turns the card into an argument they can disagree with.
-          line-clamp was 3 — a clause — which cut the operative passage off
-          before the duty-bearer or the consequence. Provisions carry their
-          force at the end, so the clamp is now generous enough to show one
-          whole provision and only bites on a genuinely long extract. */}
+          Provisions carry their force at the end, so the clamp is generous
+          enough to show one whole provision and only bites on a genuinely
+          long extract. */}
       {(() => {
         const passage = (
           <div className="flex items-start justify-between gap-2">

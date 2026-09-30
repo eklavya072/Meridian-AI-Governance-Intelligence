@@ -68,24 +68,10 @@ export function ScreenPanel({
   return (
     <div
       aria-hidden
-      /* The shadow, rebuilt rather than removed.
-         It was one layer: `0 28px 80px -12px rgba(0,0,0,0.7)`. A single
-         huge, near-opaque blur is what made it read as a bloom trailing the
-         panel instead of as the panel sitting above the page — and taking
-         it away left a flat rectangle with a hard edge against a background
-         of nearly the same value, which is worse.
-
-         Three layers instead, the way real elevation falls off: a hairline
-         contact shadow, a short ambient one, and a long soft cast. Total
-         alpha is a fraction of what it was, and the panel reads as glass
-         over parchment rather than a dark cloud.
-
-         The glass is three things together, not a blur alone: the layered
-         cast underneath, an inset white ring for the lit top edge a pane of
-         glass catches, and 2px of backdrop blur so the parchment grain
-         behind it softens at the boundary. Blur on its own is the
-         decoration version of this effect; it is the ring and the cast that
-         make it read as a physical object above a surface. */
+      /* Elevation as real shadows fall off: a hairline contact shadow, a
+         short ambient one and a long soft cast, plus an inset white ring for
+         the lit top edge and 2px of backdrop blur where the parchment grain
+         meets the panel. Together they read as glass over parchment. */
       className={`w-full overflow-hidden rounded-2xl border border-black/[0.08] bg-surface shadow-[0_1px_2px_rgba(16,18,22,0.07),0_8px_20px_-8px_rgba(16,18,22,0.13),0_32px_64px_-28px_rgba(16,18,22,0.20)] ring-1 ring-inset ring-white/45 backdrop-blur-[2px] ${className}`}
     >
       {children}
@@ -128,8 +114,7 @@ function Dot({ color }: { color: string }) {
  * The deadline is a single timeout armed once, for the whole budget, and a
  * lone long timeout is not subject to that clamp. So the sequence animates
  * when the page can animate and simply arrives when it cannot — which is
- * the rule this whole route is built on. Measured: without it, four of
- * eight framework cards were still invisible four seconds in.
+ * the rule this whole route is built on.
  */
 function useSequence(active: boolean, steps: number, everyMs: number) {
   const [step, setStep] = useState(0);
@@ -271,9 +256,8 @@ function CoverageDonut({ active }: { active: boolean }) {
 
 function DepthGauge({ active }: { active: boolean }) {
   /* The index is a mean of stage scores over the assessed dimensions, on 0
-     to 100. It was previously drawn as x/5, which is a scale this
-     instrument does not have. The arc and the readout share one value so
-     they can never disagree. */
+     to 100. The arc and the readout share one value so they can never
+     disagree. */
   const target = 67.0;
   const [shown, setShown] = useState(0);
   useEffect(() => {
@@ -344,14 +328,8 @@ export function AnalysisFrame({ active }: { active: boolean }) {
             <h3 className="font-display text-base font-extrabold tracking-tight text-black sm:text-xl">
               Governance Analysis
             </h3>
-            {/* This read "Kenya. National AI Strategy 2025-2030" over a
-                verdict spread, donut split and depth score that are a
-                REAL RUN ON A DIFFERENT COUNTRY — India's. Kenya has
-                published a strategy of that name, so the frame attributed
-                one state's governance grade to another, on a page whose
-                stated position is that nothing is asserted without a source.
-                The label is now unattributed and the frame is marked
-                illustrative in the UI, not only in a code comment. */}
+            {/* The figures are a real run on a different country, so the label
+                is unattributed and the frame is marked illustrative in the UI. */}
             <p className="mt-0.5 truncate text-[10px] font-medium text-grey-800 sm:text-[11px]">
               Sample analysis · figures from a recorded run
             </p>
@@ -659,9 +637,7 @@ function ArrowUpGlyph({ className }: { className?: string }) {
 /* ── 3. Framework library ─────────────────────────────────────────────
    The real roster from config/frameworks.yaml — names, issuing bodies and
    versions exactly as the library page lists them, landing card by card as
-   the index reports in. No counts: the chunk figures that used to sit here
-   were invented (OECD "1320" against 17 indexed), and a reader who opened the
-   Frameworks page next would have caught it. */
+   the index reports in. */
 
 const FRAMEWORKS = [
   { org: "UNDP", name: "Digital Strategy 2022-2025", version: "2022" },

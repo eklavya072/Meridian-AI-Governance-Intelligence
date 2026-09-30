@@ -38,10 +38,7 @@ import { RollWords, TypeLine } from "@/components/TextEffects";
    webviews that stop compositing, and this hook gates whether content is
    visible at all: a missed callback leaves a whole section pinned at
    opacity zero, which is the one failure this page must not have. Timers
-   keep firing in those environments, so the poll always rescues it.
-
-   Measured directly: with IO, all three product screens rendered their full
-   content at the right size and stayed invisible. */
+   keep firing in those environments, so the poll always rescues it. */
 function useSeen<T extends HTMLElement>(margin = 100) {
   const ref = useRef<T>(null);
   const [seen, setSeen] = useState(false);
@@ -171,10 +168,9 @@ function Panel({
   innerRef?: React.Ref<HTMLDivElement>;
 }) {
   /* A CSS transition needs frames to advance. Where they do not arrive the
-     element keeps reporting its start value however the class list reads,
-     which strands the body and the screen at opacity zero on an active
-     panel. Measured here on the third panel. The settle asserts the
-     finished state with the transition switched off. */
+     element keeps reporting its start value, stranding the content at
+     opacity zero. The settle asserts the finished state with the transition
+     switched off. */
   const [settled, setSettled] = useState(false);
   useEffect(() => {
     if (!active) return;
@@ -367,8 +363,7 @@ export default function LandingSections() {
           three stacked sections.
 
           Below 1024px, on portrait touch screens, and under reduced motion
-          this is not a track at all: the panels stack and the page behaves
-          exactly as it did before. */}
+          this is not a track at all: the panels stack as a normal page. */}
       <HorizontalTrack
         panels={[
           { key: "standards", node: <Standards /> },

@@ -91,8 +91,7 @@ body {
   /* ── Module-card typography (analysis modules) ──────────────────────────
      One hierarchy shared by the four module cards (Evaluation,
      Recommendations, Roadmap, Case Intelligence) so headings never read
-     like body copy. The old ad-hoc mixture (14px labels darker than their
-     values, headings same size as paragraphs) is replaced by clear levels:
+     like body copy:
 
        .module-heading  — 12px uppercase tracked section label (the
                           "Coverage Reasoning" / "Recommendations" heads)
