@@ -35,6 +35,10 @@ jobs:
       MERIDIAN_LIVE_GATE: "1"
 
     steps:
+      # First, so backend/ (the default working directory) exists for every
+      # run step after it.
+      - uses: actions/checkout@v4
+
       - name: Check the key is configured
         id: key
         run: |
@@ -44,9 +48,6 @@ jobs:
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: actions/checkout@v4
-        if: steps.key.outputs.present == 'true'
 
       - uses: astral-sh/setup-uv@v5
         if: steps.key.outputs.present == 'true'
